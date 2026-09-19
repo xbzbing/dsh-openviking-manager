@@ -15,6 +15,12 @@ interface ConfigResult {
   message?: string;
 }
 
+interface DiscoveryResult {
+  ovcli: ConfigResult;
+  suggestedEndpoint: string;
+  localServer: { found: boolean; authMode?: string; rootKeyAvailable: boolean; configError?: string };
+}
+
 interface ApiEnvelope {
   ok: boolean;
   value?: ConfigResult;
@@ -39,17 +45,20 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   const [apiKey, setApiKey] = useState("");
   const [kind, setKind] = useState<ConfigResult["kind"] | "loading">("loading");
   const [permissionWarning, setPermissionWarning] = useState(false);
+  const [localServer, setLocalServer] = useState<DiscoveryResult["localServer"] | undefined>();
   const [status, setStatus] = useState("Loading local OpenViking configuration…");
   const [busy, setBusy] = useState(false);
 
   const load = async () => {
     setBusy(true);
     try {
-      const envelope = await responseJson(await fetchFn(`${apiPrefix}/config`));
-      const next = envelope.value!;
-      setConfig(next.config);
+      const envelope = await responseJson(await fetchFn(`${apiPrefix}/discovery`));
+      const discovery = envelope.value as unknown as DiscoveryResult;
+      const next = discovery.ovcli;
+      setConfig(next.kind === "ready" ? next.config : { ...next.config, url: discovery.suggestedEndpoint });
       setKind(next.kind);
       setPermissionWarning(next.permissionWarning === true);
+      setLocalServer(discovery.localServer);
       setStatus(next.kind === "ready" ? "Configuration loaded." : next.message ?? "No usable ovcli.conf was found.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Unable to load configuration.");
@@ -132,6 +141,8 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
       </header>
       <section className="ovm-card" aria-busy={busy}>
         <div className="ovm-status" role="status">{status}</div>
+        {localServer?.found ? <p className="ovm-hint">Local server config found · auth mode: {localServer.authMode ?? "unknown"} · {localServer.rootKeyAvailable ? "local management is available" : "no local root key detected"}</p> : null}
+        {localServer?.configError ? <p className="ovm-warning">{localServer.configError}</p> : null}
         {kind === "invalid-json" || kind === "invalid-shape" ? <p className="ovm-warning">The file needs repair before it can be safely reused. Enter the correct values and save a compatible configuration.</p> : null}
         {permissionWarning ? (
           <div className="ovm-warning" role="alert">

@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { discoverLocalOpenViking } from "./local-discovery.js";
 import { loadOvcliConfig, loadOvcliUserKey, repairOvcliPermissions, saveOvcliConfig } from "./ovcli-config.js";
 import { probeOpenViking } from "./openviking-client.js";
 
@@ -10,11 +11,17 @@ const MAX_BODY_BYTES = 32 * 1024;
 
 export interface ManagerApiOptions {
   ovcliPath?: string;
+  ovconfPath?: string;
 }
 
 function configPathOf(options: ManagerApiOptions): string {
   return options.ovcliPath ?? join(homedir(), ".openviking", "ovcli.conf");
 }
+
+function ovconfPathOf(options: ManagerApiOptions): string {
+  return options.ovconfPath ?? join(homedir(), ".openviking", "ov.conf");
+}
+
 
 function writeJson(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, {
@@ -63,7 +70,24 @@ function rejectCrossOrigin(req: IncomingMessage, res: ServerResponse): boolean {
 
 export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
   const ovcliPath = configPathOf(options);
+  const ovconfPath = ovconfPathOf(options);
   return [
+    {
+      kind: "exact",
+      path: `${MANAGER_API_PREFIX}/discovery`,
+      handler: async (req, res) => {
+        if (rejectCrossOrigin(req, res)) return;
+        if (req.method !== "GET") {
+          writeJson(res, 405, { error: "method not allowed" });
+          return;
+        }
+        try {
+          writeJson(res, 200, { ok: true, value: await discoverLocalOpenViking({ ovcliPath, ovconfPath }) });
+        } catch (error) {
+          writeJson(res, 500, { ok: false, error: error instanceof Error ? error.message : "Unable to discover local OpenViking configuration" });
+        }
+      },
+    },
     {
       kind: "exact",
       path: `${MANAGER_API_PREFIX}/config`,
