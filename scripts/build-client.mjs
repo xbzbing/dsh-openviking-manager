@@ -5,8 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const clientDir = join(root, "lib", "client");
-mkdirSync(clientDir, { recursive: true });
+mkdirSync(join(root, "lib"), { recursive: true });
 
 const result = await build({
   entryPoints: [join(root, "src", "client", "index.tsx")],
@@ -32,7 +31,7 @@ ${body}
   }
 });
 `;
-writeFileSync(join(clientDir, "index.js"), wrapped);
+writeFileSync(join(root, "lib", "client.js"), wrapped);
 
 await build({
   entryPoints: [join(root, "src", "client", "standalone.tsx")],
