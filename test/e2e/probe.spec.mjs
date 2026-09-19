@@ -12,7 +12,7 @@ async function startOpenVikingFixture() {
     const path = new URL(req.url ?? "/", "http://127.0.0.1").pathname;
     if (path === "/health") return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ status: "ok" }));
     if (path === "/ready") return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ status: "ready" }));
-    if (path === "/api/v1/system/status" && req.headers["x-api-key"] === "keep-this-secret") {
+    if (path === "/api/v1/system/status" && req.headers.authorization === "Bearer keep-this-secret" && req.headers["x-openviking-account"] === "personal" && req.headers["x-openviking-user"] === "alice") {
       return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ result: { account: "personal", user: "alice" } }));
     }
     if (req.headers["x-api-key"] === "root-for-test" && path === "/api/v1/admin/accounts") {

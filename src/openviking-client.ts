@@ -19,7 +19,12 @@ function endpoint(base: string, path: string): string {
 }
 
 function headers(connection: OpenVikingConnection): Record<string, string> {
-  return connection.apiKey === "" ? {} : { "X-API-Key": connection.apiKey };
+  if (connection.apiKey === "") return {};
+  return {
+    Authorization: `Bearer ${connection.apiKey}`,
+    ...(connection.account === "" ? {} : { "X-OpenViking-Account": connection.account }),
+    ...(connection.user === "" ? {} : { "X-OpenViking-User": connection.user }),
+  };
 }
 
 function identityOf(value: unknown): { account: string; user: string } | undefined {

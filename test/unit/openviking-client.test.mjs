@@ -21,7 +21,9 @@ test("probes health, readiness and authenticated identity with the stored user k
   );
 
   assert.deepEqual(result, { reachable: true, ready: true, authenticated: true, identity: { account: "personal", user: "alice" } });
-  assert.equal(calls[2].headers.get("X-API-Key"), "user-secret");
+  assert.equal(calls[2].headers.get("Authorization"), "Bearer user-secret");
+  assert.equal(calls[2].headers.get("X-OpenViking-Account"), "personal");
+  assert.equal(calls[2].headers.get("X-OpenViking-User"), "alice");
 });
 
 test("reports an unavailable service without calling the authenticated endpoint", async () => {
