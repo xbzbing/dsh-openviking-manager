@@ -1,0 +1,43 @@
+# AGENTS.md
+
+## 项目目标
+
+`dsh-openviking-manager` 是 OpenViking 的 DSH 配置管理 UI。它管理 `~/.openviking/ovcli.conf`、连接诊断和用户 Key 引导；**不**实现记忆同步/召回，也不替代 `@openviking/dsh-memory-plugin`。
+
+## 关键边界
+
+- `ovcli.conf` 是日常客户端配置真源。读取、导入和写入必须保持官方插件兼容。
+- `root_api_key` 只能用于一次性的 Admin API 操作；不得写入 `ovcli.conf`、日志、错误文本、浏览器持久化存储或测试快照。
+- `user_key` 不得从服务端 API 回传给浏览器。已有 key 仅以掩码展示；新建或轮换产生的新 key 只可在当前表单内等待用户保存。
+- 任何新增 HTTP 路由都必须保持同源检查、`no-store` 响应和输入验证。
+- 本插件不修改 `ov.conf`、不编排 OpenViking 容器/服务，也不复制官方记忆插件能力。
+
+## 技术约定
+
+- Node.js ESM + TypeScript；运行时文件在 `src/`，编译输出为 `lib/`。
+- DSH Web 插件浏览器入口由 `src/client/index.tsx` 注册到 `plugins.bundle.config`，包导出为 `./client`。
+- UI 的可见文案一律通过 `src/client/i18n.ts` 的 `TranslationKey`。新增 key 时必须同步 `en` 和 `zh` 两个字典。
+- 在 DSH 中跟随 `ctx.locale`；独立 E2E 页面通过浏览器语言回退。
+- CSS 位于 `src/client/styles.ts`。维持 DSH 设计 token、原生可访问控件和响应式栅格。
+- `npm run build` 只生成 `lib/`。不要把 `.tgz` 当成编译产物或提交到仓库。
+
+## 测试与验证
+
+修改行为前先补充或调整测试：
+
+```bash
+npm run test:unit
+npm run test:e2e
+npm test
+```
+
+- 单元测试使用 Node 内建 test runner，覆盖配置、发现、连接和 Admin API 适配。
+- E2E 使用 Playwright，覆盖用户可见关键流程、密钥不泄露和中英文渲染。
+- 修改 UI 后，至少运行 Playwright；修改服务端逻辑后，至少运行单元测试和 E2E。
+- 不跳过或删除测试来获得绿色结果。
+
+## Git 约定
+
+- 每个可验证的功能切片使用一个原子提交。
+- 不提交 `node_modules/`、`lib/`、`playwright-report/`、`test-results/`、`.tgz` 或任何真实密钥。
+- 提交前运行相应测试并检查 `git diff --check`。
