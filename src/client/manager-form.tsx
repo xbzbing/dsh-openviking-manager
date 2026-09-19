@@ -63,6 +63,9 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   const [busy, setBusy] = useState(false);
   const [rootApiKey, setRootApiKey] = useState("");
   const [adminAccounts, setAdminAccounts] = useState<string[]>([]);
+  const [adminUsers, setAdminUsers] = useState<Array<{ userId: string; role: string }>>([]);
+  const [selectedAccount, setSelectedAccount] = useState("");
+  const [selectedUser, setSelectedUser] = useState("");
   const [adminStatus, setAdminStatus] = useState("");
 
   const load = async () => {
@@ -138,22 +141,34 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ operation, rootApiKey, ...fields }),
       }));
-      const value = envelope.value as unknown as { accounts?: Array<{ accountId: string }>; created?: { accountId: string; userId: string; userKey: string }; userKey?: string };
+      const value = envelope.value as unknown as { accounts?: Array<{ accountId: string }>; users?: Array<{ userId: string; role: string }>; created?: { accountId: string; userId: string; userKey: string }; userKey?: string };
       if (operation === "accounts") {
-        setAdminAccounts((value.accounts ?? []).map((item) => item.accountId));
-        setAdminStatus(`Found ${(value.accounts ?? []).length} account(s).`);
+        const accounts = (value.accounts ?? []).map((item) => item.accountId);
+        setAdminAccounts(accounts);
+        setSelectedAccount(accounts[0] ?? "");
+        setAdminUsers([]);
+        setSelectedUser("");
+        setAdminStatus(`Found ${accounts.length} account(s).`);
+      } else if (operation === "users") {
+        const users = value.users ?? [];
+        setAdminUsers(users);
+        setSelectedUser(users[0]?.userId ?? "");
+        setAdminStatus(`Found ${users.length} user(s) in ${fields.accountId}.`);
       } else if (value.created) {
         setConfig({ ...config, account: value.created.accountId, user: value.created.userId });
         setApiKey(value.created.userKey);
+        setSelectedAccount(value.created.accountId);
+        setSelectedUser(value.created.userId);
+        setRootApiKey("");
         setAdminStatus(`${operation} completed. The new user key is ready to save.`);
       } else if (value.userKey) {
         setApiKey(value.userKey);
+        setRootApiKey("");
         setAdminStatus("Key rotated. Save the new user key on this device and update other devices.");
       }
     } catch (error) {
       setAdminStatus(error instanceof Error ? error.message : "OpenViking admin request failed.");
     } finally {
-      setRootApiKey("");
       setBusy(false);
     }
   };
@@ -211,13 +226,14 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
         <h2>Recover or initialize access</h2>
         <p className="ovm-hint">Use a root API key only for this management session. It is never saved to <code>ovcli.conf</code>.</p>
         <label>Temporary root API key<input type="password" value={rootApiKey} onChange={(event) => setRootApiKey(event.target.value)} placeholder="Paste root_api_key for this operation only" /></label>
-        <div className="ovm-actions"><button type="button" className="ovm-secondary" disabled={busy} onClick={() => void adminCall("accounts")}>List accounts</button></div>
-        {adminAccounts.length > 0 ? <p className="ovm-hint">Available accounts: {adminAccounts.join(", ")}</p> : null}
+        <div className="ovm-actions"><button type="button" className="ovm-secondary" disabled={busy} onClick={() => void adminCall("accounts")}>List accounts</button>{rootApiKey !== "" ? <button type="button" className="ovm-secondary" disabled={busy} onClick={() => { setRootApiKey(""); setAdminStatus("Temporary root API key cleared."); }}>Clear temporary root key</button> : null}</div>
+        {adminAccounts.length > 0 ? <label>Existing account<select aria-label="Existing account" value={selectedAccount} onChange={(event) => { const accountId = event.target.value; setSelectedAccount(accountId); void adminCall("users", { accountId }); }}><option value="">Choose an account</option>{adminAccounts.map((account) => <option key={account} value={account}>{account}</option>)}</select></label> : null}
+        {adminUsers.length > 0 ? <label>Existing user<select aria-label="Existing user" value={selectedUser} onChange={(event) => setSelectedUser(event.target.value)}><option value="">Choose a user</option>{adminUsers.map((user) => <option key={user.userId} value={user.userId}>{user.userId} ({user.role})</option>)}</select></label> : null}
         {adminStatus !== "" ? <p className="ovm-status" role="status">{adminStatus}</p> : null}
         <div className="ovm-adminGrid">
           <AdminIdentityForm label="Create account and first user" submitLabel="Create account" disabled={busy} onSubmit={(accountId, userId) => void adminCall("create-account", { accountId, userId })} />
-          <AdminIdentityForm label="Create user in current account" submitLabel="Create user" disabled={busy} defaultAccount={config.account} onSubmit={(accountId, userId) => void adminCall("create-user", { accountId, userId })} />
-          <AdminIdentityForm label="Regenerate an existing user key" submitLabel="Regenerate key" disabled={busy} defaultAccount={config.account} defaultUser={config.user} danger onSubmit={(accountId, userId) => void adminCall("rotate-user-key", { accountId, userId })} />
+          <AdminIdentityForm label="Create user in current account" submitLabel="Create user" disabled={busy} defaultAccount={selectedAccount || config.account} onSubmit={(accountId, userId) => void adminCall("create-user", { accountId, userId })} />
+          <AdminIdentityForm label="Regenerate an existing user key" submitLabel="Regenerate key" disabled={busy} defaultAccount={selectedAccount || config.account} defaultUser={selectedUser || config.user} danger onSubmit={(accountId, userId) => void adminCall("rotate-user-key", { accountId, userId })} />
         </div>
       </section>
     </main>

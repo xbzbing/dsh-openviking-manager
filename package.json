@@ -1,6 +1,6 @@
 {
   "name": "dsh-openviking-manager",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "DSH UI manager for OpenViking connection, user keys, and local configuration.",
   "type": "module",
   "main": "lib/index.js",

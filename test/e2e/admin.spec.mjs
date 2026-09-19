@@ -10,18 +10,14 @@ const root = fileURLToPath(new URL("../..", import.meta.url));
 async function startOpenVikingFixture() {
   const server = createServer((req, res) => {
     const path = new URL(req.url ?? "/", "http://127.0.0.1").pathname;
-    if (path === "/health") return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ status: "ok" }));
-    if (path === "/ready") return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ status: "ready" }));
-    if (path === "/api/v1/system/status" && req.headers["x-api-key"] === "keep-this-secret") {
-      return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ result: { account: "personal", user: "alice" } }));
-    }
-    if (req.headers["x-api-key"] === "root-for-test" && path === "/api/v1/admin/accounts") {
-      return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ result: [{ account_id: "personal" }, { account_id: "archive" }] }));
-    }
-    if (req.headers["x-api-key"] === "root-for-test" && path === "/api/v1/admin/accounts/personal/users") {
-      return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ result: [{ user_id: "alice", role: "admin" }, { user_id: "bob", role: "user" }] }));
-    }
-    return res.writeHead(401, { "content-type": "application/json" }).end(JSON.stringify({ error: "unauthorized" }));
+    const key = req.headers["x-api-key"];
+    const reply = (status, body) => res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body));
+    if (path === "/health") return reply(200, { status: "ok" });
+    if (path === "/ready") return reply(200, { status: "ready" });
+    if (path === "/api/v1/system/status" && key === "keep-this-secret") return reply(200, { result: { account: "personal", user: "alice" } });
+    if (path === "/api/v1/admin/accounts" && key === "root-for-test") return reply(200, { result: [{ account_id: "personal" }, { account_id: "archive" }] });
+    if (path === "/api/v1/admin/accounts/personal/users" && key === "root-for-test") return reply(200, { result: [{ user_id: "alice", role: "admin" }, { user_id: "bob", role: "user" }] });
+    return reply(401, { error: "unauthorized" });
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   return {
@@ -31,7 +27,7 @@ async function startOpenVikingFixture() {
 }
 
 async function startManagerFixture(openVikingUrl) {
-  const directory = await mkdtemp(join(tmpdir(), "dsh-ov-manager-e2e-probe-"));
+  const directory = await mkdtemp(join(tmpdir(), "dsh-ov-manager-e2e-admin-"));
   const configPath = join(directory, "ovcli.conf");
   await writeFile(configPath, JSON.stringify({ url: openVikingUrl, api_key: "keep-this-secret", account: "personal", user: "alice" }), "utf8");
   const script = await readFile(join(root, "lib", "standalone.js"));
@@ -52,14 +48,18 @@ async function startManagerFixture(openVikingUrl) {
   };
 }
 
-test("verifies the existing server-side user key without showing it in the browser", async ({ page }) => {
+test("lists existing accounts and users using one temporary root key", async ({ page }) => {
   const openViking = await startOpenVikingFixture();
   const manager = await startManagerFixture(openViking.url);
   try {
     await page.goto(manager.url);
-    await page.getByRole("button", { name: "Verify connection" }).click();
-    await expect(page.getByRole("status")).toHaveText("Connected as personal/alice.");
-    await expect(page.locator("body")).not.toContainText("keep-this-secret");
+    await page.getByLabel("Temporary root API key").fill("root-for-test");
+    await page.getByRole("button", { name: "List accounts" }).click();
+    await expect(page.getByText(/Found 2 account/)).toBeVisible();
+    await page.getByLabel("Existing account").selectOption("personal");
+    await expect(page.getByText(/Found 2 user\(s\) in personal/)).toBeVisible();
+    await expect(page.getByLabel("Existing user")).toHaveValue("alice");
+    await expect(page.locator("body")).not.toContainText("root-for-test");
   } finally {
     await manager.close();
     await openViking.close();
