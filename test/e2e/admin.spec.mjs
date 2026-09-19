@@ -53,6 +53,7 @@ test("lists existing accounts and users using one temporary root key", async ({ 
   const manager = await startManagerFixture(openViking.url);
   try {
     await page.goto(manager.url);
+    await page.locator("details.ovm-recovery summary").click();
     await page.getByLabel("Temporary root API key").fill("root-for-test");
     await page.getByRole("button", { name: "List accounts" }).click();
     await expect(page.getByText(/Found 2 account/)).toBeVisible();

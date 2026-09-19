@@ -72,3 +72,20 @@ test("rejects an invalid endpoint without overwriting configuration", async ({ p
     await fixture.close();
   }
 });
+
+test("keeps recovery access controls collapsed until requested", async ({ page }) => {
+  const fixture = await startManagerFixture();
+  try {
+    await page.goto(fixture.url);
+    const recovery = page.locator("details.ovm-recovery");
+    await expect(recovery).not.toHaveAttribute("open", "");
+    await expect(page.getByLabel("Temporary root API key")).not.toBeVisible();
+
+    await recovery.locator("summary").click();
+
+    await expect(recovery).toHaveAttribute("open", "");
+    await expect(page.getByLabel("Temporary root API key")).toBeVisible();
+  } finally {
+    await fixture.close();
+  }
+});

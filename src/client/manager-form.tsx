@@ -122,13 +122,13 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
         <p className="ovm-hint">{t("keyHint")}</p><div className="ovm-actions"><button type="submit" disabled={busy}>{t("save")}</button><button type="button" className="ovm-secondary" onClick={() => void verify()} disabled={busy}>{t("verify")}</button><a href={studioUrl} target="_blank" rel="noreferrer">{t("openStudio")}</a></div>
       </form>
     </section>
-    <section className="ovm-card"><h2>{t("recoverTitle")}</h2><p className="ovm-hint">{t("recoverHint")}</p>
+    <section className="ovm-card"><details className="ovm-recovery"><summary><h2>{t("recoverTitle")}</h2></summary><div className="ovm-recoveryContent"><p className="ovm-hint">{t("recoverHint")}</p>
       <label>{t("temporaryRootKey")}<input type="password" value={rootApiKey} onChange={(event) => setRootApiKey(event.target.value)} placeholder={t("pasteRootKey")} /></label>
       <div className="ovm-actions"><button type="button" className="ovm-secondary" disabled={busy} onClick={() => void adminCall("accounts")}>{t("listAccounts")}</button>{rootApiKey !== "" ? <button type="button" className="ovm-secondary" disabled={busy} onClick={() => { setRootApiKey(""); setAdminStatus(t("rootKeyCleared")); }}>{t("clearRootKey")}</button> : null}</div>
       {adminAccounts.length > 0 ? <label>{t("selectAccount")}<select aria-label={t("selectAccount")} value={selectedAccount} onChange={(event) => { const accountId = event.target.value; setSelectedAccount(accountId); void adminCall("users", { accountId }); }}><option value="">{t("chooseAccount")}</option>{adminAccounts.map((account) => <option key={account} value={account}>{account}</option>)}</select></label> : null}
       {adminUsers.length > 0 ? <label>{t("selectUser")}<select aria-label={t("selectUser")} value={selectedUser} onChange={(event) => setSelectedUser(event.target.value)}><option value="">{t("chooseUser")}</option>{adminUsers.map((user) => <option key={user.userId} value={user.userId}>{user.userId} ({user.role})</option>)}</select></label> : null}
       {adminStatus !== "" ? <p className="ovm-status" role="status">{adminStatus}</p> : null}
       <div className="ovm-adminGrid"><AdminIdentityForm title={t("createAccountTitle")} submit={t("createAccount")} accountLabel={t("accountId")} userLabel={t("userId")} disabled={busy} onSubmit={(accountId, userId) => void adminCall("create-account", { accountId, userId })} /><AdminIdentityForm title={t("createUserTitle")} submit={t("createUser")} accountLabel={t("accountId")} userLabel={t("userId")} disabled={busy} defaultAccount={selectedAccount || config.account} onSubmit={(accountId, userId) => void adminCall("create-user", { accountId, userId })} /><AdminIdentityForm title={t("regenerateTitle")} submit={t("regenerateKey")} accountLabel={t("accountId")} userLabel={t("userId")} disabled={busy} defaultAccount={selectedAccount || config.account} defaultUser={selectedUser || config.user} danger onSubmit={(accountId, userId) => void adminCall("rotate-user-key", { accountId, userId })} /></div>
-    </section>
+    </div></details></section>
   </main>;
 }
