@@ -40,6 +40,19 @@ async function responseJson(response: Response): Promise<ApiEnvelope> {
   return value;
 }
 
+function AdminIdentityForm(props: { label: string; submitLabel: string; disabled: boolean; defaultAccount?: string; defaultUser?: string; danger?: boolean; onSubmit: (accountId: string, userId: string) => void }) {
+  const [accountId, setAccountId] = useState(props.defaultAccount ?? "");
+  const [userId, setUserId] = useState(props.defaultUser ?? "");
+  useEffect(() => { setAccountId(props.defaultAccount ?? ""); }, [props.defaultAccount]);
+  useEffect(() => { setUserId(props.defaultUser ?? ""); }, [props.defaultUser]);
+  return <form className="ovm-adminForm" onSubmit={(event) => { event.preventDefault(); props.onSubmit(accountId, userId); }}>
+    <h3>{props.label}</h3>
+    <label>Account ID<input required value={accountId} onChange={(event) => setAccountId(event.target.value)} /></label>
+    <label>User ID<input required value={userId} onChange={(event) => setUserId(event.target.value)} /></label>
+    <button type="submit" className={props.danger ? "ovm-danger" : ""} disabled={props.disabled}>{props.submitLabel}</button>
+  </form>;
+}
+
 export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api", fetchFn = fetch }: ManagerFormProps) {
   const [config, setConfig] = useState<ConfigView>(fallback);
   const [apiKey, setApiKey] = useState("");
@@ -48,6 +61,9 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   const [localServer, setLocalServer] = useState<DiscoveryResult["localServer"] | undefined>();
   const [status, setStatus] = useState("Loading local OpenViking configuration…");
   const [busy, setBusy] = useState(false);
+  const [rootApiKey, setRootApiKey] = useState("");
+  const [adminAccounts, setAdminAccounts] = useState<string[]>([]);
+  const [adminStatus, setAdminStatus] = useState("");
 
   const load = async () => {
     setBusy(true);
@@ -110,6 +126,38 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     }
   };
 
+  const adminCall = async (operation: string, fields: Record<string, string> = {}) => {
+    if (rootApiKey.trim() === "") {
+      setAdminStatus("Enter the root API key for this one-time management operation.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const envelope = await responseJson(await fetchFn(`${apiPrefix}/admin`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ operation, rootApiKey, ...fields }),
+      }));
+      const value = envelope.value as unknown as { accounts?: Array<{ accountId: string }>; created?: { accountId: string; userId: string; userKey: string }; userKey?: string };
+      if (operation === "accounts") {
+        setAdminAccounts((value.accounts ?? []).map((item) => item.accountId));
+        setAdminStatus(`Found ${(value.accounts ?? []).length} account(s).`);
+      } else if (value.created) {
+        setConfig({ ...config, account: value.created.accountId, user: value.created.userId });
+        setApiKey(value.created.userKey);
+        setAdminStatus(`${operation} completed. The new user key is ready to save.`);
+      } else if (value.userKey) {
+        setApiKey(value.userKey);
+        setAdminStatus("Key rotated. Save the new user key on this device and update other devices.");
+      }
+    } catch (error) {
+      setAdminStatus(error instanceof Error ? error.message : "OpenViking admin request failed.");
+    } finally {
+      setRootApiKey("");
+      setBusy(false);
+    }
+  };
+
   const studioUrl = `${config.url.replace(/\/$/, "")}/studio`;
   const verify = async () => {
     setBusy(true);
@@ -158,6 +206,19 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
           <p className="ovm-hint">Leave the key blank to preserve the existing key. This field accepts a user key, never a root API key.</p>
           <div className="ovm-actions"><button type="submit" disabled={busy}>Save configuration</button><button type="button" className="ovm-secondary" onClick={() => void verify()} disabled={busy}>Verify connection</button><a href={studioUrl} target="_blank" rel="noreferrer">Open Studio</a></div>
         </form>
+      </section>
+      <section className="ovm-card">
+        <h2>Recover or initialize access</h2>
+        <p className="ovm-hint">Use a root API key only for this management session. It is never saved to <code>ovcli.conf</code>.</p>
+        <label>Temporary root API key<input type="password" value={rootApiKey} onChange={(event) => setRootApiKey(event.target.value)} placeholder="Paste root_api_key for this operation only" /></label>
+        <div className="ovm-actions"><button type="button" className="ovm-secondary" disabled={busy} onClick={() => void adminCall("accounts")}>List accounts</button></div>
+        {adminAccounts.length > 0 ? <p className="ovm-hint">Available accounts: {adminAccounts.join(", ")}</p> : null}
+        {adminStatus !== "" ? <p className="ovm-status" role="status">{adminStatus}</p> : null}
+        <div className="ovm-adminGrid">
+          <AdminIdentityForm label="Create account and first user" submitLabel="Create account" disabled={busy} onSubmit={(accountId, userId) => void adminCall("create-account", { accountId, userId })} />
+          <AdminIdentityForm label="Create user in current account" submitLabel="Create user" disabled={busy} defaultAccount={config.account} onSubmit={(accountId, userId) => void adminCall("create-user", { accountId, userId })} />
+          <AdminIdentityForm label="Regenerate an existing user key" submitLabel="Regenerate key" disabled={busy} defaultAccount={config.account} defaultUser={config.user} danger onSubmit={(accountId, userId) => void adminCall("rotate-user-key", { accountId, userId })} />
+        </div>
       </section>
     </main>
   );

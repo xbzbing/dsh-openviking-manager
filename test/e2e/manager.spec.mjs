@@ -48,7 +48,7 @@ test("imports existing configuration, keeps a masked key, and saves changed acco
     await expect(page.getByLabel("New user key (optional)")).toHaveAttribute("placeholder", /ke…ret/);
     await expect(page.locator("body")).not.toContainText("keep-this-secret");
 
-    await page.getByLabel("Account").fill("personal-v2");
+    await page.getByRole("textbox", { name: "Account", exact: true }).fill("personal-v2");
     await page.getByRole("button", { name: "Save configuration" }).click();
     await expect(page.getByRole("status")).toContainText("Configuration saved");
 

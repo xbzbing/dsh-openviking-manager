@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { discoverLocalOpenViking } from "./local-discovery.js";
 import { loadOvcliConfig, loadOvcliUserKey, repairOvcliPermissions, saveOvcliConfig } from "./ovcli-config.js";
 import { probeOpenViking } from "./openviking-client.js";
+import { createAccount, createUser, listAccounts, listUsers, rotateUserKey } from "./openviking-admin.js";
 
 export const MANAGER_API_PREFIX = "/plugins/dsh-openviking-manager/api";
 const MAX_BODY_BYTES = 32 * 1024;
@@ -49,6 +50,12 @@ function stringAt(value: unknown, key: string): string | undefined {
   if (typeof value !== "object" || value === null) return undefined;
   const item = (value as Record<string, unknown>)[key];
   return typeof item === "string" ? item : undefined;
+}
+
+function requiredString(value: unknown, key: string): string {
+  const item = stringAt(value, key)?.trim();
+  if (item === undefined || item === "") throw new Error(`${key} must be a non-empty string`);
+  return item;
 }
 
 function isSameOrigin(req: IncomingMessage): boolean {
@@ -149,6 +156,52 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
           writeJson(res, 200, { ok: true, value: probe });
         } catch (error) {
           writeJson(res, 400, { ok: false, error: error instanceof Error ? error.message : "Unable to verify OpenViking connection" });
+        }
+      },
+    },
+    {
+      kind: "exact",
+      path: `${MANAGER_API_PREFIX}/admin`,
+      handler: async (req, res) => {
+        if (rejectCrossOrigin(req, res)) return;
+        if (req.method !== "POST") {
+          writeJson(res, 405, { error: "method not allowed" });
+          return;
+        }
+        try {
+          const body = await readJson(req);
+          const operation = requiredString(body, "operation");
+          const rootApiKey = requiredString(body, "rootApiKey");
+          const current = await loadOvcliConfig(ovcliPath);
+          const url = current.kind === "ready" ? current.config.url : requiredString(body, "url");
+          if (operation === "accounts") {
+            writeJson(res, 200, { ok: true, value: { operation, accounts: await listAccounts(url, rootApiKey) } });
+            return;
+          }
+          const accountId = requiredString(body, "accountId");
+          if (operation === "users") {
+            writeJson(res, 200, { ok: true, value: { operation, users: await listUsers(url, rootApiKey, accountId) } });
+            return;
+          }
+          const userId = requiredString(body, "userId");
+          if (operation === "create-account") {
+            const created = await createAccount(url, rootApiKey, accountId, userId);
+            writeJson(res, 200, { ok: true, value: { operation, created } });
+            return;
+          }
+          if (operation === "create-user") {
+            const created = await createUser(url, rootApiKey, accountId, userId);
+            writeJson(res, 200, { ok: true, value: { operation, created } });
+            return;
+          }
+          if (operation === "rotate-user-key") {
+            const userKey = await rotateUserKey(url, rootApiKey, accountId, userId);
+            writeJson(res, 200, { ok: true, value: { operation, userKey } });
+            return;
+          }
+          writeJson(res, 400, { ok: false, error: "unsupported admin operation" });
+        } catch (error) {
+          writeJson(res, 400, { ok: false, error: error instanceof Error ? error.message : "OpenViking admin request failed" });
         }
       },
     },
