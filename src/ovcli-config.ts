@@ -82,6 +82,11 @@ async function readStored(path: string): Promise<Record<string, unknown>> {
   }
 }
 
+export async function loadOvcliUserKey(path: string): Promise<string> {
+  const stored = await readStored(path);
+  return asString(stored.api_key);
+}
+
 export async function loadOvcliConfig(path: string): Promise<OvcliLoadResult> {
   let raw: string;
   try {

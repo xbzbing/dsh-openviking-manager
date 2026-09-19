@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { loadOvcliConfig, saveOvcliConfig } from "../../lib/ovcli-config.js";
+import { loadOvcliConfig, loadOvcliUserKey, saveOvcliConfig } from "../../lib/ovcli-config.js";
 
 test("loads a valid ovcli.conf without returning the user key plaintext", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ov-manager-"));
@@ -25,6 +25,15 @@ test("loads a valid ovcli.conf without returning the user key plaintext", async 
   assert.match(result.config.apiKeyMasked, /^se…key$/);
   assert.equal(JSON.stringify(result).includes("secret-user-key"), false);
 });
+
+test("reads the stored user key only through the server-side helper", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ov-manager-"));
+  const configPath = join(directory, "ovcli.conf");
+  await writeFile(configPath, JSON.stringify({ api_key: "server-only-user-key" }), "utf8");
+
+  assert.equal(await loadOvcliUserKey(configPath), "server-only-user-key");
+});
+
 
 test("saves supplied values while preserving an existing key when omitted", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ov-manager-"));

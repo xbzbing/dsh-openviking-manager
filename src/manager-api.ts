@@ -2,7 +2,8 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { loadOvcliConfig, repairOvcliPermissions, saveOvcliConfig } from "./ovcli-config.js";
+import { loadOvcliConfig, loadOvcliUserKey, repairOvcliPermissions, saveOvcliConfig } from "./ovcli-config.js";
+import { probeOpenViking } from "./openviking-client.js";
 
 export const MANAGER_API_PREFIX = "/plugins/dsh-openviking-manager/api";
 const MAX_BODY_BYTES = 32 * 1024;
@@ -94,6 +95,36 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
           writeJson(res, 200, { ok: true, value: { kind: "ready", config, permissionWarning: false } });
         } catch (error) {
           writeJson(res, 400, { ok: false, error: error instanceof Error ? error.message : "Unable to save ovcli.conf" });
+        }
+      },
+    },
+    {
+      kind: "exact",
+      path: `${MANAGER_API_PREFIX}/probe`,
+      handler: async (req, res) => {
+        if (rejectCrossOrigin(req, res)) return;
+        if (req.method !== "POST") {
+          writeJson(res, 405, { error: "method not allowed" });
+          return;
+        }
+        try {
+          const current = await loadOvcliConfig(ovcliPath);
+          if (current.kind !== "ready") {
+            writeJson(res, 409, { ok: false, error: "A valid ovcli.conf is required before connection verification" });
+            return;
+          }
+          const body = await readJson(req);
+          const suppliedKey = stringAt(body, "apiKey");
+          const apiKey = suppliedKey === undefined || suppliedKey === "" ? await loadOvcliUserKey(ovcliPath) : suppliedKey;
+          const probe = await probeOpenViking({
+            url: current.config.url,
+            apiKey,
+            account: current.config.account,
+            user: current.config.user,
+          });
+          writeJson(res, 200, { ok: true, value: probe });
+        } catch (error) {
+          writeJson(res, 400, { ok: false, error: error instanceof Error ? error.message : "Unable to verify OpenViking connection" });
         }
       },
     },

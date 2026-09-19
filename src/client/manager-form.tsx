@@ -102,6 +102,27 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   };
 
   const studioUrl = `${config.url.replace(/\/$/, "")}/studio`;
+  const verify = async () => {
+    setBusy(true);
+    try {
+      const envelope = await responseJson(
+        await fetchFn(`${apiPrefix}/probe`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ apiKey }),
+        }),
+      );
+      const probe = envelope.value as unknown as { reachable: boolean; ready: boolean; authenticated: boolean; identity?: { account: string; user: string } };
+      if (!probe.reachable) setStatus("OpenViking is unreachable at this endpoint.");
+      else if (!probe.ready) setStatus("OpenViking is reachable but not ready.");
+      else if (!probe.authenticated) setStatus("Service is ready, but the supplied user key was not accepted.");
+      else setStatus(`Connected as ${probe.identity?.account}/${probe.identity?.user}.`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Unable to verify OpenViking connection.");
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <main className="ovm-shell">
       <header>
@@ -124,7 +145,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
           <label>User<input value={config.user} onChange={(event) => setConfig({ ...config, user: event.target.value })} /></label>
           <label>New user key <span className="ovm-optional">(optional)</span><input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={config.apiKeySet ? `Existing key: ${config.apiKeyMasked}` : "Paste a user_key"} /></label>
           <p className="ovm-hint">Leave the key blank to preserve the existing key. This field accepts a user key, never a root API key.</p>
-          <div className="ovm-actions"><button type="submit" disabled={busy}>Save configuration</button><a href={studioUrl} target="_blank" rel="noreferrer">Open Studio</a></div>
+          <div className="ovm-actions"><button type="submit" disabled={busy}>Save configuration</button><button type="button" className="ovm-secondary" onClick={() => void verify()} disabled={busy}>Verify connection</button><a href={studioUrl} target="_blank" rel="noreferrer">Open Studio</a></div>
         </form>
       </section>
     </main>

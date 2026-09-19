@@ -7,10 +7,10 @@ import { test, expect } from "@playwright/test";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 
-async function startManagerFixture() {
+async function startManagerFixture({ openVikingUrl = "http://127.0.0.1:8008" } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "dsh-ov-manager-e2e-"));
   const configPath = join(directory, "ovcli.conf");
-  await writeFile(configPath, JSON.stringify({ url: "http://127.0.0.1:8008", api_key: "keep-this-secret", account: "personal", user: "alice" }), "utf8");
+  await writeFile(configPath, JSON.stringify({ url: openVikingUrl, api_key: "keep-this-secret", account: "personal", user: "alice" }), "utf8");
   const script = await readFile(join(root, "lib", "standalone.js"));
   const api = await import(join(root, "lib", "manager-api.js"));
   const routes = new Map(api.makeManagerRoutes({ ovcliPath: configPath }).map((route) => [route.path, route.handler]));
