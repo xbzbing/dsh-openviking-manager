@@ -1,0 +1,6 @@
+# dsh-openviking-manager only provides a configuration UI and local manager.
+# It does not replace or configure the official OpenViking memory plugin.
+- insert:
+    - id: openviking-manager
+      name: 'dsh-openviking-manager'
+      config: {}

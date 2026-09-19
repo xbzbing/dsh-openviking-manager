@@ -1,0 +1,74 @@
+import { createServer } from "node:http";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { test, expect } from "@playwright/test";
+
+const root = fileURLToPath(new URL("../..", import.meta.url));
+
+async function startManagerFixture() {
+  const directory = await mkdtemp(join(tmpdir(), "dsh-ov-manager-e2e-"));
+  const configPath = join(directory, "ovcli.conf");
+  await writeFile(configPath, JSON.stringify({ url: "http://127.0.0.1:8008", api_key: "keep-this-secret", account: "personal", user: "alice" }), "utf8");
+  const script = await readFile(join(root, "lib", "standalone.js"));
+  const api = await import(join(root, "lib", "manager-api.js"));
+  const routes = new Map(api.makeManagerRoutes({ ovcliPath: configPath }).map((route) => [route.path, route.handler]));
+  const server = createServer(async (req, res) => {
+    const url = new URL(req.url ?? "/", "http://127.0.0.1");
+    if (url.pathname === "/") {
+      res.writeHead(200, { "content-type": "text/html" });
+      res.end('<!doctype html><html><body><div id="root"></div><script src="/app.js"></script></body></html>');
+      return;
+    }
+    if (url.pathname === "/app.js") {
+      res.writeHead(200, { "content-type": "application/javascript" });
+      res.end(script);
+      return;
+    }
+    const handler = routes.get(url.pathname);
+    if (handler) return handler(req, res);
+    res.writeHead(404).end();
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = server.address().port;
+  return {
+    url: `http://127.0.0.1:${port}`,
+    configPath,
+    close: () => new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))),
+  };
+}
+
+test("imports existing configuration, keeps a masked key, and saves changed account data", async ({ page }) => {
+  const fixture = await startManagerFixture();
+  try {
+    await page.goto(fixture.url);
+    await expect(page.getByRole("heading", { name: "Connect your memory workspace" })).toBeVisible();
+    await expect(page.getByLabel("OpenViking endpoint")).toHaveValue("http://127.0.0.1:8008");
+    await expect(page.getByLabel("New user key (optional)")).toHaveAttribute("placeholder", /ke…ret/);
+    await expect(page.locator("body")).not.toContainText("keep-this-secret");
+
+    await page.getByLabel("Account").fill("personal-v2");
+    await page.getByRole("button", { name: "Save configuration" }).click();
+    await expect(page.getByRole("status")).toContainText("Configuration saved");
+
+    const stored = JSON.parse(await readFile(fixture.configPath, "utf8"));
+    expect(stored).toMatchObject({ url: "http://127.0.0.1:8008", account: "personal-v2", user: "alice", api_key: "keep-this-secret" });
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("rejects an invalid endpoint without overwriting configuration", async ({ page }) => {
+  const fixture = await startManagerFixture();
+  try {
+    await page.goto(fixture.url);
+    await page.getByLabel("OpenViking endpoint").fill("not-a-url");
+    await page.getByRole("button", { name: "Save configuration" }).click();
+    await expect(page.getByRole("status")).toContainText("absolute http(s) URL");
+    const stored = JSON.parse(await readFile(fixture.configPath, "utf8"));
+    expect(stored.url).toBe("http://127.0.0.1:8008");
+  } finally {
+    await fixture.close();
+  }
+});
