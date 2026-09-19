@@ -1,8 +1,22 @@
-node_modules/
 lib/
-playwright-report/
-test-results/
 .env
 .env.*
 *.log
 *.tgz
+node_modules/
+.DS_Store
+graphify-out/
+docs/local/
+
+# Playwright browser cache (never commit downloaded browsers)
+ms-playwright/
+playwright-report/
+test-results/
+.dsh-vision-toolkit/
+
+# Architecture diagram sources (repo keeps only the exported PNG)
+docs/assets/architecture.html
+docs/assets/architecture-en.html
+docs/assets/architecture.json
+# vision tooling artifacts (not part of the plugin)
+.dsh-vision-router/
