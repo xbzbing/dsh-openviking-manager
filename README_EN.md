@@ -37,8 +37,6 @@ Screenshots are captured from an isolated DSH instance by `npm run screenshots`;
 
 ## Install
 
-Install from npm:
-
 ```bash
 # Install the official OpenViking plugin
 dsh plugin --profile web add @openviking/dsh-memory-plugin

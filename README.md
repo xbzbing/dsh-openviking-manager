@@ -37,8 +37,6 @@ OpenViking 的安装配置详见其官方网站：[DeepSeek Harness 记忆插件
 
 ## 安装
 
-从 npm 安装：
-
 ```bash
 # 安装 openviking 的官方插件
 dsh plugin --profile web add @openviking/dsh-memory-plugin
