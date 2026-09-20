@@ -7,6 +7,10 @@ import { test, expect } from "@playwright/test";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 
+// The add-user panel repeats this action for convenience, so scope the
+// recovery section's own button instead of relying on which panel is visible.
+const recoveryListAccounts = (page) => page.locator("details.ovm-recovery .ovm-actions").getByRole("button", { name: "List accounts" });
+
 async function startOpenVikingFixture() {
   const server = createServer((req, res) => {
     const path = new URL(req.url ?? "/", "http://127.0.0.1").pathname;
@@ -99,6 +103,30 @@ test("distinguishes creating an account from adding a user", async ({ page }) =>
   }
 });
 
+test("loads accounts from inside the add-user panel", async ({ page }) => {
+  const openViking = await startOpenVikingFixture();
+  const manager = await startManagerFixture(openViking.url);
+  try {
+    await page.goto(manager.url);
+    await page.locator("details.ovm-recovery summary").click();
+    await page.getByLabel("Temporary root API key").fill("root-for-test");
+    await page.getByRole("tab", { name: "Create user" }).click();
+
+    const createUser = page.locator("#ovm-panel-create-user");
+    await expect(createUser.getByText(/List accounts first/)).toBeVisible();
+    await expect(createUser.getByRole("button", { name: "Create user" })).toBeDisabled();
+    await expect(createUser.getByRole("button", { name: "List accounts" })).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+
+    await createUser.getByRole("button", { name: "List accounts" }).click();
+
+    await expect(createUser.getByLabel("Account ID")).toHaveValue("personal");
+    await expect(createUser.getByRole("button", { name: "Create user" })).toBeEnabled();
+  } finally {
+    await manager.close();
+    await openViking.close();
+  }
+});
+
 test("lists existing accounts and users using one temporary root key", async ({ page }) => {
   const openViking = await startOpenVikingFixture();
   const manager = await startManagerFixture(openViking.url);
@@ -114,7 +142,7 @@ test("lists existing accounts and users using one temporary root key", async ({ 
     await expect(page.getByRole("heading", { name: "Create user in current account" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Create account and first user" })).not.toBeVisible();
     await page.getByLabel("Temporary root API key").fill("root-for-test");
-    await page.getByRole("button", { name: "List accounts" }).click();
+    await recoveryListAccounts(page).click();
     await expect(page.getByText(/Found 2 account/)).toBeVisible();
     await page.getByLabel("Existing account").selectOption("personal");
     await expect(page.getByText(/Found 2 user\(s\) in personal/)).toBeVisible();
@@ -144,7 +172,7 @@ test("asks to save the endpoint before recovery tools when no config is saved", 
     await expect(page.getByRole("alert")).toContainText("Save the OpenViking endpoint above first");
 
     await page.getByLabel("Temporary root API key").fill("root-for-test");
-    await page.getByRole("button", { name: "List accounts" }).click();
+    await recoveryListAccounts(page).click();
 
     await expect(page.getByRole("alert")).toContainText("Save the OpenViking endpoint above first");
     await expect(page.locator("body")).not.toContainText("url must be a non-empty string");
@@ -170,7 +198,7 @@ test("unlocks recovery tools once the endpoint is saved", async ({ page }) => {
     await expect(page.getByRole("alert")).not.toBeVisible();
 
     await page.getByLabel("Temporary root API key").fill("root-for-test");
-    await page.getByRole("button", { name: "List accounts" }).click();
+    await recoveryListAccounts(page).click();
     await expect(page.getByText(/Found 2 account/)).toBeVisible();
   } finally {
     await manager.close();

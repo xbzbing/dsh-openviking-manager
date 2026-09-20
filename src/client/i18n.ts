@@ -189,7 +189,7 @@ const zh: Record<TranslationKey, string> = {
   createUserTitle: "在当前账号中创建用户",
   createUserHint: "向已存在的账号中添加新用户。",
   createUser: "创建用户",
-  noAccountsLoaded: "请先点击上方「列出账号」，再选择要添加用户的账号。",
+  noAccountsLoaded: "请先列出账号，再选择要添加用户的账号。",
   regenerateTitle: "重新生成已有用户 Key",
   regenerateHint: "为已存在的账号和用户重新签发用户 Key。",
   regenerateKey: "重新生成 Key",
