@@ -15,6 +15,16 @@ English | [简体中文](README.md)
 - Derive the Studio URL as `<endpoint>/studio`; users can override it for a reverse proxy.
 - Follow the DSH system language setting with Simplified Chinese and English UI dictionaries.
 
+## Screenshots
+
+| Connection and diagnostics | Recovery and initialization |
+| :---: | :---: |
+| ![Configuration with a masked key](docs/assets/screenshots/en/01-configuration.png) | ![Recovery: list accounts, the default tab](docs/assets/screenshots/en/03-recovery-accounts.png) |
+| ![Connection verification and local discovery](docs/assets/screenshots/en/02-connection.png) | ![Recovery: create account](docs/assets/screenshots/en/04-create-account.png) |
+| ![Configuration file permission repair](docs/assets/screenshots/en/06-permissions.png) | ![Recovery: create user](docs/assets/screenshots/en/05-create-user.png) |
+
+Screenshots are regenerated from the real UI in `lib/` by `npm run screenshots`; the Simplified Chinese set lives in [README.md](README.md).
+
 ## Security boundaries
 
 - `root_api_key` is used only for the current browser form and a same-origin management request. It is never written to `ovcli.conf`; the form is cleared after creation or key rotation succeeds.

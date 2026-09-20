@@ -15,6 +15,16 @@
 - 根据当前 endpoint 推导 Studio 地址（`<endpoint>/studio`），允许用户手工改为反向代理地址；
 - UI 跟随 DSH 系统语言设置，支持简体中文和英文。
 
+## 界面
+
+| 连接与诊断 | 恢复与初始化 |
+| :---: | :---: |
+| ![连接配置与密钥掩码](docs/assets/screenshots/zh/01-configuration.png) | ![恢复区 · 列出账号（默认 tab）](docs/assets/screenshots/zh/03-recovery-accounts.png) |
+| ![连接验证与本地发现](docs/assets/screenshots/zh/02-connection.png) | ![恢复区 · 创建账号](docs/assets/screenshots/zh/04-create-account.png) |
+| ![配置文件权限修复](docs/assets/screenshots/zh/06-permissions.png) | ![恢复区 · 创建用户](docs/assets/screenshots/zh/05-create-user.png) |
+
+截图由 `npm run screenshots` 依据 `lib/` 中的真实界面重新生成，英文版见 [README_EN.md](README_EN.md)。
+
 ## 安全边界
 
 - `root_api_key` 只在浏览器表单和一次同源管理请求期间使用，绝不写入 `ovcli.conf`；创建/轮换完成后插件会清空该输入。
