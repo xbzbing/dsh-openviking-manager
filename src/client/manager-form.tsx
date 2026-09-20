@@ -9,6 +9,14 @@ export interface ManagerFormProps { apiPrefix?: string; fetchFn?: typeof fetch; 
 
 const fallback: ConfigView = { url: "http://127.0.0.1:1933", account: "", user: "", apiKeySet: false, apiKeyMasked: "" };
 
+type AdminTab = "create-account" | "create-user" | "rotate-user-key";
+
+const adminTabs: Array<{ id: AdminTab; title: "createAccount" | "createUser" | "regenerateKey" }> = [
+  { id: "create-account", title: "createAccount" },
+  { id: "create-user", title: "createUser" },
+  { id: "rotate-user-key", title: "regenerateKey" },
+];
+
 async function responseJson(response: Response): Promise<ApiEnvelope> {
   const value = (await response.json()) as ApiEnvelope;
   if (!response.ok || !value.ok) throw new Error(value.error ?? "OpenViking Manager request failed");
@@ -42,6 +50,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   const [selectedAccount, setSelectedAccount] = useState("");
   const [selectedUser, setSelectedUser] = useState("");
   const [adminStatus, setAdminStatus] = useState("");
+  const [activeAdminTab, setActiveAdminTab] = useState<AdminTab>("create-account");
 
   const load = async () => {
     setBusy(true);
@@ -128,7 +137,10 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
       {adminAccounts.length > 0 ? <label>{t("selectAccount")}<select aria-label={t("selectAccount")} value={selectedAccount} onChange={(event) => { const accountId = event.target.value; setSelectedAccount(accountId); void adminCall("users", { accountId }); }}><option value="">{t("chooseAccount")}</option>{adminAccounts.map((account) => <option key={account} value={account}>{account}</option>)}</select></label> : null}
       {adminUsers.length > 0 ? <label>{t("selectUser")}<select aria-label={t("selectUser")} value={selectedUser} onChange={(event) => setSelectedUser(event.target.value)}><option value="">{t("chooseUser")}</option>{adminUsers.map((user) => <option key={user.userId} value={user.userId}>{user.userId} ({user.role})</option>)}</select></label> : null}
       {adminStatus !== "" ? <p className="ovm-status" role="status">{adminStatus}</p> : null}
-      <div className="ovm-adminGrid"><AdminIdentityForm title={t("createAccountTitle")} submit={t("createAccount")} accountLabel={t("accountId")} userLabel={t("userId")} disabled={busy} onSubmit={(accountId, userId) => void adminCall("create-account", { accountId, userId })} /><AdminIdentityForm title={t("createUserTitle")} submit={t("createUser")} accountLabel={t("accountId")} userLabel={t("userId")} disabled={busy} defaultAccount={selectedAccount || config.account} onSubmit={(accountId, userId) => void adminCall("create-user", { accountId, userId })} /><AdminIdentityForm title={t("regenerateTitle")} submit={t("regenerateKey")} accountLabel={t("accountId")} userLabel={t("userId")} disabled={busy} defaultAccount={selectedAccount || config.account} defaultUser={selectedUser || config.user} danger onSubmit={(accountId, userId) => void adminCall("rotate-user-key", { accountId, userId })} /></div>
+      <div className="ovm-adminTabs" role="tablist" aria-label={t("recoverTitle")}>{adminTabs.map((tab) => <button key={tab.id} id={`ovm-tab-${tab.id}`} type="button" role="tab" aria-selected={activeAdminTab === tab.id} aria-controls={`ovm-panel-${tab.id}`} className={activeAdminTab === tab.id ? "ovm-adminTab ovm-adminTabActive" : "ovm-adminTab"} onClick={() => setActiveAdminTab(tab.id)}>{t(tab.title)}</button>)}</div>
+      <div id="ovm-panel-create-account" role="tabpanel" aria-labelledby="ovm-tab-create-account" hidden={activeAdminTab !== "create-account"}><AdminIdentityForm title={t("createAccountTitle")} submit={t("createAccount")} accountLabel={t("accountId")} userLabel={t("userId")} disabled={busy} onSubmit={(accountId, userId) => void adminCall("create-account", { accountId, userId })} /></div>
+      <div id="ovm-panel-create-user" role="tabpanel" aria-labelledby="ovm-tab-create-user" hidden={activeAdminTab !== "create-user"}><AdminIdentityForm title={t("createUserTitle")} submit={t("createUser")} accountLabel={t("accountId")} userLabel={t("userId")} disabled={busy} defaultAccount={selectedAccount || config.account} onSubmit={(accountId, userId) => void adminCall("create-user", { accountId, userId })} /></div>
+      <div id="ovm-panel-rotate-user-key" role="tabpanel" aria-labelledby="ovm-tab-rotate-user-key" hidden={activeAdminTab !== "rotate-user-key"}><AdminIdentityForm title={t("regenerateTitle")} submit={t("regenerateKey")} accountLabel={t("accountId")} userLabel={t("userId")} disabled={busy} defaultAccount={selectedAccount || config.account} defaultUser={selectedUser || config.user} danger onSubmit={(accountId, userId) => void adminCall("rotate-user-key", { accountId, userId })} /></div>
     </div></details></section>
   </main>;
 }

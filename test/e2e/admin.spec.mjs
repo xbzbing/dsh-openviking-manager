@@ -54,6 +54,14 @@ test("lists existing accounts and users using one temporary root key", async ({ 
   try {
     await page.goto(manager.url);
     await page.locator("details.ovm-recovery summary").click();
+    await expect(page.getByRole("tablist")).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Create account" })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("heading", { name: "Create account and first user" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Create user in current account" })).not.toBeVisible();
+    await page.getByRole("tab", { name: "Create user" }).click();
+    await expect(page.getByRole("tab", { name: "Create user" })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("heading", { name: "Create user in current account" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Create account and first user" })).not.toBeVisible();
     await page.getByLabel("Temporary root API key").fill("root-for-test");
     await page.getByRole("button", { name: "List accounts" }).click();
     await expect(page.getByText(/Found 2 account/)).toBeVisible();
