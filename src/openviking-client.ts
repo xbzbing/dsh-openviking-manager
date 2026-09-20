@@ -27,14 +27,15 @@ function headers(connection: OpenVikingConnection): Record<string, string> {
   };
 }
 
-function identityOf(value: unknown): { account: string; user: string } | undefined {
-  if (typeof value !== "object" || value === null) return undefined;
+function identityOf(value: unknown): { account: string; user: string } {
+  if (typeof value !== "object" || value === null) return { account: "", user: "" };
   const result = (value as { result?: unknown }).result;
-  if (typeof result !== "object" || result === null) return undefined;
+  if (typeof result !== "object" || result === null) return { account: "", user: "" };
   const record = result as Record<string, unknown>;
-  const account = typeof record.account === "string" ? record.account : typeof record.account_id === "string" ? record.account_id : "";
-  const user = typeof record.user === "string" ? record.user : typeof record.user_id === "string" ? record.user_id : "";
-  return account !== "" && user !== "" ? { account, user } : undefined;
+  return {
+    account: typeof record.account === "string" ? record.account : typeof record.account_id === "string" ? record.account_id : "",
+    user: typeof record.user === "string" ? record.user : typeof record.user_id === "string" ? record.user_id : "",
+  };
 }
 
 /** Probe only normal data-plane endpoints with a user key; never accept root keys. */
@@ -58,7 +59,7 @@ export async function probeOpenViking(connection: OpenVikingConnection, fetchFn:
     const status = await fetchFn(endpoint(connection.url, "/api/v1/system/status"), { headers: headers(connection) });
     if (!status.ok) return { reachable: true, ready, authenticated: false, identity: undefined };
     const identity = identityOf(await status.json());
-    return { reachable: true, ready, authenticated: identity !== undefined, identity };
+    return { reachable: true, ready, authenticated: true, identity };
   } catch {
     return { reachable: true, ready, authenticated: false, identity: undefined };
   }
