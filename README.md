@@ -4,6 +4,10 @@
 
 `dsh-openviking-manager` 是一个 DSH Web UI 插件，用于管理已有 OpenViking 服务的客户端连接、用户 Key 和本机配置诊断。它只管理客户端配置；记忆同步、提交和召回仍由官方 [`@openviking/dsh-memory-plugin`](https://www.npmjs.com/package/@openviking/dsh-memory-plugin) 负责。
 
+OpenViking 是**火山引擎开源，专门给 AI Agent 设计的上下文数据库**，用来解决 Agent 长上下文、记忆、知识库管理问题。OpenViking 需要部署对应的服务端程序，服务支持远程访问和账号隔离，因此也适用于做跨设备、跨会话的远程记忆中心。本插件只是为 OpenViking 增加一个配置界面，便于管理本地的客户端配置。
+
+OpenViking 的安装配置详见其官方网站：[DeepSeek Harness 记忆插件](https://docs.openviking.ai/zh/agent-integrations/17-dsh)
+
 ## 功能
 
 - 读取、导入和原子更新 `~/.openviking/ovcli.conf`；
@@ -36,16 +40,15 @@
 从 npm 安装：
 
 ```bash
+# 安装 openviking 的官方插件
+dsh plugin --profile web add @openviking/dsh-memory-plugin
+# 安装配置管理器
 dsh plugin --profile web add dsh-openviking-manager
-```
-
-也可以直接从 GitHub 仓库安装：
-
-```bash
+# 也可以直接从 GitHub 仓库安装或者从 file 安装
 dsh plugin --profile web add github:xbzbing/dsh-openviking-manager
 ```
 
-两种方式都不执行构建：`lib/` 编译产物随 npm 包和仓库一同分发，因此无需授权 `allowBuilds`。安装后重启对应的 DSH profile 即可。
+安装后可能需要重启对应的 DSH profile，在 DSH 插件页面可以看到`openviking-manager`的配置管理页面。
 
 ## 环境要求
 

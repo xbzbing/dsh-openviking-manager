@@ -4,6 +4,10 @@ English | [简体中文](README.md)
 
 `dsh-openviking-manager` is a DSH Web UI plugin for managing an existing OpenViking service connection, user keys, and local configuration diagnostics. It manages client configuration only; memory synchronization, commit, and recall remain the responsibility of the official [`@openviking/dsh-memory-plugin`](https://www.npmjs.com/package/@openviking/dsh-memory-plugin).
 
+OpenViking is an **open-source context database from Volcengine, purpose-built for AI agents**, solving long-context, memory, and knowledge-base management for agents. It requires deploying the corresponding server; because the service supports remote access and account isolation, it also serves as a remote memory hub shared across devices and sessions. This plugin only adds a configuration UI for OpenViking, to make the local client configuration easier to manage.
+
+See the official documentation for installing and configuring OpenViking: [DeepSeek Harness Memory Bundle](https://docs.openviking.ai/en/agent-integrations/17-dsh)
+
 ## Features
 
 - Read, import, and atomically update `~/.openviking/ovcli.conf`.
@@ -36,16 +40,15 @@ Screenshots are captured from an isolated DSH instance by `npm run screenshots`;
 Install from npm:
 
 ```bash
+# Install the official OpenViking plugin
+dsh plugin --profile web add @openviking/dsh-memory-plugin
+# Install the configuration manager
 dsh plugin --profile web add dsh-openviking-manager
-```
-
-Or install straight from the GitHub repository:
-
-```bash
+# You can also install straight from the GitHub repository, or from a local file path
 dsh plugin --profile web add github:xbzbing/dsh-openviking-manager
 ```
 
-Neither path runs a build: the `lib/` artifacts ship with both the npm package and the repository, so no `allowBuilds` approval is needed. Restart the DSH profile afterwards.
+Restarting the corresponding DSH profile may be required afterwards; the `openviking-manager` configuration page is then available on the DSH plugins page.
 
 ## Requirements
 
