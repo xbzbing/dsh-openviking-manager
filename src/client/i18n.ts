@@ -51,10 +51,14 @@ export type TranslationKey =
   | "rootKeyRequired"
   | "adminFailed"
   | "createAccountTitle"
+  | "createAccountHint"
   | "createAccount"
   | "createUserTitle"
+  | "createUserHint"
   | "createUser"
+  | "noAccountsLoaded"
   | "regenerateTitle"
+  | "regenerateHint"
   | "regenerateKey"
   | "accountId"
   | "userId"
@@ -114,10 +118,14 @@ const en: Record<TranslationKey, string> = {
   rootKeyRequired: "Enter the root API key for this one-time management operation.",
   adminFailed: "OpenViking admin request failed.",
   createAccountTitle: "Create account and first user",
+  createAccountHint: "Creates a new account together with its first admin user.",
   createAccount: "Create account",
   createUserTitle: "Create user in current account",
+  createUserHint: "Adds a user to an account that already exists.",
   createUser: "Create user",
+  noAccountsLoaded: "List accounts first, then pick the account that should receive the new user.",
   regenerateTitle: "Regenerate an existing user key",
+  regenerateHint: "Issues a new user key for an existing account and user.",
   regenerateKey: "Regenerate key",
   accountId: "Account ID",
   userId: "User ID",
@@ -176,10 +184,14 @@ const zh: Record<TranslationKey, string> = {
   rootKeyRequired: "请为本次管理操作输入 root API key。",
   adminFailed: "OpenViking 管理请求失败。",
   createAccountTitle: "创建账号和首位用户",
+  createAccountHint: "创建全新账号，并设置它的首位管理员用户。",
   createAccount: "创建账号",
   createUserTitle: "在当前账号中创建用户",
+  createUserHint: "向已存在的账号中添加新用户。",
   createUser: "创建用户",
+  noAccountsLoaded: "请先点击上方「列出账号」，再选择要添加用户的账号。",
   regenerateTitle: "重新生成已有用户 Key",
+  regenerateHint: "为已存在的账号和用户重新签发用户 Key。",
   regenerateKey: "重新生成 Key",
   accountId: "账号 ID",
   userId: "用户 ID",

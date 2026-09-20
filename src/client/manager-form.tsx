@@ -30,16 +30,24 @@ async function responseJson(response: Response): Promise<ApiEnvelope> {
   return value;
 }
 
-function AdminIdentityForm(props: { title: string; submit: string; accountLabel: string; userLabel: string; disabled: boolean; defaultAccount?: string; defaultUser?: string; danger?: boolean; onSubmit: (accountId: string, userId: string) => void }) {
+function AdminIdentityForm(props: { title: string; submit: string; accountLabel: string; userLabel: string; disabled: boolean; defaultAccount?: string; defaultUser?: string; danger?: boolean; hint?: string; accountOptions?: string[]; chooseAccountLabel?: string; noAccountsLabel?: string; onSubmit: (accountId: string, userId: string) => void }) {
   const [accountId, setAccountId] = useState(props.defaultAccount ?? "");
   const [userId, setUserId] = useState(props.defaultUser ?? "");
   useEffect(() => { setAccountId(props.defaultAccount ?? ""); }, [props.defaultAccount]);
   useEffect(() => { setUserId(props.defaultUser ?? ""); }, [props.defaultUser]);
+  // Picking from existing accounts is only possible once they were listed; the
+  // account must already exist, so there is nothing to create until then.
+  const accountsMissing = props.accountOptions !== undefined && props.accountOptions.length === 0;
   return <form className="ovm-adminForm" onSubmit={(event) => { event.preventDefault(); props.onSubmit(accountId, userId); }}>
     <h3>{props.title}</h3>
-    <label>{props.accountLabel}<input required value={accountId} onChange={(event) => setAccountId(event.target.value)} /></label>
+    {props.hint === undefined ? null : <p className="ovm-hint">{props.hint}</p>}
+    {props.accountOptions === undefined
+      ? <label>{props.accountLabel}<input required value={accountId} onChange={(event) => setAccountId(event.target.value)} /></label>
+      : accountsMissing
+        ? <p className="ovm-hint">{props.noAccountsLabel}</p>
+        : <label>{props.accountLabel}<select required value={accountId} onChange={(event) => setAccountId(event.target.value)}><option value="">{props.chooseAccountLabel}</option>{props.accountOptions.map((account) => <option key={account} value={account}>{account}</option>)}</select></label>}
     <label>{props.userLabel}<input required value={userId} onChange={(event) => setUserId(event.target.value)} /></label>
-    <button type="submit" className={props.danger ? "ovm-danger" : ""} disabled={props.disabled}>{props.submit}</button>
+    <button type="submit" className={props.danger ? "ovm-danger" : ""} disabled={props.disabled || accountsMissing}>{props.submit}</button>
   </form>;
 }
 
@@ -150,9 +158,9 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
       {adminUsers.length > 0 ? <label>{t("selectUser")}<select aria-label={t("selectUser")} value={selectedUser} onChange={(event) => setSelectedUser(event.target.value)}><option value="">{t("chooseUser")}</option>{adminUsers.map((user) => <option key={user.userId} value={user.userId}>{user.userId} ({user.role})</option>)}</select></label> : null}
       {adminStatus !== "" ? <p className="ovm-status" role="status">{adminStatus}</p> : null}
       <div className="ovm-adminTabs" role="tablist" aria-label={t("recoverTitle")}>{adminTabs.map((tab) => <button key={tab.id} id={`ovm-tab-${tab.id}`} type="button" role="tab" aria-selected={activeAdminTab === tab.id} aria-controls={`ovm-panel-${tab.id}`} className={activeAdminTab === tab.id ? "ovm-adminTab ovm-adminTabActive" : "ovm-adminTab"} onClick={() => setActiveAdminTab(tab.id)}>{t(tab.title)}</button>)}</div>
-      <div id="ovm-panel-create-account" role="tabpanel" aria-labelledby="ovm-tab-create-account" hidden={activeAdminTab !== "create-account"}><AdminIdentityForm title={t("createAccountTitle")} submit={t("createAccount")} accountLabel={t("accountId")} userLabel={t("userId")} disabled={busy} onSubmit={(accountId, userId) => void adminCall("create-account", { accountId, userId })} /></div>
-      <div id="ovm-panel-create-user" role="tabpanel" aria-labelledby="ovm-tab-create-user" hidden={activeAdminTab !== "create-user"}><AdminIdentityForm title={t("createUserTitle")} submit={t("createUser")} accountLabel={t("accountId")} userLabel={t("userId")} disabled={busy} defaultAccount={selectedAccount || config.account} onSubmit={(accountId, userId) => void adminCall("create-user", { accountId, userId })} /></div>
-      <div id="ovm-panel-rotate-user-key" role="tabpanel" aria-labelledby="ovm-tab-rotate-user-key" hidden={activeAdminTab !== "rotate-user-key"}><AdminIdentityForm title={t("regenerateTitle")} submit={t("regenerateKey")} accountLabel={t("accountId")} userLabel={t("userId")} disabled={busy} defaultAccount={selectedAccount || config.account} defaultUser={selectedUser || config.user} danger onSubmit={(accountId, userId) => void adminCall("rotate-user-key", { accountId, userId })} /></div>
+      <div id="ovm-panel-create-account" role="tabpanel" aria-labelledby="ovm-tab-create-account" hidden={activeAdminTab !== "create-account"}><AdminIdentityForm title={t("createAccountTitle")} hint={t("createAccountHint")} submit={t("createAccount")} accountLabel={t("accountId")} userLabel={t("userId")} disabled={busy} onSubmit={(accountId, userId) => void adminCall("create-account", { accountId, userId })} /></div>
+      <div id="ovm-panel-create-user" role="tabpanel" aria-labelledby="ovm-tab-create-user" hidden={activeAdminTab !== "create-user"}><AdminIdentityForm title={t("createUserTitle")} hint={t("createUserHint")} submit={t("createUser")} accountLabel={t("accountId")} userLabel={t("userId")} disabled={busy} accountOptions={adminAccounts} chooseAccountLabel={t("chooseAccount")} noAccountsLabel={t("noAccountsLoaded")} defaultAccount={selectedAccount} onSubmit={(accountId, userId) => void adminCall("create-user", { accountId, userId })} /></div>
+      <div id="ovm-panel-rotate-user-key" role="tabpanel" aria-labelledby="ovm-tab-rotate-user-key" hidden={activeAdminTab !== "rotate-user-key"}><AdminIdentityForm title={t("regenerateTitle")} hint={t("regenerateHint")} submit={t("regenerateKey")} accountLabel={t("accountId")} userLabel={t("userId")} disabled={busy} defaultAccount={selectedAccount || config.account} defaultUser={selectedUser || config.user} danger onSubmit={(accountId, userId) => void adminCall("rotate-user-key", { accountId, userId })} /></div>
     </div></details></section>
   </main>;
 }

@@ -50,6 +50,55 @@ async function startManagerFixture(openVikingUrl, { writeConfig = true } = {}) {
   };
 }
 
+test("lays out the recovery toggle inline with its heading", async ({ page }) => {
+  const openViking = await startOpenVikingFixture();
+  const manager = await startManagerFixture(openViking.url);
+  try {
+    await page.goto(manager.url);
+    const summary = page.locator("details.ovm-recovery > summary");
+    await expect(summary).toHaveCSS("display", "flex");
+    await expect(summary).toHaveCSS("align-items", "center");
+
+    const marker = await summary.evaluate((element) => {
+      const style = getComputedStyle(element, "::after");
+      return { float: style.float, borderTopWidth: style.borderTopWidth, width: style.width };
+    });
+    expect(marker.float).toBe("none");
+    expect(marker.borderTopWidth).toBe("1px");
+    expect(marker.width).toBe("24px");
+
+    const heading = await page.locator("details.ovm-recovery > summary > h2").boundingBox();
+    const toggle = await summary.boundingBox();
+    expect(Math.abs((heading.y + heading.height / 2) - (toggle.y + toggle.height / 2))).toBeLessThan(3);
+  } finally {
+    await manager.close();
+    await openViking.close();
+  }
+});
+
+test("distinguishes creating an account from adding a user", async ({ page }) => {
+  const openViking = await startOpenVikingFixture();
+  const manager = await startManagerFixture(openViking.url);
+  try {
+    await page.goto(manager.url);
+    await page.locator("details.ovm-recovery summary").click();
+
+    const createAccount = page.locator("#ovm-panel-create-account");
+    const createUser = page.locator("#ovm-panel-create-user");
+    await expect(createAccount.getByText("Creates a new account together with its first admin user.")).toBeVisible();
+    expect(await createAccount.getByLabel("Account ID").evaluate((element) => element.tagName)).toBe("INPUT");
+
+    await page.getByRole("tab", { name: "Create user" }).click();
+    await expect(createUser.getByText("Adds a user to an account that already exists.")).toBeVisible();
+    await expect(createUser.getByText(/List accounts first/)).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Create user" })).toHaveAttribute("aria-selected", "true");
+    expect(await createUser.getByRole("button", { name: "Create user" }).isDisabled()).toBe(true);
+  } finally {
+    await manager.close();
+    await openViking.close();
+  }
+});
+
 test("lists existing accounts and users using one temporary root key", async ({ page }) => {
   const openViking = await startOpenVikingFixture();
   const manager = await startManagerFixture(openViking.url);
@@ -71,6 +120,15 @@ test("lists existing accounts and users using one temporary root key", async ({ 
     await expect(page.getByText(/Found 2 user\(s\) in personal/)).toBeVisible();
     await expect(page.getByLabel("Existing user")).toHaveValue("alice");
     await expect(page.locator("body")).not.toContainText("root-for-test");
+
+    // Once accounts are listed, adding a user picks from them instead of typing one.
+    await page.getByRole("tab", { name: "Create user" }).click();
+    const createUser = page.locator("#ovm-panel-create-user");
+    const accountField = createUser.getByLabel("Account ID");
+    expect(await accountField.evaluate((element) => element.tagName)).toBe("SELECT");
+    await expect(accountField.locator("option")).toHaveCount(3);
+    await expect(accountField).toHaveValue("personal");
+    await expect(createUser.getByRole("button", { name: "Create user" })).toBeEnabled();
   } finally {
     await manager.close();
     await openViking.close();
