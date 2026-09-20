@@ -36,13 +36,13 @@
 从 npm 安装：
 
 ```bash
-dsh plugin --profile <profile> add dsh-openviking-manager
+dsh plugin --profile web add dsh-openviking-manager
 ```
 
 也可以直接从 GitHub 仓库安装：
 
 ```bash
-dsh plugin --profile <profile> add github:xbzbing/dsh-openviking-manager
+dsh plugin --profile web add github:xbzbing/dsh-openviking-manager
 ```
 
 两种方式都不执行构建：`lib/` 编译产物随 npm 包和仓库一同分发，因此无需授权 `allowBuilds`。安装后重启对应的 DSH profile 即可。
