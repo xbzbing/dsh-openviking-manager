@@ -32,7 +32,7 @@ dsh plugin --profile <profile> add github:xbzbing/dsh-openviking-manager
 
 ## 环境要求
 
-- Node.js `>= 24`
+- Node.js `>= 22`
 - DSH `>= 0.1.6-alpha.2 < 0.2.0`
 - 一个可访问的 OpenViking 服务
 

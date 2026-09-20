@@ -32,7 +32,7 @@ The `lib/` build artifacts are committed to this repository, so installing runs 
 
 ## Requirements
 
-- Node.js `>= 24`
+- Node.js `>= 22`
 - DSH `>= 0.1.6-alpha.2 < 0.2.0`
 - A reachable OpenViking service
 
