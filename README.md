@@ -17,13 +17,12 @@
 
 ## 界面
 
-| 连接与诊断 | 恢复与初始化 |
+| 在 DSH 中 | 恢复与初始化 |
 | :---: | :---: |
-| ![连接配置与密钥掩码](docs/assets/screenshots/zh/01-configuration.png) | ![恢复区 · 列出账号（默认 tab）](docs/assets/screenshots/zh/03-recovery-accounts.png) |
-| ![连接验证与本地发现](docs/assets/screenshots/zh/02-connection.png) | ![恢复区 · 创建账号](docs/assets/screenshots/zh/04-create-account.png) |
-| ![配置文件权限修复](docs/assets/screenshots/zh/06-permissions.png) | ![恢复区 · 创建用户](docs/assets/screenshots/zh/05-create-user.png) |
+| ![DSH 插件页中的 openviking-manager](docs/assets/screenshots/zh/01-plugin-list.png) | ![恢复或初始化访问：列出账号](docs/assets/screenshots/zh/03-recovery-accounts.png) |
+| ![插件配置页：连接配置与连接验证](docs/assets/screenshots/zh/02-configuration.png) | ![恢复或初始化访问：创建用户](docs/assets/screenshots/zh/04-create-user.png) |
 
-截图由 `npm run screenshots` 依据 `lib/` 中的真实界面重新生成，英文版见 [README_EN.md](README_EN.md)。
+截图由 `npm run screenshots` 在一个隔离的 DSH 实例中生成，英文版见 [README_EN.md](README_EN.md)。
 
 ## 安全边界
 

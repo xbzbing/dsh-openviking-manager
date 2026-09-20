@@ -17,13 +17,12 @@ English | [简体中文](README.md)
 
 ## Screenshots
 
-| Connection and diagnostics | Recovery and initialization |
+| In DSH | Recovery and initialization |
 | :---: | :---: |
-| ![Configuration with a masked key](docs/assets/screenshots/en/01-configuration.png) | ![Recovery: list accounts, the default tab](docs/assets/screenshots/en/03-recovery-accounts.png) |
-| ![Connection verification and local discovery](docs/assets/screenshots/en/02-connection.png) | ![Recovery: create account](docs/assets/screenshots/en/04-create-account.png) |
-| ![Configuration file permission repair](docs/assets/screenshots/en/06-permissions.png) | ![Recovery: create user](docs/assets/screenshots/en/05-create-user.png) |
+| ![openviking-manager in the DSH plugins page](docs/assets/screenshots/en/01-plugin-list.png) | ![Recover or initialize access: list accounts](docs/assets/screenshots/en/03-recovery-accounts.png) |
+| ![Plugin page: connection configuration and verification](docs/assets/screenshots/en/02-configuration.png) | ![Recover or initialize access: create user](docs/assets/screenshots/en/04-create-user.png) |
 
-Screenshots are regenerated from the real UI in `lib/` by `npm run screenshots`; the Simplified Chinese set lives in [README.md](README.md).
+Screenshots are captured from an isolated DSH instance by `npm run screenshots`; the Simplified Chinese set lives in [README.md](README.md).
 
 ## Security boundaries
 
