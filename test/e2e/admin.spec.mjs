@@ -26,10 +26,12 @@ async function startOpenVikingFixture() {
   };
 }
 
-async function startManagerFixture(openVikingUrl) {
+async function startManagerFixture(openVikingUrl, { writeConfig = true } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "dsh-ov-manager-e2e-admin-"));
   const configPath = join(directory, "ovcli.conf");
-  await writeFile(configPath, JSON.stringify({ url: openVikingUrl, api_key: "keep-this-secret", account: "personal", user: "alice" }), "utf8");
+  if (writeConfig) {
+    await writeFile(configPath, JSON.stringify({ url: openVikingUrl, api_key: "keep-this-secret", account: "personal", user: "alice" }), "utf8");
+  }
   const script = await readFile(join(root, "lib", "standalone.js"));
   const api = await import(join(root, "lib", "manager-api.js"));
   const routes = new Map(api.makeManagerRoutes({ ovcliPath: configPath }).map((route) => [route.path, route.handler]));
@@ -69,6 +71,49 @@ test("lists existing accounts and users using one temporary root key", async ({ 
     await expect(page.getByText(/Found 2 user\(s\) in personal/)).toBeVisible();
     await expect(page.getByLabel("Existing user")).toHaveValue("alice");
     await expect(page.locator("body")).not.toContainText("root-for-test");
+  } finally {
+    await manager.close();
+    await openViking.close();
+  }
+});
+
+test("asks to save the endpoint before recovery tools when no config is saved", async ({ page }) => {
+  const openViking = await startOpenVikingFixture();
+  const manager = await startManagerFixture(openViking.url, { writeConfig: false });
+  try {
+    await page.goto(manager.url);
+    await page.locator("details.ovm-recovery summary").click();
+    await expect(page.getByRole("alert")).toContainText("Save the OpenViking endpoint above first");
+
+    await page.getByLabel("Temporary root API key").fill("root-for-test");
+    await page.getByRole("button", { name: "List accounts" }).click();
+
+    await expect(page.getByRole("alert")).toContainText("Save the OpenViking endpoint above first");
+    await expect(page.locator("body")).not.toContainText("url must be a non-empty string");
+  } finally {
+    await manager.close();
+    await openViking.close();
+  }
+});
+
+test("unlocks recovery tools once the endpoint is saved", async ({ page }) => {
+  const openViking = await startOpenVikingFixture();
+  const manager = await startManagerFixture(openViking.url, { writeConfig: false });
+  try {
+    await page.goto(manager.url);
+    await page.locator("details.ovm-recovery summary").click();
+    await expect(page.getByRole("alert")).toBeVisible();
+
+    await page.getByLabel("OpenViking endpoint").fill(openViking.url);
+    await page.getByRole("textbox", { name: "Account", exact: true }).fill("personal");
+    await page.getByRole("textbox", { name: "User", exact: true }).fill("alice");
+    await page.getByRole("button", { name: "Save configuration" }).click();
+    await expect(page.getByRole("status").first()).toContainText("Configuration saved");
+    await expect(page.getByRole("alert")).not.toBeVisible();
+
+    await page.getByLabel("Temporary root API key").fill("root-for-test");
+    await page.getByRole("button", { name: "List accounts" }).click();
+    await expect(page.getByText(/Found 2 account/)).toBeVisible();
   } finally {
     await manager.close();
     await openViking.close();

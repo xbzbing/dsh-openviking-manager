@@ -24,6 +24,8 @@ test("uses Simplified Chinese when the browser language is Chinese", async ({ pa
     await page.goto(`http://127.0.0.1:${server.address().port}`);
     await expect(page.getByRole("heading", { name: "连接你的记忆工作区" })).toBeVisible();
     await expect(page.getByRole("button", { name: "保存配置" })).toBeVisible();
+    await page.locator("details.ovm-recovery summary").click();
+    await expect(page.getByRole("alert")).toContainText("请先在上方保存 OpenViking 服务地址");
   } finally {
     await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   }

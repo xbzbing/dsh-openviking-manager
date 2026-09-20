@@ -20,6 +20,7 @@ export type TranslationKey =
   | "noLocalRootKey"
   | "invalidConfig"
   | "endpoint"
+  | "endpointRequiredFirst"
   | "account"
   | "user"
   | "newUserKey"
@@ -82,6 +83,7 @@ const en: Record<TranslationKey, string> = {
   noLocalRootKey: "no local root key detected",
   invalidConfig: "The file needs repair before it can be safely reused. Enter the correct values and save a compatible configuration.",
   endpoint: "OpenViking endpoint",
+  endpointRequiredFirst: "Save the OpenViking endpoint above first, then use the recovery or initialization tools.",
   account: "Account",
   user: "User",
   newUserKey: "New user key",
@@ -143,6 +145,7 @@ const zh: Record<TranslationKey, string> = {
   noLocalRootKey: "未发现本机 root key",
   invalidConfig: "该文件需要修复后才能安全复用。请填写正确值并保存兼容配置。",
   endpoint: "OpenViking 服务地址",
+  endpointRequiredFirst: "请先在上方保存 OpenViking 服务地址，保存后再使用恢复或初始化工具。",
   account: "账号",
   user: "用户",
   newUserKey: "新的用户 Key",

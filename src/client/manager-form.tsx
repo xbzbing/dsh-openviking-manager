@@ -4,8 +4,11 @@ import { browserLocale, createTranslation, type Translation } from "./i18n.js";
 export interface ConfigView { url: string; account: string; user: string; apiKeySet: boolean; apiKeyMasked: string; }
 interface ConfigResult { kind: "missing" | "invalid-json" | "invalid-shape" | "ready"; config: ConfigView; permissionWarning?: boolean; message?: string; }
 interface DiscoveryResult { ovcli: ConfigResult; suggestedEndpoint: string; localServer: { found: boolean; authMode?: string; rootKeyAvailable: boolean; configError?: string }; }
-interface ApiEnvelope { ok: boolean; value?: ConfigResult; error?: string; }
+interface ApiEnvelope { ok: boolean; value?: ConfigResult; error?: string; code?: string; }
 export interface ManagerFormProps { apiPrefix?: string; fetchFn?: typeof fetch; t?: Translation; }
+
+/** Mirrors ENDPOINT_NOT_CONFIGURED_CODE in src/manager-api.ts across the client boundary. */
+const ENDPOINT_NOT_CONFIGURED = "endpoint-not-configured";
 
 const fallback: ConfigView = { url: "http://127.0.0.1:1933", account: "", user: "", apiKeySet: false, apiKeyMasked: "" };
 
@@ -19,7 +22,11 @@ const adminTabs: Array<{ id: AdminTab; title: "createAccount" | "createUser" | "
 
 async function responseJson(response: Response): Promise<ApiEnvelope> {
   const value = (await response.json()) as ApiEnvelope;
-  if (!response.ok || !value.ok) throw new Error(value.error ?? "OpenViking Manager request failed");
+  if (!response.ok || !value.ok) {
+    const error = new Error(value.error ?? "OpenViking Manager request failed") as Error & { code?: string };
+    if (typeof value.code === "string") error.code = value.code;
+    throw error;
+  }
   return value;
 }
 
@@ -87,6 +94,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
 
   const adminCall = async (operation: string, fields: Record<string, string> = {}) => {
     if (rootApiKey.trim() === "") { setAdminStatus(t("rootKeyRequired")); return; }
+    if (kind !== "ready") { setAdminStatus(t("endpointRequiredFirst")); return; }
     setBusy(true);
     try {
       const value = (await responseJson(await fetchFn(`${apiPrefix}/admin`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ operation, rootApiKey, ...fields }) }))).value as unknown as { accounts?: Array<{ accountId: string }>; users?: Array<{ userId: string; role: string }>; created?: { accountId: string; userId: string; userKey: string }; userKey?: string };
@@ -101,7 +109,10 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
       } else if (value.userKey) {
         setApiKey(value.userKey); setRootApiKey(""); setAdminStatus(t("keyRotated"));
       }
-    } catch (error) { setAdminStatus(error instanceof Error ? error.message : t("adminFailed")); }
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      setAdminStatus(code === ENDPOINT_NOT_CONFIGURED ? t("endpointRequiredFirst") : error instanceof Error ? error.message : t("adminFailed"));
+    }
     finally { setBusy(false); }
   };
 
@@ -132,6 +143,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
       </form>
     </section>
     <section className="ovm-card"><details className="ovm-recovery"><summary><h2>{t("recoverTitle")}</h2></summary><div className="ovm-recoveryContent"><p className="ovm-hint">{t("recoverHint")}</p>
+      {kind !== "ready" ? <p className="ovm-warning" role="alert">{t("endpointRequiredFirst")}</p> : null}
       <label>{t("temporaryRootKey")}<input type="password" value={rootApiKey} onChange={(event) => setRootApiKey(event.target.value)} placeholder={t("pasteRootKey")} /></label>
       <div className="ovm-actions"><button type="button" className="ovm-secondary" disabled={busy} onClick={() => void adminCall("accounts")}>{t("listAccounts")}</button>{rootApiKey !== "" ? <button type="button" className="ovm-secondary" disabled={busy} onClick={() => { setRootApiKey(""); setAdminStatus(t("rootKeyCleared")); }}>{t("clearRootKey")}</button> : null}</div>
       {adminAccounts.length > 0 ? <label>{t("selectAccount")}<select aria-label={t("selectAccount")} value={selectedAccount} onChange={(event) => { const accountId = event.target.value; setSelectedAccount(accountId); void adminCall("users", { accountId }); }}><option value="">{t("chooseAccount")}</option>{adminAccounts.map((account) => <option key={account} value={account}>{account}</option>)}</select></label> : null}
