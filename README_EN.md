@@ -33,11 +33,19 @@ Screenshots are captured from an isolated DSH instance by `npm run screenshots`;
 
 ## Install
 
+Install from npm:
+
+```bash
+dsh plugin --profile <profile> add dsh-openviking-manager
+```
+
+Or install straight from the GitHub repository:
+
 ```bash
 dsh plugin --profile <profile> add github:xbzbing/dsh-openviking-manager
 ```
 
-The `lib/` build artifacts are committed to this repository, so installing runs no build step and needs no `allowBuilds` approval. Restart the DSH profile afterwards.
+Neither path runs a build: the `lib/` artifacts ship with both the npm package and the repository, so no `allowBuilds` approval is needed. Restart the DSH profile afterwards.
 
 ## Requirements
 

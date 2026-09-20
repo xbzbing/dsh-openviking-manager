@@ -23,15 +23,17 @@
 
 ## 分发与安装
 
-支持从 GitHub 直接安装，安装过程不执行构建：
+同时支持 npm 与 GitHub 两种安装方式，安装过程都不执行构建：
 
 ```bash
-dsh plugin --profile <profile> add github:xbzbing/dsh-openviking-manager
+dsh plugin --profile <profile> add dsh-openviking-manager                 # npm
+dsh plugin --profile <profile> add github:xbzbing/dsh-openviking-manager  # GitHub
 ```
 
-- `lib/` 编译产物必须随 git 提交并保持与 `src/` 同步。git 安装只会取用仓库里的文件，不会运行 `tsc`/`esbuild`；`lib/` 缺失或过期会让 DSH 加载入口失败或加载到旧行为。
+- `lib/` 编译产物必须随 git 提交并保持与 `src/` 同步，同时通过 `files` 字段随 npm 包发布。两种安装方式都只取用现成产物，不会运行 `tsc`/`esbuild`；`lib/` 缺失或过期会让 DSH 加载入口失败或加载到旧行为。
 - 不要添加 `prepare`、`prepublishOnly` 或其他安装期构建脚本。pnpm 会阻止 git 依赖的构建脚本并等待 `allowBuilds` 授权，那会让上述直接安装变成需要人工授权才能完成。
 - `lib/standalone.js` 只是 Playwright 使用的浏览器 fixture，不提交、不随包发布；`npm run test:e2e` 会先重新构建它。
+- 发布 npm 版本前先运行 `npm run build` 并提交 `lib/`，再执行 `npm publish`，避免发出与 `src/` 不同步的产物。
 
 ## 测试与验证
 
