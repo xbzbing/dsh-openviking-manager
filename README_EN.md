@@ -22,6 +22,14 @@ English | [简体中文](README.md)
 - Management routes accept same-origin requests only, use `no-store` responses, and do not log authorization headers.
 - This plugin does not start, stop, or reconfigure the OpenViking server, and does not replace the official memory plugin.
 
+## Install
+
+```bash
+dsh plugin --profile <profile> add github:xbzbing/dsh-openviking-manager
+```
+
+The `lib/` build artifacts are committed to this repository, so installing runs no build step and needs no `allowBuilds` approval. Restart the DSH profile afterwards.
+
 ## Requirements
 
 - Node.js `>= 24`
@@ -32,11 +40,11 @@ English | [简体中文](README.md)
 
 ```bash
 npm ci
-npm run build       # Generates lib/ only; no .tgz is produced
+npm run build       # Generates lib/; no .tgz is produced
 npm test            # Unit tests + Playwright E2E
 ```
 
-Build artifacts live in `lib/`. The build workflow neither creates nor retains a `.tgz` package. A release pipeline can package the plugin when needed.
+`lib/` ships through git, so after changing `src/` you must rebuild and commit it; otherwise a GitHub install loads a missing or stale entry point. `lib/standalone.js` exists only for Playwright: it is neither committed nor published. The build workflow neither creates nor retains a `.tgz` package.
 
 ## Tests
 

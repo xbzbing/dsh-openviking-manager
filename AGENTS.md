@@ -19,7 +19,19 @@
 - UI 的可见文案一律通过 `src/client/i18n.ts` 的 `TranslationKey`。新增 key 时必须同步 `en` 和 `zh` 两个字典。
 - 在 DSH 中跟随 `ctx.locale`；独立 E2E 页面通过浏览器语言回退。
 - CSS 位于 `src/client/styles.ts`。维持 DSH 设计 token、原生可访问控件和响应式栅格。
-- `npm run build` 只生成 `lib/`。不要把 `.tgz` 当成编译产物或提交到仓库。
+- `npm run build` 生成 `lib/`。`lib/` 是要提交的编译产物，见「分发与安装」。不要把 `.tgz` 当成编译产物或提交到仓库。
+
+## 分发与安装
+
+支持从 GitHub 直接安装，安装过程不执行构建：
+
+```bash
+dsh plugin --profile <profile> add github:xbzbing/dsh-openviking-manager
+```
+
+- `lib/` 编译产物必须随 git 提交并保持与 `src/` 同步。git 安装只会取用仓库里的文件，不会运行 `tsc`/`esbuild`；`lib/` 缺失或过期会让 DSH 加载入口失败或加载到旧行为。
+- 不要添加 `prepare`、`prepublishOnly` 或其他安装期构建脚本。pnpm 会阻止 git 依赖的构建脚本并等待 `allowBuilds` 授权，那会让上述直接安装变成需要人工授权才能完成。
+- `lib/standalone.js` 只是 Playwright 使用的浏览器 fixture，不提交、不随包发布；`npm run test:e2e` 会先重新构建它。
 
 ## 测试与验证
 
@@ -39,5 +51,6 @@ npm test
 ## Git 约定
 
 - 每个可验证的功能切片使用一个原子提交。
-- 不提交 `node_modules/`、`lib/`、`playwright-report/`、`test-results/`、`.tgz` 或任何真实密钥。
+- 提交 `lib/` 编译产物：改动 `src/` 后必须重新运行 `npm run build`，并把 `lib/` 与源码放进同一个提交，避免 GitHub 安装到过期入口。
+- 不提交 `node_modules/`、`lib/standalone.js`、`playwright-report/`、`test-results/`、`.tgz` 或任何真实密钥。
 - 提交前运行相应测试并检查 `git diff --check`。

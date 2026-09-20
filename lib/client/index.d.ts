@@ -1,0 +1,11 @@
+import type { Context as ClientContext } from "@deepseek-ai/cordis";
+import { type TranslationKey } from "./i18n.js";
+import { ManagerForm } from "./manager-form.js";
+declare module "@deepseek-ai/dsh-client-ui-slots" {
+    interface LocaleNamespaceMap {
+        "openviking-manager": TranslationKey;
+    }
+}
+export declare const inject: string[];
+export declare function apply(ctx: ClientContext): void;
+export { ManagerForm };

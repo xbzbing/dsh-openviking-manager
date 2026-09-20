@@ -19,6 +19,7 @@
   },
   "files": [
     "lib",
+    "!lib/standalone.*",
     "cordis.patch.yml",
     "README.md",
     "README_EN.md",

@@ -22,6 +22,14 @@
 - 多数管理路由仅接受同源请求，响应使用 `no-store`，且不在日志中记录请求头。
 - 本插件不启动、停止或修改 OpenViking 服务端，也不替换官方记忆插件。
 
+## 安装
+
+```bash
+dsh plugin --profile <profile> add github:xbzbing/dsh-openviking-manager
+```
+
+`lib/` 编译产物随仓库提交，安装过程不需要构建，也不需要额外授权 `allowBuilds`。安装后重启对应的 DSH profile 即可。
+
 ## 环境要求
 
 - Node.js `>= 24`
@@ -32,11 +40,11 @@
 
 ```bash
 npm ci
-npm run build       # 仅生成 lib/ 编译产物，不会生成 .tgz
+npm run build       # 生成 lib/ 编译产物，不会生成 .tgz
 npm test            # 单元测试 + Playwright E2E
 ```
 
-编译产物在 `lib/`；仓库不会在构建流程中生成或保留 `.tgz` 安装包。如需发布，由发布流水线按需执行打包。
+`lib/` 是随 git 分发的编译产物，改动 `src/` 后必须重新构建并提交，否则从 GitHub 安装会加载到缺失或过期的入口。`lib/standalone.js` 仅供 Playwright 使用，不提交也不随包发布。仓库不会在构建流程中生成或保留 `.tgz` 安装包。
 
 ## 测试
 
