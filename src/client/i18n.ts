@@ -40,6 +40,8 @@ export type TranslationKey =
   | "temporaryRootKey"
   | "pasteRootKey"
   | "listAccounts"
+  | "listAccountsTitle"
+  | "listAccountsHint"
   | "clearRootKey"
   | "rootKeyCleared"
   | "selectAccount"
@@ -107,6 +109,8 @@ const en: Record<TranslationKey, string> = {
   temporaryRootKey: "Temporary root API key",
   pasteRootKey: "Paste root_api_key for this operation only",
   listAccounts: "List accounts",
+  listAccountsTitle: "Accounts and users on this server",
+  listAccountsHint: "Loads what this root API key can manage, then lets you pick an account and one of its users.",
   clearRootKey: "Clear temporary root key",
   rootKeyCleared: "Temporary root API key cleared.",
   selectAccount: "Existing account",
@@ -173,6 +177,8 @@ const zh: Record<TranslationKey, string> = {
   temporaryRootKey: "临时 root API key",
   pasteRootKey: "仅为本次操作粘贴 root_api_key",
   listAccounts: "列出账号",
+  listAccountsTitle: "本机服务上的账号和用户",
+  listAccountsHint: "加载该 root API key 可管理的账号，然后可选择账号及其中的用户。",
   clearRootKey: "清除临时 root key",
   rootKeyCleared: "临时 root API key 已清除。",
   selectAccount: "已有账号",

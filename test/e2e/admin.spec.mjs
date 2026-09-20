@@ -7,9 +7,10 @@ import { test, expect } from "@playwright/test";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 
-// The add-user panel repeats this action for convenience, so scope the
-// recovery section's own button instead of relying on which panel is visible.
-const recoveryListAccounts = (page) => page.locator("details.ovm-recovery .ovm-actions").getByRole("button", { name: "List accounts" });
+// "List accounts" is now the first tab; its action lives inside that panel, and
+// the add-user panel repeats it, so scope the lookup to the list-accounts panel.
+const listAccountsPanel = (page) => page.locator("#ovm-panel-list-accounts");
+const listAccountsAction = (page) => listAccountsPanel(page).getByRole("button", { name: "List accounts" });
 
 async function startOpenVikingFixture() {
   const server = createServer((req, res) => {
@@ -80,12 +81,32 @@ test("lays out the recovery toggle inline with its heading", async ({ page }) =>
   }
 });
 
+test("opens the recovery section on the list-accounts tab", async ({ page }) => {
+  const openViking = await startOpenVikingFixture();
+  const manager = await startManagerFixture(openViking.url);
+  try {
+    await page.goto(manager.url);
+    await page.locator("details.ovm-recovery summary").click();
+
+    const tabs = page.getByRole("tab");
+    await expect(tabs).toHaveCount(4);
+    await expect(tabs.first()).toHaveText("List accounts");
+    await expect(page.getByRole("tab", { name: "List accounts" })).toHaveAttribute("aria-selected", "true");
+    await expect(listAccountsPanel(page)).toBeVisible();
+    await expect(page.locator("#ovm-panel-create-account")).not.toBeVisible();
+  } finally {
+    await manager.close();
+    await openViking.close();
+  }
+});
+
 test("distinguishes creating an account from adding a user", async ({ page }) => {
   const openViking = await startOpenVikingFixture();
   const manager = await startManagerFixture(openViking.url);
   try {
     await page.goto(manager.url);
     await page.locator("details.ovm-recovery summary").click();
+    await page.getByRole("tab", { name: "Create account" }).click();
 
     const createAccount = page.locator("#ovm-panel-create-account");
     const createUser = page.locator("#ovm-panel-create-user");
@@ -134,15 +155,11 @@ test("lists existing accounts and users using one temporary root key", async ({ 
     await page.goto(manager.url);
     await page.locator("details.ovm-recovery summary").click();
     await expect(page.getByRole("tablist")).toBeVisible();
-    await expect(page.getByRole("tab", { name: "Create account" })).toHaveAttribute("aria-selected", "true");
-    await expect(page.getByRole("heading", { name: "Create account and first user" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Create user in current account" })).not.toBeVisible();
-    await page.getByRole("tab", { name: "Create user" }).click();
-    await expect(page.getByRole("tab", { name: "Create user" })).toHaveAttribute("aria-selected", "true");
-    await expect(page.getByRole("heading", { name: "Create user in current account" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "List accounts" })).toHaveAttribute("aria-selected", "true");
     await expect(page.getByRole("heading", { name: "Create account and first user" })).not.toBeVisible();
+
     await page.getByLabel("Temporary root API key").fill("root-for-test");
-    await recoveryListAccounts(page).click();
+    await listAccountsAction(page).click();
     await expect(page.getByText(/Found 2 account/)).toBeVisible();
     await page.getByLabel("Existing account").selectOption("personal");
     await expect(page.getByText(/Found 2 user\(s\) in personal/)).toBeVisible();
@@ -151,6 +168,8 @@ test("lists existing accounts and users using one temporary root key", async ({ 
 
     // Once accounts are listed, adding a user picks from them instead of typing one.
     await page.getByRole("tab", { name: "Create user" }).click();
+    await expect(page.getByRole("tab", { name: "Create user" })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("heading", { name: "Create user in current account" })).toBeVisible();
     const createUser = page.locator("#ovm-panel-create-user");
     const accountField = createUser.getByLabel("Account ID");
     expect(await accountField.evaluate((element) => element.tagName)).toBe("SELECT");
@@ -172,7 +191,7 @@ test("asks to save the endpoint before recovery tools when no config is saved", 
     await expect(page.getByRole("alert")).toContainText("Save the OpenViking endpoint above first");
 
     await page.getByLabel("Temporary root API key").fill("root-for-test");
-    await recoveryListAccounts(page).click();
+    await listAccountsAction(page).click();
 
     await expect(page.getByRole("alert")).toContainText("Save the OpenViking endpoint above first");
     await expect(page.locator("body")).not.toContainText("url must be a non-empty string");
@@ -198,7 +217,7 @@ test("unlocks recovery tools once the endpoint is saved", async ({ page }) => {
     await expect(page.getByRole("alert")).not.toBeVisible();
 
     await page.getByLabel("Temporary root API key").fill("root-for-test");
-    await recoveryListAccounts(page).click();
+    await listAccountsAction(page).click();
     await expect(page.getByText(/Found 2 account/)).toBeVisible();
   } finally {
     await manager.close();
