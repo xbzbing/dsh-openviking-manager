@@ -55,6 +55,7 @@ dsh plugin --profile web add github:xbzbing/dsh-openviking-manager
 - Node.js `>= 22`
 - DSH `>= 0.1.6-alpha.2 < 0.2.0`
 - 一个可访问的 OpenViking 服务
+- 官方 `@openviking/dsh-memory-plugin` `>= 0.3.2`（不设上限；本仓库已完整测试至 `0.5.0`）
 
 ## 开发
 

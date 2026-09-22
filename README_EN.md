@@ -55,6 +55,7 @@ Restarting the corresponding DSH profile may be required afterwards; the `openvi
 - Node.js `>= 22`
 - DSH `>= 0.1.6-alpha.2 < 0.2.0`
 - A reachable OpenViking service
+- Official `@openviking/dsh-memory-plugin` `>= 0.3.2` (no upper bound; this repository has been fully tested through `0.5.0`)
 
 ## Development
 
