@@ -5,6 +5,7 @@ export interface ConfigView { url: string; account: string; user: string; apiKey
 interface ConfigResult { kind: "missing" | "invalid-json" | "invalid-shape" | "ready"; config: ConfigView; permissionWarning?: boolean; message?: string; }
 interface DiscoveryResult { ovcli: ConfigResult; suggestedEndpoint: string; localServer: { found: boolean; authMode?: string; rootKeyAvailable: boolean; configError?: string }; }
 interface ApiEnvelope { ok: boolean; value?: ConfigResult; error?: string; code?: string; }
+interface VersionView { current: string; repositoryUrl?: string; latest?: string; updateAvailable: boolean; releaseUrl?: string; checkedRemote: boolean; error?: string; }
 export interface ManagerFormProps { apiPrefix?: string; fetchFn?: typeof fetch; t?: Translation; }
 
 /** Mirrors ENDPOINT_NOT_CONFIGURED_CODE in src/manager-api.ts across the client boundary. */
@@ -70,6 +71,9 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   const [selectedUser, setSelectedUser] = useState("");
   const [adminStatus, setAdminStatus] = useState("");
   const [activeAdminTab, setActiveAdminTab] = useState<AdminTab>("list-accounts");
+  const [version, setVersion] = useState<VersionView>();
+  const [versionStatus, setVersionStatus] = useState("");
+  const [checkingVersion, setCheckingVersion] = useState(false);
 
   const load = async () => {
     setBusy(true);
@@ -84,7 +88,28 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     } catch (error) { setStatus(error instanceof Error ? error.message : t("unableLoad")); }
     finally { setBusy(false); }
   };
-  useEffect(() => { void load(); }, []);
+  const loadVersion = async () => {
+    try {
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/version`))).value as unknown as VersionView;
+      setVersion(value);
+    } catch { /* version info is non-critical; leave the section hidden on failure */ }
+  };
+  useEffect(() => { void load(); void loadVersion(); }, []);
+
+  const checkUpdates = async () => {
+    setCheckingVersion(true);
+    setVersionStatus(t("checkingUpdates"));
+    try {
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/version?check=1`))).value as unknown as VersionView;
+      setVersion(value);
+      if (value.error !== undefined) setVersionStatus(t("updateCheckFailed", { error: value.error }));
+      else if (value.updateAvailable && value.latest !== undefined) setVersionStatus(t("updateAvailable", { latest: value.latest, current: value.current }));
+      else setVersionStatus(t("upToDate", { current: value.current }));
+    } catch (error) {
+      setVersionStatus(t("updateCheckFailed", { error: error instanceof Error ? error.message : "unknown" }));
+    }
+    finally { setCheckingVersion(false); }
+  };
 
   const save = async (event: React.FormEvent) => {
     event.preventDefault(); setBusy(true);
@@ -171,5 +196,15 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
       <div id="ovm-panel-create-user" role="tabpanel" aria-labelledby="ovm-tab-create-user" hidden={activeAdminTab !== "create-user"}><AdminIdentityForm title={t("createUserTitle")} hint={t("createUserHint")} submit={t("createUser")} accountLabel={t("accountId")} userLabel={t("userId")} disabled={busy} accountOptions={adminAccounts} chooseAccountLabel={t("chooseAccount")} noAccountsLabel={t("noAccountsLoaded")} loadAccountsLabel={t("listAccounts")} onLoadAccounts={() => void adminCall("accounts")} defaultAccount={selectedAccount} onSubmit={(accountId, userId) => void adminCall("create-user", { accountId, userId })} /></div>
       <div id="ovm-panel-rotate-user-key" role="tabpanel" aria-labelledby="ovm-tab-rotate-user-key" hidden={activeAdminTab !== "rotate-user-key"}><AdminIdentityForm title={t("regenerateTitle")} hint={t("regenerateHint")} submit={t("regenerateKey")} accountLabel={t("accountId")} userLabel={t("userId")} disabled={busy} defaultAccount={selectedAccount || config.account} defaultUser={selectedUser || config.user} danger onSubmit={(accountId, userId) => void adminCall("rotate-user-key", { accountId, userId })} /></div>
     </div></details></section>
+    <section className="ovm-card ovm-about">
+      <h2>{t("aboutTitle")}</h2>
+      <p className="ovm-hint">{t("currentVersion", { version: version?.current ?? "…" })}</p>
+      {version?.repositoryUrl !== undefined ? <p className="ovm-hint">{t("githubRepository")}: <a href={version.repositoryUrl} target="_blank" rel="noreferrer">{version.repositoryUrl}</a></p> : null}
+      <div className="ovm-actions">
+        <button type="button" className="ovm-secondary" onClick={() => void checkUpdates()} disabled={checkingVersion}>{t("checkUpdates")}</button>
+        {version?.updateAvailable && version.releaseUrl !== undefined ? <a href={version.releaseUrl} target="_blank" rel="noreferrer">{t("viewRelease")}</a> : null}
+      </div>
+      {versionStatus !== "" ? <p className={version?.error !== undefined ? "ovm-warning" : "ovm-status"} role="status">{versionStatus}</p> : null}
+    </section>
   </main>;
 }

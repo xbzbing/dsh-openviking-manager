@@ -69,7 +69,17 @@ export type TranslationKey =
   | "toggleLabel"
   | "toggleLabelOff"
   | "toggleAction"
-  | "toggleFailed";
+  | "toggleFailed"
+  | "aboutTitle"
+  | "currentVersion"
+  | "githubRepository"
+  | "openRepository"
+  | "checkUpdates"
+  | "checkingUpdates"
+  | "updateAvailable"
+  | "upToDate"
+  | "updateCheckFailed"
+  | "viewRelease";
 
 export type Translation = (key: TranslationKey, params?: Record<string, string | number>) => string;
 
@@ -143,6 +153,16 @@ const en: Record<TranslationKey, string> = {
   toggleLabelOff: "OpenViking off",
   toggleAction: "Toggle OpenViking memory for this session",
   toggleFailed: "Unable to update the OpenViking toggle.",
+  aboutTitle: "About this plugin",
+  currentVersion: "Installed version: {version}",
+  githubRepository: "GitHub repository",
+  openRepository: "Open on GitHub",
+  checkUpdates: "Check for updates",
+  checkingUpdates: "Checking for updates…",
+  updateAvailable: "A new version {latest} is available (installed {current}).",
+  upToDate: "You are on the latest version ({current}).",
+  updateCheckFailed: "Unable to check for updates: {error}",
+  viewRelease: "View release",
 };
 
 const zh: Record<TranslationKey, string> = {
@@ -215,6 +235,16 @@ const zh: Record<TranslationKey, string> = {
   toggleLabelOff: "OpenViking 关",
   toggleAction: "切换本会话的 OpenViking 记忆开关",
   toggleFailed: "无法更新 OpenViking 开关。",
+  aboutTitle: "关于本插件",
+  currentVersion: "已安装版本：{version}",
+  githubRepository: "GitHub 仓库",
+  openRepository: "在 GitHub 打开",
+  checkUpdates: "检查新版本",
+  checkingUpdates: "正在检查新版本…",
+  updateAvailable: "发现新版本 {latest}（当前 {current}）。",
+  upToDate: "当前已是最新版本（{current}）。",
+  updateCheckFailed: "无法检查更新：{error}",
+  viewRelease: "查看版本",
 };
 
 export const dictionaries = { en, zh } as const;

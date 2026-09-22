@@ -8,6 +8,7 @@ import { makeManagerRoutes } from "../../lib/manager-api.js";
 
 const ADMIN_PATH = "/plugins/dsh-openviking-manager/api/admin";
 const SESSION_TOGGLE_PATH = "/plugins/dsh-openviking-manager/api/session-toggle";
+const VERSION_PATH = "/plugins/dsh-openviking-manager/api/version";
 
 async function withRoutes(t, ovcliPath) {
   const routes = new Map(makeManagerRoutes({ ovcliPath }).map((route) => [route.path, route.handler]));
@@ -117,4 +118,25 @@ test("session-toggle reads the default and applies validated updates", async (t)
 
   const oversized = await fetch(`${base}${SESSION_TOGGLE_PATH}?sessionId=${"x".repeat(513)}`);
   assert.equal(oversized.status, 400);
+});
+
+test("version returns the local version view without a remote check by default", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "dsh-ovm-manager-api-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const base = await withRoutes(t, join(directory, "ovcli.conf"));
+
+  const response = await fetch(`${base}${VERSION_PATH}`);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  const json = await response.json();
+  assert.equal(json.ok, true);
+  assert.equal(typeof json.value.current, "string");
+  assert.equal(json.value.checkedRemote, false);
+  assert.equal(json.value.repositoryUrl, "https://github.com/xbzbing/dsh-openviking-manager");
+
+  const badMethod = await fetch(`${base}${VERSION_PATH}`, { method: "POST" });
+  assert.equal(badMethod.status, 405);
+
+  const crossOrigin = await fetch(`${base}${VERSION_PATH}`, { headers: { origin: "https://attacker.example" } });
+  assert.equal(crossOrigin.status, 403);
 });

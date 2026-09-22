@@ -7,6 +7,7 @@ import { loadOvcliConfig, loadOvcliUserKey, repairOvcliPermissions, saveOvcliCon
 import { probeOpenViking } from "./openviking-client.js";
 import { createAccount, createUser, listAccounts, listUsers, rotateUserKey } from "./openviking-admin.js";
 import { isSessionOpenVikingEnabled, normalizeSessionId, setOpenVikingEnabled } from "./session-toggle.js";
+import { checkLatestVersion, readVersionInfo } from "./version.js";
 
 export const MANAGER_API_PREFIX = "/plugins/dsh-openviking-manager/api";
 /** Sent when an admin operation is attempted before an OpenViking endpoint is saved. */
@@ -264,6 +265,27 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
           writeJson(res, 200, { ok: true, value: await loadOvcliConfig(ovcliPath) });
         } catch (error) {
           writeJson(res, 403, { ok: false, error: error instanceof Error ? error.message : "Unable to repair file permissions" });
+        }
+      },
+    },
+    {
+      kind: "exact",
+      path: `${MANAGER_API_PREFIX}/version`,
+      handler: async (req, res) => {
+        if (rejectCrossOrigin(req, res)) return;
+        if (req.method !== "GET") {
+          writeJson(res, 405, { error: "method not allowed" });
+          return;
+        }
+        // A remote check only runs when the caller explicitly asks for it;
+        // the default GET stays offline and returns the local version view.
+        const url = new URL(req.url ?? "/", "http://localhost");
+        const wantsRemote = url.searchParams.get("check") === "1";
+        try {
+          const value = wantsRemote ? await checkLatestVersion() : await readVersionInfo();
+          writeJson(res, 200, { ok: true, value });
+        } catch (error) {
+          writeJson(res, 500, { ok: false, error: error instanceof Error ? error.message : "Unable to read version information" });
         }
       },
     },

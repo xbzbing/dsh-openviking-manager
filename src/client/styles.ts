@@ -4,6 +4,7 @@ export const managerCss = `
 `;
 
 export const toggleCss = `
+.ovm-about h2{margin:0 0 8px}.ovm-about .ovm-hint a{color:#1f5d50;word-break:break-all}.ovm-about .ovm-warning{display:block;margin-top:10px}
 .ovm-standaloneToggle{padding:12px 28px 0}.ovm-ovToggle{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--dsw-alias-border-l2,#ccd3da);border-radius:999px;background:var(--dsw-alias-bg-layer-1,#f6f8fa);color:var(--dsw-alias-label-secondary,#59636e);padding:2px 10px;font:inherit;font-size:13px;font-weight:500;line-height:20px;cursor:pointer}.ovm-ovToggle:hover:not(:disabled){background:var(--dsw-alias-bg-layer-2,#fff);color:var(--dsw-alias-label-primary,#202124)}.ovm-ovToggle:focus-visible{outline:2px solid #1f5d50;outline-offset:2px}.ovm-ovToggle:disabled{opacity:.6;cursor:default}.ovm-ovToggleDot{width:7px;height:7px;border-radius:50%;background:#1f8a70;flex:0 0 auto}.ovm-ovToggleOff .ovm-ovToggleDot{background:#9aa5b1}.ovm-ovToggleOff{color:var(--dsw-alias-label-tertiary,#77818b)}
 `;
 
