@@ -1,5 +1,6 @@
-# dsh-openviking-manager only provides a configuration UI and local manager.
-# It does not replace or configure the official OpenViking memory plugin.
+# dsh-openviking-manager provides a configuration UI, local manager, and a
+# per-session toggle over the official OpenViking memory plugin (inject / strip
+# / MCP tool gating). It does not replace or configure the official plugin itself.
 - insert:
     - id: openviking-manager
       name: 'dsh-openviking-manager'

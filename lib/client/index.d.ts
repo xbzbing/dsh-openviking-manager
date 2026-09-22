@@ -6,6 +6,14 @@ declare module "@deepseek-ai/dsh-client-ui-slots" {
         "openviking-manager": TranslationKey;
     }
 }
+declare module "@deepseek-ai/dsh-client-ui-slots" {
+    interface SlotMap {
+        "conversation.input.left": {
+            kind: "list";
+            scope: "session";
+        };
+    }
+}
 export declare const inject: string[];
 export declare function apply(ctx: ClientContext): void;
 export { ManagerForm };

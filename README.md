@@ -2,7 +2,7 @@
 
 [English](README_EN.md) | 简体中文
 
-`dsh-openviking-manager` 是一个 DSH Web UI 插件，用于管理已有 OpenViking 服务的客户端连接、用户 Key 和本机配置诊断。它只管理客户端配置；记忆同步、提交和召回仍由官方 [`@openviking/dsh-memory-plugin`](https://www.npmjs.com/package/@openviking/dsh-memory-plugin) 负责。
+`dsh-openviking-manager` 是一个 DSH Web UI 插件，用于管理已有 OpenViking 服务的客户端连接、用户 Key 和本机配置诊断，并提供会话级的 OpenViking 记忆开关。它只管理客户端配置与启停；记忆同步、提交和召回本身仍由官方 [`@openviking/dsh-memory-plugin`](https://www.npmjs.com/package/@openviking/dsh-memory-plugin) 负责。
 
 OpenViking 是**火山引擎开源，专门给 AI Agent 设计的上下文数据库**，用来解决 Agent 长上下文、记忆、知识库管理问题。OpenViking 需要部署对应的服务端程序，服务支持远程访问和账号隔离，因此也适用于做跨设备、跨会话的远程记忆中心。本插件只是为 OpenViking 增加一个配置界面，便于管理本地的客户端配置。
 
@@ -17,6 +17,7 @@ OpenViking 的安装配置详见其官方网站：[DeepSeek Harness 记忆插件
 - 本机发现：读取 `~/.openviking/ov.conf` 的非敏感状态，例如认证模式、是否存在 root key；`ovcli.conf` 始终优先；
 - 临时使用 `root_api_key` 调用官方 Admin API：列账号、列用户、创建账号/用户、重新生成用户 Key；
 - 根据当前 endpoint 推导 Studio 地址（`<endpoint>/studio`），允许用户手工改为反向代理地址；
+- 会话级 OpenViking 开关：对话输入框左侧的按钮（默认开启）。关闭某个会话后，本插件会拦截官方插件在该会话的上下文注入、记忆写入/提交，并拒绝其 `mcp__openviking__*` 工具调用，使该会话不再读写 OpenViking；
 - UI 跟随 DSH 系统语言设置，支持简体中文和英文。
 
 ## 界面
@@ -33,7 +34,8 @@ OpenViking 的安装配置详见其官方网站：[DeepSeek Harness 记忆插件
 - `root_api_key` 只在浏览器表单和一次同源管理请求期间使用，绝不写入 `ovcli.conf`；创建/轮换完成后插件会清空该输入。
 - 现有 `user_key` 从服务端本地读取，浏览器只收到掩码；连接验证可在不回显旧 key 的情况下完成。
 - 多数管理路由仅接受同源请求，响应使用 `no-store`，且不在日志中记录请求头。
-- 本插件不启动、停止或修改 OpenViking 服务端，也不替换官方记忆插件。
+- 会话开关状态仅保存在插件进程内存中，重启 DSH 后所有会话恢复默认开启。
+- 关闭只对之后的 agent step 生效：历史消息里已注入的 OpenViking 上下文在被压缩前仍留在该会话中；关闭期间官方插件此前排队的待提交写入仍可能由其全局恢复逻辑补发。本插件不启动、停止或修改 OpenViking 服务端，也不替换官方记忆插件。
 
 ## 安装
 
@@ -81,8 +83,12 @@ src/
   local-discovery.ts    ov.conf 非敏感发现
   openviking-client.ts  数据面连通性与身份验证
   openviking-admin.ts   官方 Admin API 适配
-  manager-api.ts        DSH 同源 HTTP 路由
-  client/               DSH Web 页面、样式和 i18n
+  manager-api.ts        DSH 同源 HTTP 路由（含会话开关）
+  session-toggle.ts     会话级 OpenViking 开关的内存状态
+  ov-prestep.ts         识别并剥离官方插件注入的 pre-step 消息
+  ov-tool-guard.ts      关闭会话对 mcp__openviking__* 工具的拒绝
+  openviking-gate.ts    对官方 OpenVikingRuntime 的按会话短路包装
+  client/               DSH Web 页面、输入框开关按钮、样式和 i18n
 ```
 
 ## 许可证

@@ -2,7 +2,7 @@
 
 English | [简体中文](README.md)
 
-`dsh-openviking-manager` is a DSH Web UI plugin for managing an existing OpenViking service connection, user keys, and local configuration diagnostics. It manages client configuration only; memory synchronization, commit, and recall remain the responsibility of the official [`@openviking/dsh-memory-plugin`](https://www.npmjs.com/package/@openviking/dsh-memory-plugin).
+`dsh-openviking-manager` is a DSH Web UI plugin for managing an existing OpenViking service connection, user keys, and local configuration diagnostics, plus a per-session OpenViking memory toggle. It manages client configuration and enablement only; memory synchronization, commit, and recall remain the responsibility of the official [`@openviking/dsh-memory-plugin`](https://www.npmjs.com/package/@openviking/dsh-memory-plugin).
 
 OpenViking is an **open-source context database from Volcengine, purpose-built for AI agents**, solving long-context, memory, and knowledge-base management for agents. It requires deploying the corresponding server; because the service supports remote access and account isolation, it also serves as a remote memory hub shared across devices and sessions. This plugin only adds a configuration UI for OpenViking, to make the local client configuration easier to manage.
 
@@ -17,6 +17,7 @@ See the official documentation for installing and configuring OpenViking: [DeepS
 - Local discovery reads non-sensitive `~/.openviking/ov.conf` state, such as authentication mode and root-key availability. `ovcli.conf` always takes precedence.
 - Temporarily use a `root_api_key` with the official Admin API to list accounts/users, create accounts/users, and rotate a user key.
 - Derive the Studio URL as `<endpoint>/studio`; users can override it for a reverse proxy.
+- Per-session OpenViking toggle: a button on the left of the conversation input toolbar (on by default). Turning a session off makes this plugin intercept the official plugin's context injection and memory writes/commits for that session and deny its `mcp__openviking__*` tool calls, so the session no longer reads or writes OpenViking.
 - Follow the DSH system language setting with Simplified Chinese and English UI dictionaries.
 
 ## Screenshots
@@ -33,7 +34,8 @@ Screenshots are captured from an isolated DSH instance by `npm run screenshots`;
 - `root_api_key` is used only for the current browser form and a same-origin management request. It is never written to `ovcli.conf`; the form is cleared after creation or key rotation succeeds.
 - An existing `user_key` is read locally by the server and never returned to the browser in plaintext. Connection verification works without exposing that key.
 - Management routes accept same-origin requests only, use `no-store` responses, and do not log authorization headers.
-- This plugin does not start, stop, or reconfigure the OpenViking server, and does not replace the official memory plugin.
+- Toggle state lives only in plugin process memory; restarting DSH resets every session to the default (on).
+- Turning a session off only affects subsequent agent steps: OpenViking context already injected into history remains until compaction, and writes the official plugin queued while the session was on may still be replayed by its global recovery. This plugin does not start, stop, or reconfigure the OpenViking server, and does not replace the official memory plugin.
 
 ## Install
 
@@ -81,8 +83,12 @@ src/
   local-discovery.ts    non-sensitive ov.conf discovery
   openviking-client.ts  data-plane connection and identity validation
   openviking-admin.ts   official Admin API adapter
-  manager-api.ts        DSH same-origin HTTP routes
-  client/               DSH Web UI, styles, and i18n
+  manager-api.ts        DSH same-origin HTTP routes (including session toggle)
+  session-toggle.ts     in-memory per-session OpenViking toggle state
+  ov-prestep.ts         identify and strip official-plugin pre-step injections
+  ov-tool-guard.ts      deny mcp__openviking__* tools while a session is off
+  openviking-gate.ts    per-session short-circuit wrapper over OpenVikingRuntime
+  client/               DSH Web UI, input-bar toggle button, styles, i18n
 ```
 
 ## License

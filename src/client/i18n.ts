@@ -65,7 +65,11 @@ export type TranslationKey =
   | "accountId"
   | "userId"
   | "adminOperationComplete"
-  | "keyRotated";
+  | "keyRotated"
+  | "toggleLabel"
+  | "toggleLabelOff"
+  | "toggleAction"
+  | "toggleFailed";
 
 export type Translation = (key: TranslationKey, params?: Record<string, string | number>) => string;
 
@@ -135,6 +139,10 @@ const en: Record<TranslationKey, string> = {
   userId: "User ID",
   adminOperationComplete: "{operation} completed. The new user key is ready to save.",
   keyRotated: "Key rotated. Save the new user key on this device and update other devices.",
+  toggleLabel: "OpenViking on",
+  toggleLabelOff: "OpenViking off",
+  toggleAction: "Toggle OpenViking memory for this session",
+  toggleFailed: "Unable to update the OpenViking toggle.",
 };
 
 const zh: Record<TranslationKey, string> = {
@@ -203,6 +211,10 @@ const zh: Record<TranslationKey, string> = {
   userId: "用户 ID",
   adminOperationComplete: "{operation} 已完成。新的用户 Key 已准备好保存。",
   keyRotated: "Key 已轮换。请在本设备保存新 Key，并更新其他设备。",
+  toggleLabel: "OpenViking 开",
+  toggleLabelOff: "OpenViking 关",
+  toggleAction: "切换本会话的 OpenViking 记忆开关",
+  toggleFailed: "无法更新 OpenViking 开关。",
 };
 
 export const dictionaries = { en, zh } as const;

@@ -2,7 +2,7 @@
 
 ## 项目目标
 
-`dsh-openviking-manager` 是 OpenViking 的 DSH 配置管理 UI。它管理 `~/.openviking/ovcli.conf`、连接诊断和用户 Key 引导；**不**实现记忆同步/召回，也不替代 `@openviking/dsh-memory-plugin`。
+`dsh-openviking-manager` 是 OpenViking 的 DSH 配置管理 UI。它管理 `~/.openviking/ovcli.conf`、连接诊断和用户 Key 引导，并提供会话级的 OpenViking 记忆开关；**不**实现记忆同步/召回本身，也不替代 `@openviking/dsh-memory-plugin`。
 
 ## 关键边界
 
@@ -10,6 +10,7 @@
 - `root_api_key` 只能用于一次性的 Admin API 操作；不得写入 `ovcli.conf`、日志、错误文本、浏览器持久化存储或测试快照。
 - `user_key` 不得从服务端 API 回传给浏览器。已有 key 仅以掩码展示；新建或轮换产生的新 key 只可在当前表单内等待用户保存。
 - 任何新增 HTTP 路由都必须保持同源检查、`no-store` 响应和输入验证。
+- 会话开关只拦截官方插件在该会话的注入/写入/MCP 请求，不修改其行为定义：开关状态为进程内存（默认开启，重启复位），关闭只对之后的 agent step 生效。
 - 本插件不修改 `ov.conf`、不编排 OpenViking 容器/服务，也不复制官方记忆插件能力。
 
 ## 技术约定

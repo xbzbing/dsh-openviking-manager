@@ -7,7 +7,7 @@ import { test, expect } from "@playwright/test";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 
-async function startManagerFixture({ openVikingUrl = "http://127.0.0.1:8008" } = {}) {
+async function startManagerFixture({ openVikingUrl = "http://127.0.0.1:8008", sessionToggleGetDelayMs = 0 } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "dsh-ov-manager-e2e-"));
   const configPath = join(directory, "ovcli.conf");
   await writeFile(configPath, JSON.stringify({ url: openVikingUrl, api_key: "keep-this-secret", account: "personal", user: "alice" }), "utf8");
@@ -27,7 +27,12 @@ async function startManagerFixture({ openVikingUrl = "http://127.0.0.1:8008" } =
       return;
     }
     const handler = routes.get(url.pathname);
-    if (handler) return handler(req, res);
+    if (handler) {
+      if (url.pathname.endsWith("/session-toggle") && req.method === "GET" && sessionToggleGetDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, sessionToggleGetDelayMs));
+      }
+      return handler(req, res);
+    }
     res.writeHead(404).end();
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -85,6 +90,23 @@ test("keeps recovery access controls collapsed until requested", async ({ page }
 
     await expect(recovery).toHaveAttribute("open", "");
     await expect(page.getByLabel("Temporary root API key")).toBeVisible();
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("keeps the toggle unavailable while its initial state read is pending", async ({ page }) => {
+  const fixture = await startManagerFixture({ sessionToggleGetDelayMs: 250 });
+  try {
+    await page.goto(fixture.url);
+    const toggle = page.getByRole("button", { name: "Toggle OpenViking memory for this session" });
+    await expect(toggle).toBeDisabled();
+    await expect(toggle).toBeEnabled();
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+
+    await toggle.click();
+
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
   } finally {
     await fixture.close();
   }

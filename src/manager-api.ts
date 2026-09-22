@@ -6,11 +6,13 @@ import { discoverLocalOpenViking } from "./local-discovery.js";
 import { loadOvcliConfig, loadOvcliUserKey, repairOvcliPermissions, saveOvcliConfig } from "./ovcli-config.js";
 import { probeOpenViking } from "./openviking-client.js";
 import { createAccount, createUser, listAccounts, listUsers, rotateUserKey } from "./openviking-admin.js";
+import { isSessionOpenVikingEnabled, normalizeSessionId, setOpenVikingEnabled } from "./session-toggle.js";
 
 export const MANAGER_API_PREFIX = "/plugins/dsh-openviking-manager/api";
 /** Sent when an admin operation is attempted before an OpenViking endpoint is saved. */
 export const ENDPOINT_NOT_CONFIGURED_CODE = "endpoint-not-configured";
 const MAX_BODY_BYTES = 32 * 1024;
+const MAX_SESSION_ID_CHARS = 512;
 
 export interface ManagerApiOptions {
   ovcliPath?: string;
@@ -208,6 +210,43 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
           writeJson(res, 400, { ok: false, error: "unsupported admin operation" });
         } catch (error) {
           writeJson(res, 400, { ok: false, error: error instanceof Error ? error.message : "OpenViking admin request failed" });
+        }
+      },
+    },
+    {
+      kind: "exact",
+      path: `${MANAGER_API_PREFIX}/session-toggle`,
+      handler: async (req, res) => {
+        if (rejectCrossOrigin(req, res)) return;
+        if (req.method === "GET") {
+          const url = new URL(req.url ?? "/", "http://localhost");
+          const sessionId = normalizeSessionId(url.searchParams.get("sessionId"));
+          if (sessionId === undefined || sessionId.length > MAX_SESSION_ID_CHARS) {
+            writeJson(res, 400, { ok: false, error: "sessionId must be a non-empty string" });
+            return;
+          }
+          writeJson(res, 200, { ok: true, value: { sessionId, enabled: isSessionOpenVikingEnabled(sessionId) } });
+          return;
+        }
+        if (req.method !== "PUT") {
+          writeJson(res, 405, { error: "method not allowed" });
+          return;
+        }
+        try {
+          const body = await readJson(req);
+          const sessionId = normalizeSessionId(stringAt(body, "sessionId"));
+          if (sessionId === undefined || sessionId.length > MAX_SESSION_ID_CHARS) {
+            writeJson(res, 400, { ok: false, error: "sessionId must be a non-empty string" });
+            return;
+          }
+          if (typeof (body as Record<string, unknown>).enabled !== "boolean") {
+            writeJson(res, 400, { ok: false, error: "enabled must be a boolean" });
+            return;
+          }
+          setOpenVikingEnabled(sessionId, (body as { enabled: boolean }).enabled);
+          writeJson(res, 200, { ok: true, value: { sessionId, enabled: isSessionOpenVikingEnabled(sessionId) } });
+        } catch (error) {
+          writeJson(res, 400, { ok: false, error: error instanceof Error ? error.message : "Unable to update the session toggle" });
         }
       },
     },

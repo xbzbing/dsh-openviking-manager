@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { makeManagerRoutes } from "../../lib/manager-api.js";
 
 const ADMIN_PATH = "/plugins/dsh-openviking-manager/api/admin";
+const SESSION_TOGGLE_PATH = "/plugins/dsh-openviking-manager/api/session-toggle";
 
 async function withRoutes(t, ovcliPath) {
   const routes = new Map(makeManagerRoutes({ ovcliPath }).map((route) => [route.path, route.handler]));
@@ -71,4 +72,49 @@ test("admin still accepts an explicit url fallback when ovcli.conf is missing", 
   assert.equal(status, 400);
   assert.equal(json.ok, false);
   assert.equal(json.code, undefined);
+});
+
+test("session-toggle reads the default and applies validated updates", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "dsh-ovm-manager-api-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const base = await withRoutes(t, join(directory, "ovcli.conf"));
+  const sessionId = `unit-session-toggle-${process.pid}-${Date.now()}`;
+  const qs = `?sessionId=${encodeURIComponent(sessionId)}`;
+
+  const initial = await fetch(`${base}${SESSION_TOGGLE_PATH}${qs}`);
+  assert.equal(initial.status, 200);
+  assert.equal(initial.headers.get("cache-control"), "no-store");
+  assert.deepEqual(await initial.json(), { ok: true, value: { sessionId, enabled: true } });
+
+  const disable = await fetch(`${base}${SESSION_TOGGLE_PATH}`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ sessionId, enabled: false }),
+  });
+  assert.equal(disable.status, 200);
+  assert.deepEqual(await disable.json(), { ok: true, value: { sessionId, enabled: false } });
+
+  const afterDisable = await fetch(`${base}${SESSION_TOGGLE_PATH}${qs}`);
+  assert.equal((await afterDisable.json()).value.enabled, false);
+
+  const missing = await fetch(`${base}${SESSION_TOGGLE_PATH}?sessionId=`);
+  assert.equal(missing.status, 400);
+
+  const badEnabled = await fetch(`${base}${SESSION_TOGGLE_PATH}`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ sessionId, enabled: "yes" }),
+  });
+  assert.equal(badEnabled.status, 400);
+
+  const badMethod = await fetch(`${base}${SESSION_TOGGLE_PATH}${qs}`, { method: "POST" });
+  assert.equal(badMethod.status, 405);
+
+  const crossOrigin = await fetch(`${base}${SESSION_TOGGLE_PATH}${qs}`, {
+    headers: { origin: "https://attacker.example" },
+  });
+  assert.equal(crossOrigin.status, 403);
+
+  const oversized = await fetch(`${base}${SESSION_TOGGLE_PATH}?sessionId=${"x".repeat(513)}`);
+  assert.equal(oversized.status, 400);
 });
