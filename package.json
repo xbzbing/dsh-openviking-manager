@@ -1,7 +1,7 @@
 {
   "name": "dsh-openviking-manager",
   "version": "0.2.1",
-  "description": "DSH UI manager for OpenViking connection, user keys, and local configuration. | OpenViking 连接、用户 Key 与本机配置的 DSH 管理界面。",
+  "description": "DSH UI manager for OpenViking connection, user keys, and local configuration.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -20,11 +20,13 @@
       "types": "./lib/client/index.d.ts",
       "default": "./lib/client.js"
     },
+    "./locale/*.json": "./locale/*.json",
     "./package.json": "./package.json"
   },
   "files": [
     "lib",
     "!lib/standalone.*",
+    "locale/*.json",
     "cordis.patch.yml",
     "README.md",
     "README_EN.md",
