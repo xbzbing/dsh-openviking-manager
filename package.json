@@ -8,6 +8,7 @@
     "url": "git+https://github.com/xbzbing/dsh-openviking-manager.git"
   },
   "homepage": "https://github.com/xbzbing/dsh-openviking-manager#readme",
+  "icon": "./icon.svg",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -27,6 +28,7 @@
     "lib",
     "!lib/standalone.*",
     "locale/*.json",
+    "icon.svg",
     "cordis.patch.yml",
     "README.md",
     "README_EN.md",
