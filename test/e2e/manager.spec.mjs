@@ -95,15 +95,17 @@ test("keeps recovery access controls collapsed until requested", async ({ page }
   }
 });
 
-test("shows the plugin version and GitHub repository with a manual update check", async ({ page }) => {
+test("shows the plugin version tag and GitHub repository with a manual update check", async ({ page }) => {
   const fixture = await startManagerFixture();
   try {
     await page.goto(fixture.url);
-    const about = page.locator("section.ovm-about");
-    await expect(about.getByRole("heading", { name: "About this plugin" })).toBeVisible();
-    await expect(about).toContainText("Installed version:");
-    const repoLink = about.getByRole("link", { name: "https://github.com/xbzbing/dsh-openviking-manager" });
+    // Version tag sits next to the page title.
+    await expect(page.locator(".ovm-versionTag")).toHaveText(/^v\d+\.\d+\.\d+/);
+    const about = page.locator("aside.ovm-about");
+    // Repository link shows a short label and exposes the full URL on hover.
+    const repoLink = about.getByRole("link", { name: "Open on GitHub" });
     await expect(repoLink).toHaveAttribute("href", "https://github.com/xbzbing/dsh-openviking-manager");
+    await expect(repoLink).toHaveAttribute("title", "https://github.com/xbzbing/dsh-openviking-manager");
     // The check is manual: no update status until the button is pressed.
     await expect(about.getByRole("status")).toHaveCount(0);
     await expect(about.getByRole("button", { name: "Check for updates" })).toBeVisible();

@@ -164,7 +164,21 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
 
   const studioUrl = `${config.url.replace(/\/$/, "")}/studio`;
   return <main className="ovm-shell">
-    <header><p className="ovm-eyebrow">{t("eyebrow")}</p><h1>{t("title")}</h1><p className="ovm-intro">{t("intro")}</p></header>
+    <header className="ovm-header">
+      <div className="ovm-headerMain">
+        <p className="ovm-eyebrow">{t("eyebrow")}</p>
+        <div className="ovm-titleRow"><h1>{t("title")}</h1>{version?.current !== undefined ? <span className="ovm-versionTag">v{version.current}</span> : null}</div>
+        <p className="ovm-intro">{t("intro")}</p>
+      </div>
+      <aside className="ovm-about" aria-label={t("aboutTitle")}>
+        <div className="ovm-aboutActions">
+          {version?.repositoryUrl !== undefined ? <a href={version.repositoryUrl} title={version.repositoryUrl} target="_blank" rel="noreferrer">{t("openRepository")}</a> : null}
+          <button type="button" className="ovm-secondary" onClick={() => void checkUpdates()} disabled={checkingVersion}>{t("checkUpdates")}</button>
+          {version?.updateAvailable && version.releaseUrl !== undefined ? <a href={version.releaseUrl} target="_blank" rel="noreferrer">{t("viewRelease")}</a> : null}
+        </div>
+        {versionStatus !== "" ? <p className={version?.error !== undefined ? "ovm-warning" : "ovm-aboutStatus"} role="status">{versionStatus}</p> : null}
+      </aside>
+    </header>
     <section className="ovm-card" aria-busy={busy}>
       <div className="ovm-status" role="status">{status}</div>
       {localServer?.found ? <p className="ovm-hint">{t("localServerFound")} · {t("authMode")}: {localServer.authMode ?? "unknown"} · {localServer.rootKeyAvailable ? t("localManagementAvailable") : t("noLocalRootKey")}</p> : null}
@@ -196,15 +210,5 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
       <div id="ovm-panel-create-user" role="tabpanel" aria-labelledby="ovm-tab-create-user" hidden={activeAdminTab !== "create-user"}><AdminIdentityForm title={t("createUserTitle")} hint={t("createUserHint")} submit={t("createUser")} accountLabel={t("accountId")} userLabel={t("userId")} disabled={busy} accountOptions={adminAccounts} chooseAccountLabel={t("chooseAccount")} noAccountsLabel={t("noAccountsLoaded")} loadAccountsLabel={t("listAccounts")} onLoadAccounts={() => void adminCall("accounts")} defaultAccount={selectedAccount} onSubmit={(accountId, userId) => void adminCall("create-user", { accountId, userId })} /></div>
       <div id="ovm-panel-rotate-user-key" role="tabpanel" aria-labelledby="ovm-tab-rotate-user-key" hidden={activeAdminTab !== "rotate-user-key"}><AdminIdentityForm title={t("regenerateTitle")} hint={t("regenerateHint")} submit={t("regenerateKey")} accountLabel={t("accountId")} userLabel={t("userId")} disabled={busy} defaultAccount={selectedAccount || config.account} defaultUser={selectedUser || config.user} danger onSubmit={(accountId, userId) => void adminCall("rotate-user-key", { accountId, userId })} /></div>
     </div></details></section>
-    <section className="ovm-card ovm-about">
-      <h2>{t("aboutTitle")}</h2>
-      <p className="ovm-hint">{t("currentVersion", { version: version?.current ?? "…" })}</p>
-      {version?.repositoryUrl !== undefined ? <p className="ovm-hint">{t("githubRepository")}: <a href={version.repositoryUrl} target="_blank" rel="noreferrer">{version.repositoryUrl}</a></p> : null}
-      <div className="ovm-actions">
-        <button type="button" className="ovm-secondary" onClick={() => void checkUpdates()} disabled={checkingVersion}>{t("checkUpdates")}</button>
-        {version?.updateAvailable && version.releaseUrl !== undefined ? <a href={version.releaseUrl} target="_blank" rel="noreferrer">{t("viewRelease")}</a> : null}
-      </div>
-      {versionStatus !== "" ? <p className={version?.error !== undefined ? "ovm-warning" : "ovm-status"} role="status">{versionStatus}</p> : null}
-    </section>
   </main>;
 }
