@@ -27,7 +27,10 @@ async function startOpenVikingFixture() {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   return {
     url: `http://127.0.0.1:${server.address().port}`,
-    close: () => new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))),
+    // Destroy idle keep-alive sockets before awaiting close: otherwise a
+    // lingering browser connection keeps the server "busy" until its idle
+    // timeout and can eat the whole test budget during teardown.
+    close: () => new Promise((resolve, reject) => { server.close((error) => (error ? reject(error) : resolve())); server.closeIdleConnections?.(); }),
   };
 }
 
@@ -51,7 +54,10 @@ async function startManagerFixture(openVikingUrl, { writeConfig = true } = {}) {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   return {
     url: `http://127.0.0.1:${server.address().port}`,
-    close: () => new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))),
+    // Destroy idle keep-alive sockets before awaiting close: otherwise a
+    // lingering browser connection keeps the server "busy" until its idle
+    // timeout and can eat the whole test budget during teardown.
+    close: () => new Promise((resolve, reject) => { server.close((error) => (error ? reject(error) : resolve())); server.closeIdleConnections?.(); }),
   };
 }
 
@@ -188,12 +194,15 @@ test("asks to save the endpoint before recovery tools when no config is saved", 
   try {
     await page.goto(manager.url);
     await page.locator("details.ovm-recovery summary").click();
-    await expect(page.getByRole("alert")).toContainText("Save the OpenViking endpoint above first");
+    // Scoped to the endpoint hint: the isolation card may show its own
+    // reload-fallback alert alongside it.
+    const endpointAlert = page.getByRole("alert").filter({ hasText: "Save the OpenViking endpoint above first" });
+    await expect(endpointAlert).toContainText("Save the OpenViking endpoint above first");
 
     await page.getByLabel("Temporary root API key").fill("root-for-test");
     await listAccountsAction(page).click();
 
-    await expect(page.getByRole("alert")).toContainText("Save the OpenViking endpoint above first");
+    await expect(endpointAlert).toContainText("Save the OpenViking endpoint above first");
     await expect(page.locator("body")).not.toContainText("url must be a non-empty string");
   } finally {
     await manager.close();
@@ -207,14 +216,16 @@ test("unlocks recovery tools once the endpoint is saved", async ({ page }) => {
   try {
     await page.goto(manager.url);
     await page.locator("details.ovm-recovery summary").click();
-    await expect(page.getByRole("alert")).toBeVisible();
+    // Scoped: the isolation card's reload-fallback alert may coexist.
+    const endpointAlert = page.getByRole("alert").filter({ hasText: "Save the OpenViking endpoint above first" });
+    await expect(endpointAlert).toBeVisible();
 
     await page.getByLabel("OpenViking endpoint").fill(openViking.url);
     await page.getByRole("textbox", { name: "Account", exact: true }).fill("personal");
     await page.getByRole("textbox", { name: "User", exact: true }).fill("alice");
     await page.getByRole("button", { name: "Save configuration" }).click();
     await expect(page.getByRole("status").first()).toContainText("Configuration saved");
-    await expect(page.getByRole("alert")).not.toBeVisible();
+    await expect(endpointAlert).not.toBeVisible();
 
     await page.getByLabel("Temporary root API key").fill("root-for-test");
     await listAccountsAction(page).click();

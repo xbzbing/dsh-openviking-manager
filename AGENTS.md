@@ -2,7 +2,7 @@
 
 ## 项目目标
 
-`dsh-openviking-manager` 是 OpenViking 的 DSH 配置管理 UI。它管理 `~/.openviking/ovcli.conf`、连接诊断和用户 Key 引导，并提供会话级的 OpenViking 记忆开关；它同时是官方配置面的编辑器与状态面板（例如 `recallPeerScope` 跨主题共享开关，保存后自动重载官方插件）。**不**实现记忆同步/召回本身，也不替代 `@openviking/dsh-memory-plugin`。
+`dsh-openviking-manager` 是 OpenViking 的 DSH 配置管理 UI。它管理 `~/.openviking/ovcli.conf`、连接诊断和用户 Key 引导，并提供会话级的 OpenViking 记忆开关；它同时是官方配置面的编辑器与状态面板（例如 `recallPeerScope` 记忆隔离开关：默认按主题隔离，保存后自动重载官方插件）。**不**实现记忆同步/召回本身，也不替代 `@openviking/dsh-memory-plugin`。
 
 ## 关键边界
 

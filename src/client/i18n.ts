@@ -79,7 +79,7 @@ export type TranslationKey =
   | "updateCheckFailed"
   | "viewRelease"
   | "isolationTitle"
-  | "allowCrossTopicLabel"
+  | "isolateByTopicLabel"
   | "isolationHint"
   | "isolationSaved"
   | "isolationSaveFailed"
@@ -173,8 +173,8 @@ const en: Record<TranslationKey, string> = {
   updateCheckFailed: "Unable to check for updates: {error}",
   viewRelease: "View release",
   isolationTitle: "Memory isolation",
-  allowCrossTopicLabel: "Allow sharing memories across topics",
-  isolationHint: "When sharing is off, automatic recall only returns memories from the current project (peer). The user-level profile injection and the shared resources directory are not affected.",
+  isolateByTopicLabel: "Disallow sharing memories across topics",
+  isolationHint: "When on (the default), automatic recall only returns memories from the current project (peer); turning it off allows cross-topic sharing. The user-level profile injection and the shared resources directory are not affected.",
   isolationSaved: "Memory isolation setting saved.",
   isolationSaveFailed: "Unable to save the memory isolation setting.",
   envOverrideWarning: "OPENVIKING_RECALL_PEER_SCOPE is set and overrides this file setting. Remove the variable and restart the DSH process to change it.",
@@ -266,8 +266,8 @@ const zh: Record<TranslationKey, string> = {
   updateCheckFailed: "无法检查更新：{error}",
   viewRelease: "查看版本",
   isolationTitle: "记忆隔离",
-  allowCrossTopicLabel: "允许跨主题共享记忆",
-  isolationHint: "关闭共享后，自动召回仅返回当前项目（peer）的记忆；用户级画像注入和共享资源目录不受此开关影响。",
+  isolateByTopicLabel: "不允许跨主题共享记忆",
+  isolationHint: "开启（默认）时，自动召回仅返回当前项目（peer）的记忆；关闭则允许跨主题共享。用户级画像注入和共享资源目录不受此开关影响。",
   isolationSaved: "记忆隔离设置已保存。",
   isolationSaveFailed: "无法保存记忆隔离设置。",
   envOverrideWarning: "环境变量 OPENVIKING_RECALL_PEER_SCOPE 已设置并覆盖此文件配置。请移除该变量并重启 DSH 进程。",

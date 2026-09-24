@@ -26,7 +26,9 @@ async function startOpenVikingFixture() {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   return {
     url: `http://127.0.0.1:${server.address().port}`,
-    close: () => new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))),
+    // Destroy idle keep-alive sockets before awaiting close so teardown never
+    // waits out the browser connection's idle timeout.
+    close: () => new Promise((resolve, reject) => { server.close((error) => (error ? reject(error) : resolve())); server.closeIdleConnections?.(); }),
   };
 }
 
@@ -48,7 +50,9 @@ async function startManagerFixture(openVikingUrl) {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   return {
     url: `http://127.0.0.1:${server.address().port}`,
-    close: () => new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))),
+    // Destroy idle keep-alive sockets before awaiting close so teardown never
+    // waits out the browser connection's idle timeout.
+    close: () => new Promise((resolve, reject) => { server.close((error) => (error ? reject(error) : resolve())); server.closeIdleConnections?.(); }),
   };
 }
 

@@ -100,13 +100,17 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   // The isolation section only renders when this endpoint answers, so hosts
   // without the route (older fixtures) keep their previous page shape. After
   // an action, a transient failure instead keeps the current view on screen.
-  const loadRecallScope = async (hideOnFailure = true) => {
+  const loadRecallScope = async (hideOnFailure = true, initializeDefault = false) => {
     try {
       const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-scope`))).value as RecallScopeView;
       setRecallScope(value);
+      // The product default is topic isolation, but an undefined key means the
+      // official `all` (sharing). Pin the default once on first load — same
+      // write + automatic-reload path as flipping the switch.
+      if (initializeDefault && value.source === "default") void setScope(true);
     } catch { if (hideOnFailure) setRecallScope(undefined); }
   };
-  useEffect(() => { void load(); void loadVersion(); void loadRecallScope(); }, []);
+  useEffect(() => { void load(); void loadVersion(); void loadRecallScope(true, true); }, []);
 
   const checkUpdates = async () => {
     setCheckingVersion(true);
@@ -148,18 +152,18 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     }
   };
 
-  const setScope = async (allowSharing: boolean) => {
+  const setScope = async (isolate: boolean) => {
     // Optimistic flip: a controlled checkbox whose prop only changes after
     // the round-trip snaps back to its old state under the click, which reads
     // as "the toggle does nothing". Revert on failure instead.
     const previous = recallScope;
     setBusy(true);
-    if (previous) setRecallScope({ ...previous, scope: allowSharing ? "all" : "actor" });
+    if (previous) setRecallScope({ ...previous, scope: isolate ? "actor" : "all" });
     try {
       const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-scope`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ scope: allowSharing ? "all" : "actor" }),
+        body: JSON.stringify({ scope: isolate ? "actor" : "all" }),
       }))).value as RecallScopeView;
       setRecallScope(value);
       // The applied plugin only picks the value up through a reload, so a
@@ -265,12 +269,12 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
               role="switch"
               className="ovm-switchInput"
               disabled={busy || recallScope.source === "env"}
-              checked={recallScope.scope === "all"}
+              checked={recallScope.scope === "actor"}
               onChange={(event) => void setScope(event.target.checked)}
             />
             <span className="ovm-switchTrack" aria-hidden="true" />
           </span>
-          <span>{t("allowCrossTopicLabel")}</span>
+          <span>{t("isolateByTopicLabel")}</span>
         </label>
         <p className="ovm-hint ovm-isolationHint">{t("isolationHint")}</p>
         <p className="ovm-hint ovm-isolationHint">{t("reloadNotice")}</p>

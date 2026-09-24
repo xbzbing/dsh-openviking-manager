@@ -40,7 +40,9 @@ async function startManagerFixture({ openVikingUrl = "http://127.0.0.1:8008", se
   return {
     url: `http://127.0.0.1:${port}`,
     configPath,
-    close: () => new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))),
+    // Destroy idle keep-alive sockets before awaiting close so teardown never
+    // waits out the browser connection's idle timeout.
+    close: () => new Promise((resolve, reject) => { server.close((error) => (error ? reject(error) : resolve())); server.closeIdleConnections?.(); }),
   };
 }
 
