@@ -421,69 +421,77 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     )}
     {recallTuning === undefined ? null : (
       <section className="ovm-card" aria-label={t("tuningTitle")}>
-        <h2>{t("tuningTitle")}</h2>
-        <p className="ovm-hint ovm-tuningIntro">{t("tuningIntro")}</p>
-        <form onSubmit={(event) => void saveTuning(event)}>
-          <div className="ovm-tuningGrid">
-            <div className="ovm-tuningField">
-              <label>{t("scoreThresholdLabel")}
-                <input
-                  type="number"
-                  min={0}
-                  max={1}
-                  step="any"
-                  value={tuningDraft.scoreThreshold}
-                  placeholder={t("defaultPlaceholder", { value: String(recallTuning.scoreThreshold.default) })}
-                  disabled={busy || recallTuning.scoreThreshold.source === "env"}
-                  onChange={(event) => setTuningDraft({ ...tuningDraft, scoreThreshold: event.target.value })}
-                />
-              </label>
-              <p className="ovm-hint">{t("scoreThresholdHint")}</p>
-            </div>
-            <div className="ovm-tuningField">
-              <label>{t("recallLimitLabel")}
-                <input
-                  type="number"
-                  min={1}
-                  max={50}
-                  step={1}
-                  value={tuningDraft.recallLimit}
-                  placeholder={t("defaultPlaceholder", { value: String(recallTuning.recallLimit.default) })}
-                  disabled={busy || recallTuning.recallLimit.source === "env"}
-                  onChange={(event) => setTuningDraft({ ...tuningDraft, recallLimit: event.target.value })}
-                />
-              </label>
-              <p className="ovm-hint">{t("recallLimitHint")}</p>
-            </div>
-            <div className="ovm-tuningField">
-              <label>{t("queryExpansionLabel")}
-                <select
-                  value={tuningDraft.recallQueryExpansion}
-                  disabled={busy || recallTuning.recallQueryExpansion.source === "env"}
-                  onChange={(event) => setTuningDraft({ ...tuningDraft, recallQueryExpansion: event.target.value === "off" ? "off" : "auto" })}
-                >
-                  <option value="auto">{t("queryExpansionAuto")}</option>
-                  <option value="off">{t("queryExpansionOff")}</option>
-                </select>
-              </label>
-              <p className="ovm-hint">{t("queryExpansionHint")}</p>
-            </div>
-            <div className="ovm-tuningField">
-              <label>{t("excludeUrisLabel")}
-                <textarea
-                  rows={4}
-                  value={tuningDraft.recallExcludeUris}
-                  placeholder="viking://"
-                  disabled={busy || recallTuning.recallExcludeUris.source === "env"}
-                  onChange={(event) => setTuningDraft({ ...tuningDraft, recallExcludeUris: event.target.value })}
-                />
-              </label>
-              <p className="ovm-hint">{t("excludeUrisHint")}</p>
-            </div>
+        {/* Collapsed by default, exactly like the recovery panel: this is
+            occasional configuration, not something to scan on every visit. */}
+        <details className="ovm-tuning ovm-collapse">
+          <summary><h2>{t("tuningTitle")}</h2></summary>
+          <div className="ovm-collapseContent">
+            <p className="ovm-hint ovm-tuningIntro">{t("tuningIntro")}</p>
+            <form onSubmit={(event) => void saveTuning(event)}>
+              <div className="ovm-tuningGrid">
+                <div className="ovm-tuningField">
+                  <label>{t("scoreThresholdLabel")}
+                    <input
+                      type="number"
+                      min={0}
+                      max={1}
+                      step="any"
+                      value={tuningDraft.scoreThreshold}
+                      placeholder={t("defaultPlaceholder", { value: String(recallTuning.scoreThreshold.default) })}
+                      disabled={busy || recallTuning.scoreThreshold.source === "env"}
+                      onChange={(event) => setTuningDraft({ ...tuningDraft, scoreThreshold: event.target.value })}
+                    />
+                  </label>
+                  <p className="ovm-hint">{t("scoreThresholdHint")}</p>
+                </div>
+                <div className="ovm-tuningField">
+                  <label>{t("recallLimitLabel")}
+                    <input
+                      type="number"
+                      min={1}
+                      max={50}
+                      step={1}
+                      value={tuningDraft.recallLimit}
+                      placeholder={t("defaultPlaceholder", { value: String(recallTuning.recallLimit.default) })}
+                      disabled={busy || recallTuning.recallLimit.source === "env"}
+                      onChange={(event) => setTuningDraft({ ...tuningDraft, recallLimit: event.target.value })}
+                    />
+                  </label>
+                  <p className="ovm-hint">{t("recallLimitHint")}</p>
+                </div>
+                <div className="ovm-tuningField">
+                  <label>{t("queryExpansionLabel")}
+                    <select
+                      value={tuningDraft.recallQueryExpansion}
+                      disabled={busy || recallTuning.recallQueryExpansion.source === "env"}
+                      onChange={(event) => setTuningDraft({ ...tuningDraft, recallQueryExpansion: event.target.value === "off" ? "off" : "auto" })}
+                    >
+                      <option value="auto">{t("queryExpansionAuto")}</option>
+                      <option value="off">{t("queryExpansionOff")}</option>
+                    </select>
+                  </label>
+                  <p className="ovm-hint">{t("queryExpansionHint")}</p>
+                </div>
+                <div className="ovm-tuningField">
+                  <label>{t("excludeUrisLabel")}
+                    <textarea
+                      rows={4}
+                      value={tuningDraft.recallExcludeUris}
+                      placeholder="viking://"
+                      disabled={busy || recallTuning.recallExcludeUris.source === "env"}
+                      onChange={(event) => setTuningDraft({ ...tuningDraft, recallExcludeUris: event.target.value })}
+                    />
+                  </label>
+                  <p className="ovm-hint">{t("excludeUrisHint")}</p>
+                </div>
+              </div>
+              <p className="ovm-hint">{t("tuningReloadNotice")}</p>
+              <div className="ovm-actions"><button type="submit" disabled={busy}>{t("saveTuning")}</button></div>
+            </form>
           </div>
-          <p className="ovm-hint">{t("tuningReloadNotice")}</p>
-          <div className="ovm-actions"><button type="submit" disabled={busy}>{t("saveTuning")}</button></div>
-        </form>
+        </details>
+        {/* Warnings sit outside the fold: a pending reload or an env override
+            has to stay reachable while the panel is closed. */}
         {tuningEnvVars.length > 0 ? <p className="ovm-warning" role="alert">{t("tuningEnvWarning", { vars: tuningEnvVars.join(", ") })}</p> : null}
         {recallTuning.restartPending ? (
           <div className="ovm-restartRow">
@@ -493,7 +501,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
         ) : null}
       </section>
     )}
-    <section className="ovm-card"><details className="ovm-recovery"><summary><h2>{t("recoverTitle")}</h2></summary><div className="ovm-recoveryContent"><p className="ovm-hint">{t("recoverHint")}</p>
+    <section className="ovm-card"><details className="ovm-recovery ovm-collapse"><summary><h2>{t("recoverTitle")}</h2></summary><div className="ovm-collapseContent"><p className="ovm-hint">{t("recoverHint")}</p>
       {kind !== "ready" ? <p className="ovm-warning" role="alert">{t("endpointRequiredFirst")}</p> : null}
       <label>{t("temporaryRootKey")}<input type="password" value={rootApiKey} onChange={(event) => setRootApiKey(event.target.value)} placeholder={t("pasteRootKey")} /></label>
       {rootApiKey !== "" ? <div className="ovm-actions"><button type="button" className="ovm-secondary" disabled={busy} onClick={() => { setRootApiKey(""); setAdminStatus(t("rootKeyCleared")); }}>{t("clearRootKey")}</button></div> : null}

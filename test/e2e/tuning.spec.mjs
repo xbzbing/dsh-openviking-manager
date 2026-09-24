@@ -43,6 +43,13 @@ async function startTuningFixture({ restartMemoryPlugin, initialConfig, env } = 
   };
 }
 
+const tuningPanel = (page) => page.locator("details.ovm-tuning");
+
+/** The panel starts collapsed like the recovery one; open it before touching the fields. */
+async function expandTuning(page) {
+  await tuningPanel(page).locator("summary").click();
+}
+
 test("recall tuning writes the official keys and reloads the plugin", async ({ page }) => {
   let restarts = 0;
   const fixture = await startTuningFixture({
@@ -54,6 +61,9 @@ test("recall tuning writes the official keys and reloads the plugin", async ({ p
   try {
     await page.goto(fixture.url);
     await expect(page.getByRole("heading", { name: "Recall tuning" })).toBeVisible();
+    // The panel is collapsed by default, like "Recover or initialize access".
+    await expect(tuningPanel(page)).not.toHaveAttribute("open", "");
+    await expandTuning(page);
     // A pinned key loads into its field; an untouched one keeps the empty box
     // with the default it would be initialised to as the placeholder.
     await expect(page.getByLabel("Recall score threshold")).toHaveValue("0.5");
@@ -98,6 +108,7 @@ test("a fresh config is initialised to the plugin defaults on one reload", async
   });
   try {
     await page.goto(fixture.url);
+    await expandTuning(page);
     await expect(page.getByLabel("Recall score threshold")).toHaveValue("0.5");
     await expect(page.getByLabel("Query expansion")).toHaveValue("off");
     await expect.poll(() => restarts).toBe(1);
@@ -123,6 +134,27 @@ test("a fresh config is initialised to the plugin defaults on one reload", async
   }
 });
 
+test("warnings stay reachable while the panel is collapsed", async ({ page }) => {
+  const fixture = await startTuningFixture({
+    // No reload hook: the first-load initialisation writes the product
+    // defaults and then cannot apply them.
+    initialConfig: { plugin: { recallPeerScope: "actor" } },
+  });
+  try {
+    await page.goto(fixture.url);
+    await expect(tuningPanel(page)).not.toHaveAttribute("open", "");
+    // The fallback sits outside the fold, so it is there without opening it.
+    await expect(page.getByRole("alert").filter({ hasText: "automatic reload did not complete" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Restart official memory plugin" })).toBeVisible();
+
+    const stored = JSON.parse(await readFile(fixture.configPath, "utf8"));
+    expect(stored.plugin.scoreThreshold).toBe(0.5);
+    expect(stored.plugin.recallQueryExpansion).toBe("off");
+  } finally {
+    await fixture.close();
+  }
+});
+
 test("clearing a field restores that knob's default: the product one, or the official one", async ({ page }) => {
   let restarts = 0;
   const fixture = await startTuningFixture({
@@ -139,6 +171,7 @@ test("clearing a field restores that knob's default: the product one, or the off
   });
   try {
     await page.goto(fixture.url);
+    await expandTuning(page);
     // A configured key loads into its field instead of the placeholder.
     await expect(page.getByLabel("Recall score threshold")).toHaveValue("0.62");
     await expect(page.getByLabel("Maximum injected items")).toHaveValue("6");
@@ -178,6 +211,7 @@ test("an env-configured knob is read-only and warns about the override", async (
   });
   try {
     await page.goto(fixture.url);
+    await expandTuning(page);
     const threshold = page.getByLabel("Recall score threshold");
     await expect(threshold).toHaveValue("0.9");
     expect(await threshold.isDisabled()).toBe(true);
@@ -203,6 +237,8 @@ test("renders the recall tuning section in Simplified Chinese", async ({ page })
   try {
     await page.goto(fixture.url);
     await expect(page.getByRole("heading", { name: "召回调优" })).toBeVisible();
+    await expect(tuningPanel(page)).not.toHaveAttribute("open", "");
+    await expandTuning(page);
     await expect(page.getByLabel("召回分数阈值")).toHaveAttribute("placeholder", "默认：0.5");
     await expect(page.getByLabel("单次注入条数上限")).toHaveAttribute("placeholder", "默认：10");
     await expect(page.getByLabel("召回分数阈值")).toHaveValue("0.5");
