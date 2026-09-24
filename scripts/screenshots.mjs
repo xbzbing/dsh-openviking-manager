@@ -14,9 +14,9 @@
  */
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
 
@@ -66,15 +66,65 @@ async function prepareHome(home) {
   }
   await mkdir(join(home, ".openviking"), { recursive: true });
   await writeFile(join(home, ".openviking", "ovcli.conf"), `${JSON.stringify({ url: "http://127.0.0.1:1933", api_key: USER_KEY, account: "personal", user: "alice" }, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  await installLocalPlugin(join(home, "profiles", profile));
+}
+
+/**
+ * Replaces the cloned profile's installed package with this repository's
+ * build, so the images always show the checked-out code rather than whatever
+ * version happened to be installed into the live profile last.
+ */
+async function installLocalPlugin(target) {
+  const skip = new Set(["node_modules", ".git", "test", "test-results", "playwright-report", "docs", "scripts", "ms-playwright", ".dsh-vision-router", ".dsh-vision-hooks"]);
+  const destination = join(target, "node_modules", "dsh-openviking-manager");
+  await rm(destination, { recursive: true, force: true });
+  await cp(root, destination, {
+    recursive: true,
+    filter: (source) => {
+      const rel = relative(root, source);
+      if (rel === "") return true;
+      const [head] = rel.split("/");
+      if (skip.has(head)) return false;
+      if (rel === "lib/standalone.js") return false;
+      if (head.startsWith(".env")) return false;
+      return true;
+    },
+  });
 }
 
 /** Switches the DSH interface language, which the plugin follows via ctx.locale. */
 async function setLocale(home, preference) {
-  for (const file of ["settings.yaml", "dush-settings.yaml"]) {
-    const path = join(home, file);
-    const text = await readFile(path, "utf8").catch(() => "");
+  // The active store is the profile's cordis patch (the legacy settings.yaml
+  // was migrated into it); the home-level files are kept as extra targets for
+  // older layouts, where they were the document.
+  const patch = join(home, "profiles", profile, "cordis.patch.yml");
+  const patchText = await readFile(patch, "utf8").catch(() => "");
+  if (patchText !== "") {
+    const scoped = /(- id: locale\n(?:(?!- id:)[\s\S])*?    preference: )\w+/;
+    // Test before replacing: writing the same value (zh → zh) is a legitimate
+    // no-op and must not be mistaken for a missing entry.
+    if (!scoped.test(patchText)) throw new Error(`unable to switch locale in ${patch}: no locale preference entry`);
+    await writeFile(patch, patchText.replace(scoped, `$1${preference}`), "utf8");
+  }
+  for (const file of [join(home, "settings.yaml"), join(home, "dush-settings.yaml")]) {
+    const text = await readFile(file, "utf8").catch(() => "");
     if (text === "") continue;
-    await writeFile(path, text.replace(/(\nlocale:\n\s+preference:\s*)\w+/, `$1${preference}`), "utf8");
+    await writeFile(file, text.replace(/(\nlocale:\n\s+preference:\s*)\w+/, `$1${preference}`), "utf8");
+  }
+}
+
+/**
+ * Drops everything a previous run created at home level (storages, sessions,
+ * caches, the default workspace with its locale-frozen title) so the next
+ * locale boots fresh. The prepared inputs are kept.
+ */
+const PREPARED_HOME_ENTRIES = new Set([
+  "profiles", ".openviking", "settings.yaml", "dush-settings.yaml", ".credentials.yaml", "dush-credentials.yaml",
+]);
+async function resetRuntimeState(home) {
+  for (const entry of await readdir(home)) {
+    if (PREPARED_HOME_ENTRIES.has(entry)) continue;
+    await rm(join(home, entry), { recursive: true, force: true });
   }
 }
 
@@ -125,6 +175,9 @@ async function revealRecovery(page) {
 
 async function capture(page, locale, url) {
   const text = labels[locale];
+  // The plugin list renders the localized meta title, not the package name.
+  const meta = JSON.parse(await readFile(join(root, "locale", `${locale}.json`), "utf8"));
+  const pluginTitle = meta?.meta?.title || text.plugin;
   await page.goto(url);
   await page.waitForTimeout(4000);
   const dismiss = page.getByRole("button", { name: /稍后|Later/ });
@@ -132,6 +185,13 @@ async function capture(page, locale, url) {
   await page.waitForTimeout(400);
 
   // 1. The plugin inside the DSH plugin manager, alongside the other installed plugins.
+  // Fail loudly if the interface came up in the wrong language: silently
+  // shooting both locales in one language would publish broken README images.
+  const { lang } = await page.evaluate(() => ({ lang: document.documentElement.lang }));
+  const expected = locale === "zh" ? "zh" : "en";
+  if (!lang.toLowerCase().startsWith(expected)) {
+    throw new Error(`interface locale mismatch: expected ${expected}, page reports "${lang}"`);
+  }
   await page.getByRole("button", { name: text.nav }).first().click();
   await page.waitForTimeout(2000);
   await page.getByText(text.installed, { exact: true }).first().scrollIntoViewIfNeeded();
@@ -139,7 +199,7 @@ async function capture(page, locale, url) {
   await shoot(page, locale, "01-plugin-list");
 
   // 2. The plugin's own page: connection form, masked key, verified status.
-  await page.getByText(text.plugin, { exact: true }).first().click();
+  await page.getByText(pluginTitle, { exact: true }).first().click();
   await page.waitForTimeout(2500);
   await page.getByRole("button", { name: text.verify }).click();
   await page.waitForTimeout(1200);
@@ -176,6 +236,9 @@ try {
     await context.close();
     await dsh.stop();
     dsh = undefined;
+    // Runtime state (storages, default-workspace titles) was created under the
+    // previous locale; the next language must boot from a clean slate.
+    await resetRuntimeState(home);
   }
 } finally {
   if (dsh) await dsh.stop().catch(() => {});
