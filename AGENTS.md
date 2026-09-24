@@ -31,7 +31,8 @@
 - `lib/` 编译产物必须随 git 提交并保持与 `src/` 同步，同时通过 `files` 字段随 npm 包发布。用户侧只取用现成产物，不会运行 `tsc`/`esbuild`；`lib/` 缺失或过期会让 DSH 加载入口失败或加载到旧行为。
 - 不要添加 `prepare`、`prepublishOnly` 或其他安装期构建脚本。pnpm 会阻止 git 依赖的构建脚本并等待 `allowBuilds` 授权，那会让直接安装变成需要人工授权才能完成。
 - `lib/standalone.js` 只是 Playwright 使用的浏览器 fixture，不提交、不随包发布；`npm run test:e2e` 会先重新构建它。
-- 发布 npm 版本前先运行 `npm run build` 并提交 `lib/`，再执行 `npm publish`，避免发出与 `src/` 不同步的产物。
+- 发布 npm 版本前先运行 `npm run build` 并提交 `lib/`，避免发出与 `src/` 不同步的产物。
+- 发布顺序固定为**先 GitHub、后 npm**：升版本并提交 `chore: release vX.Y.Z` → 推送提交与 tag（`git push origin main --follow-tags`）→ 创建 GitHub Release（`gh release create vX.Y.Z --title vX.Y.Z`，正文用中文「主要变更 / 验证」两段，只附源码、不附二进制产物）→ 确认 Release 已公开后，最后才执行 `npm publish`。npm 版本号一经发布不可覆盖，顺序颠倒就没有补救余地。
 
 ## 测试与验证
 
