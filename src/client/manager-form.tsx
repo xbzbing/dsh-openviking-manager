@@ -7,6 +7,17 @@ interface DiscoveryResult { ovcli: ConfigResult; suggestedEndpoint: string; loca
 interface ApiEnvelope { ok: boolean; value?: unknown; error?: string; code?: string; }
 interface VersionView { current: string; repositoryUrl?: string; latest?: string; updateAvailable: boolean; releaseUrl?: string; checkedRemote: boolean; error?: string; }
 interface RecallScopeView { scope: "all" | "actor"; source: "env" | "plugin.dsh" | "plugin" | "default"; envOverride: string; restartPending: boolean; }
+interface RecallTuningKnobView<T> { value: T; source: "env" | "plugin.dsh" | "plugin" | "default"; configured: boolean; envOverride: string; envVar: string; }
+interface RecallTuningView {
+  scoreThreshold: RecallTuningKnobView<number>;
+  recallLimit: RecallTuningKnobView<number>;
+  recallQueryExpansion: RecallTuningKnobView<"auto" | "off">;
+  recallExcludeUris: RecallTuningKnobView<string[]>;
+  restartPending: boolean;
+}
+/** Field state held between loads: a string so "empty" can mean "official
+ * default" — which the server turns back into an absent key. */
+interface RecallTuningDraft { scoreThreshold: string; recallLimit: string; recallQueryExpansion: "auto" | "off"; recallExcludeUris: string; }
 interface RestartView { restarted: boolean; count: number; reason?: string; error?: string; }
 export interface ManagerFormProps { apiPrefix?: string; fetchFn?: typeof fetch; t?: Translation; }
 
@@ -77,6 +88,8 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   const [versionStatus, setVersionStatus] = useState("");
   const [checkingVersion, setCheckingVersion] = useState(false);
   const [recallScope, setRecallScope] = useState<RecallScopeView>();
+  const [recallTuning, setRecallTuning] = useState<RecallTuningView>();
+  const [tuningDraft, setTuningDraft] = useState<RecallTuningDraft>({ scoreThreshold: "", recallLimit: "", recallQueryExpansion: "auto", recallExcludeUris: "" });
 
   const load = async () => {
     setBusy(true);
@@ -110,7 +123,28 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
       if (initializeDefault && value.source === "default") void setScope(true);
     } catch { if (hideOnFailure) setRecallScope(undefined); }
   };
-  useEffect(() => { void load(); void loadVersion(); void loadRecallScope(true, true); }, []);
+  // Same contract as the isolation section: a host without the route keeps its
+  // previous page shape, and a failure after an action keeps the current view.
+  const loadRecallTuning = async (hideOnFailure = true) => {
+    try {
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-tuning`))).value as RecallTuningView;
+      setRecallTuning(value);
+    } catch { if (hideOnFailure) setRecallTuning(undefined); }
+  };
+
+  useEffect(() => { void load(); void loadVersion(); void loadRecallScope(true, true); void loadRecallTuning(true); }, []);
+
+  // The draft follows the loaded view: an empty field means the key is absent,
+  // so "clear the box" and "restore the official default" are one action.
+  useEffect(() => {
+    if (!recallTuning) return;
+    setTuningDraft({
+      scoreThreshold: recallTuning.scoreThreshold.configured ? String(recallTuning.scoreThreshold.value) : "",
+      recallLimit: recallTuning.recallLimit.configured ? String(recallTuning.recallLimit.value) : "",
+      recallQueryExpansion: recallTuning.recallQueryExpansion.value,
+      recallExcludeUris: recallTuning.recallExcludeUris.value.join("\n"),
+    });
+  }, [recallTuning]);
 
   const checkUpdates = async () => {
     setCheckingVersion(true);
@@ -149,6 +183,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
       setStatus(t("restartFailed", { error: error instanceof Error ? error.message : "unknown" }));
     } finally {
       await loadRecallScope(false);
+      await loadRecallTuning(false);
     }
   };
 
@@ -184,6 +219,51 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   const restartPlugin = async () => {
     setBusy(true);
     try { await runRestart(); } finally { setBusy(false); }
+  };
+
+  /** Env vars currently outranking the file: those fields are read-only with
+   * a warning rather than showing a file value that is not effective. */
+  const tuningEnvVars = recallTuning === undefined
+    ? []
+    : [
+        recallTuning.scoreThreshold,
+        recallTuning.recallLimit,
+        recallTuning.recallQueryExpansion,
+        recallTuning.recallExcludeUris,
+      ].filter((knob) => knob.source === "env").map((knob) => knob.envVar);
+
+  const saveTuning = async (event: React.FormEvent) => {
+    event.preventDefault();
+    // An empty field asks the server to drop the key — the official default —
+    // rather than to store an empty value.
+    const payload = {
+      scoreThreshold: tuningDraft.scoreThreshold.trim() === "" ? null : Number(tuningDraft.scoreThreshold),
+      recallLimit: tuningDraft.recallLimit.trim() === "" ? null : Number(tuningDraft.recallLimit),
+      recallQueryExpansion: tuningDraft.recallQueryExpansion,
+      recallExcludeUris: tuningDraft.recallExcludeUris.split("\n").map((line) => line.trim()).filter(Boolean),
+    };
+    setBusy(true);
+    try {
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-tuning`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      }))).value as RecallTuningView;
+      setRecallTuning(value);
+      // The applied plugin only reads these keys through a reload, so a changed
+      // file triggers one right away; the banner plus manual button stay as the
+      // fallback when it does not complete.
+      if (value.restartPending) {
+        setStatus(t("reloading"));
+        await runRestart();
+      } else {
+        setStatus(t("tuningSaved"));
+      }
+    } catch (error) {
+      setStatus(t("tuningSaveFailed", { error: error instanceof Error ? error.message : "unknown" }));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const repair = async () => {
@@ -280,6 +360,80 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
         <p className="ovm-hint ovm-isolationHint">{t("reloadNotice")}</p>
         {recallScope.source === "env" ? <p className="ovm-warning" role="alert">{t("envOverrideWarning")}</p> : null}
         {recallScope.restartPending ? (
+          <div className="ovm-restartRow">
+            <p className="ovm-warning" role="alert">{t("restartRequired")}</p>
+            <button type="button" onClick={() => void restartPlugin()} disabled={busy}>{t("restartPlugin")}</button>
+          </div>
+        ) : null}
+      </section>
+    )}
+    {recallTuning === undefined ? null : (
+      <section className="ovm-card" aria-label={t("tuningTitle")}>
+        <h2>{t("tuningTitle")}</h2>
+        <p className="ovm-hint ovm-tuningIntro">{t("tuningIntro")}</p>
+        <form onSubmit={(event) => void saveTuning(event)}>
+          <div className="ovm-tuningGrid">
+            <div className="ovm-tuningField">
+              <label>{t("scoreThresholdLabel")}
+                <input
+                  type="number"
+                  min={0}
+                  max={1}
+                  step="any"
+                  value={tuningDraft.scoreThreshold}
+                  placeholder={t("defaultPlaceholder", { value: "0.35" })}
+                  disabled={busy || recallTuning.scoreThreshold.source === "env"}
+                  onChange={(event) => setTuningDraft({ ...tuningDraft, scoreThreshold: event.target.value })}
+                />
+              </label>
+              <p className="ovm-hint">{t("scoreThresholdHint")}</p>
+            </div>
+            <div className="ovm-tuningField">
+              <label>{t("recallLimitLabel")}
+                <input
+                  type="number"
+                  min={1}
+                  max={50}
+                  step={1}
+                  value={tuningDraft.recallLimit}
+                  placeholder={t("defaultPlaceholder", { value: "10" })}
+                  disabled={busy || recallTuning.recallLimit.source === "env"}
+                  onChange={(event) => setTuningDraft({ ...tuningDraft, recallLimit: event.target.value })}
+                />
+              </label>
+              <p className="ovm-hint">{t("recallLimitHint")}</p>
+            </div>
+            <div className="ovm-tuningField">
+              <label>{t("queryExpansionLabel")}
+                <select
+                  value={tuningDraft.recallQueryExpansion}
+                  disabled={busy || recallTuning.recallQueryExpansion.source === "env"}
+                  onChange={(event) => setTuningDraft({ ...tuningDraft, recallQueryExpansion: event.target.value === "off" ? "off" : "auto" })}
+                >
+                  <option value="auto">{t("queryExpansionAuto")}</option>
+                  <option value="off">{t("queryExpansionOff")}</option>
+                </select>
+              </label>
+              <p className="ovm-hint">{t("queryExpansionHint")}</p>
+            </div>
+            <div className="ovm-tuningField">
+              <label>{t("excludeUrisLabel")}
+                <textarea
+                  rows={4}
+                  value={tuningDraft.recallExcludeUris}
+                  placeholder="viking://"
+                  disabled={busy || recallTuning.recallExcludeUris.source === "env"}
+                  onChange={(event) => setTuningDraft({ ...tuningDraft, recallExcludeUris: event.target.value })}
+                />
+              </label>
+              <p className="ovm-hint">{t("excludeUrisHint")}</p>
+            </div>
+          </div>
+          <p className="ovm-hint">{t("tuningReloadNotice")}</p>
+          <div className="ovm-actions"><button type="submit" disabled={busy}>{t("saveTuning")}</button></div>
+        </form>
+        {tuningEnvVars.length > 0 ? <p className="ovm-warning" role="alert">{t("tuningEnvWarning", { vars: tuningEnvVars.join(", ") })}</p> : null}
+        {recallTuning.restartPending ? (
           <div className="ovm-restartRow">
             <p className="ovm-warning" role="alert">{t("restartRequired")}</p>
             <button type="button" onClick={() => void restartPlugin()} disabled={busy}>{t("restartPlugin")}</button>

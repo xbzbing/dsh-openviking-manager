@@ -90,7 +90,25 @@ export type TranslationKey =
   | "restartPlugin"
   | "restartSucceeded"
   | "restartUnavailable"
-  | "restartFailed";
+  | "restartFailed"
+  | "tuningTitle"
+  | "tuningIntro"
+  | "scoreThresholdLabel"
+  | "scoreThresholdHint"
+  | "recallLimitLabel"
+  | "recallLimitHint"
+  | "queryExpansionLabel"
+  | "queryExpansionHint"
+  | "queryExpansionAuto"
+  | "queryExpansionOff"
+  | "excludeUrisLabel"
+  | "excludeUrisHint"
+  | "defaultPlaceholder"
+  | "saveTuning"
+  | "tuningSaved"
+  | "tuningSaveFailed"
+  | "tuningEnvWarning"
+  | "tuningReloadNotice";
 
 export type Translation = (key: TranslationKey, params?: Record<string, string | number>) => string;
 
@@ -185,6 +203,24 @@ const en: Record<TranslationKey, string> = {
   restartSucceeded: "The official memory plugin reloaded. The new setting is active.",
   restartUnavailable: "The official memory plugin is not loaded in this process. Restart the DSH instance manually to apply the change.",
   restartFailed: "Unable to restart the official memory plugin: {error}",
+  tuningTitle: "Recall tuning",
+  tuningIntro: "Fine-tune what the official memory plugin injects into each step. Values are written to ovcli.conf's plugin section; leave a field empty to keep the official default.",
+  scoreThresholdLabel: "Recall score threshold",
+  scoreThresholdHint: "Memories scoring below this are not injected. Raising it filters out weakly related hits (official default 0.35).",
+  recallLimitLabel: "Maximum injected items",
+  recallLimitHint: "How many memories one recall may return, 1 to 50. Empty keeps the server's own quotas (official default 10).",
+  queryExpansionLabel: "Query expansion",
+  queryExpansionHint: "When on, the server rewrites the whole prompt into extra search intents, which is what widens recall to unrelated memories.",
+  queryExpansionAuto: "Automatic (official default)",
+  queryExpansionOff: "Off",
+  excludeUrisLabel: "Excluded URIs",
+  excludeUrisHint: "One viking:// URI per line. Matching subtrees are never recalled — handy for generated directory files such as skills or resources indexes.",
+  defaultPlaceholder: "default: {value}",
+  saveTuning: "Save recall tuning",
+  tuningSaved: "Recall tuning saved.",
+  tuningSaveFailed: "Unable to save recall tuning: {error}",
+  tuningEnvWarning: "{vars} is set in the environment and outranks this file. Remove the variable and restart the DSH process to change it.",
+  tuningReloadNotice: "Saving these keys reloads the official memory plugin the same way the switch above does: every open session is committed and archived once, and the OpenViking MCP tools are rebuilt briefly.",
 };
 
 const zh: Record<TranslationKey, string> = {
@@ -278,6 +314,24 @@ const zh: Record<TranslationKey, string> = {
   restartSucceeded: "官方记忆插件已重新加载，新设置已生效。",
   restartUnavailable: "当前进程中未加载官方记忆插件。请手动重启 DSH 实例使更改生效。",
   restartFailed: "无法重启官方记忆插件：{error}",
+  tuningTitle: "召回调优",
+  tuningIntro: "调整官方记忆插件每次注入的内容。取值写入 ovcli.conf 的 plugin 段；字段留空即保持官方默认值。",
+  scoreThresholdLabel: "召回分数阈值",
+  scoreThresholdHint: "低于该分数的记忆不会注入。调高可过滤弱相关内容（官方默认 0.35）。",
+  recallLimitLabel: "单次注入条数上限",
+  recallLimitHint: "一次召回最多返回多少条记忆，取值 1–50。留空则沿用服务端默认配额（官方默认 10）。",
+  queryExpansionLabel: "查询扩写",
+  queryExpansionHint: "开启时服务端会把整段 prompt 扩写成多组检索意图，弱相关内容变多正源于此。",
+  queryExpansionAuto: "自动（官方默认）",
+  queryExpansionOff: "关闭",
+  excludeUrisLabel: "排除的 URI",
+  excludeUrisHint: "每行一个 viking:// URI。匹配到这些子树的记忆不会被召回，适合排除 skills、resources 之类自动生成的目录索引。",
+  defaultPlaceholder: "默认：{value}",
+  saveTuning: "保存召回调优",
+  tuningSaved: "召回调优设置已保存。",
+  tuningSaveFailed: "无法保存召回调优设置：{error}",
+  tuningEnvWarning: "环境变量 {vars} 已设置并覆盖此文件配置。请移除该变量并重启 DSH 进程。",
+  tuningReloadNotice: "保存这些键同样会自动重新加载官方记忆插件，副作用与上方开关一致：会对所有打开的会话执行一次提交归档，并短暂重建 OpenViking MCP 工具。",
 };
 
 export const dictionaries = { en, zh } as const;

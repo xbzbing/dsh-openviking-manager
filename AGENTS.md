@@ -12,10 +12,10 @@
 - 任何新增 HTTP 路由都必须保持同源检查、`no-store` 响应和输入验证。
 - 会话开关只拦截官方插件在该会话的注入/写入/MCP 请求，不修改其行为定义：开关状态为进程内存（默认开启，重启复位），关闭只对之后的 agent step 生效。
 - 本插件不修改 `ov.conf`、不编排 OpenViking 容器/服务，也不复制官方记忆插件能力。
-- 持久控制只写官方声明的配置面（`ovcli.conf` 的 `plugin` 段）；键名与取值域以 `@openviking/dsh-memory-plugin` 的 config-schema 为唯一真源，写入保留未知键与既有分层，不发明自有配置键。
+- 持久控制只写官方声明的配置面（`ovcli.conf` 的 `plugin` 段）；键名与取值域以 `@openviking/dsh-memory-plugin` 的 config-schema 为唯一真源，写入保留未知键与既有分层，不发明自有配置键。召回调优卡片只暴露官方已声明的 `scoreThreshold`、`recallLimit`、`recallQueryExpansion`、`recallExcludeUris` 四个键：字段留空即删除该键以恢复官方默认，越界或格式错误的请求被拒绝且不落盘。
 - `.openviking/config.json` 等 workspace 层配置完全由用户手工管理：本插件不读取、不写入，也不提供其编辑界面。
-- 官方插件的重载只通过宿主 Cordis 公开机制（registry 定位官方 fiber 后 `restart()`），使其重新读取配置；不修改官方插件代码与行为定义。隔离设置保存后自动执行一次重载，UI 文案提前提示重载及其副作用；自动重载未完成时回退为手动按钮与手动重启 DSH 实例的提示。
-- env 层（如 `OPENVIKING_RECALL_PEER_SCOPE`）优先级高于本插件可写的任何文件，且进程启动后不可变；UI 必须显示其覆盖状态，而不是让文件设置假装生效。
+- 官方插件的重载只通过宿主 Cordis 公开机制（registry 定位官方 fiber 后 `restart()`），使其重新读取配置；不修改官方插件代码与行为定义。隔离与召回调优设置保存后自动执行一次重载，UI 文案提前提示重载及其副作用；自动重载未完成时回退为手动按钮与手动重启 DSH 实例的提示。
+- env 层（如 `OPENVIKING_RECALL_PEER_SCOPE` 及各召回调优键的 `OPENVIKING_*` 变量）优先级高于本插件可写的任何文件，且进程启动后不可变；UI 必须显示其覆盖状态，而不是让文件设置假装生效。
 
 ## 技术约定
 
