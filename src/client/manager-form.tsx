@@ -241,13 +241,18 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     {recallScope === undefined ? null : (
       <section className="ovm-card" aria-label={t("isolationTitle")}>
         <h2>{t("isolationTitle")}</h2>
-        <label className="ovm-checkRow">
-          <input
-            type="checkbox"
-            disabled={busy || recallScope.source === "env"}
-            checked={recallScope.scope === "all"}
-            onChange={(event) => void setScope(event.target.checked)}
-          />
+        <label className="ovm-switchRow">
+          <span className="ovm-switchBox">
+            <input
+              type="checkbox"
+              role="switch"
+              className="ovm-switchInput"
+              disabled={busy || recallScope.source === "env"}
+              checked={recallScope.scope === "all"}
+              onChange={(event) => void setScope(event.target.checked)}
+            />
+            <span className="ovm-switchTrack" aria-hidden="true" />
+          </span>
           <span>{t("allowCrossTopicLabel")}</span>
         </label>
         <p className="ovm-hint">{t("isolationHint")}</p>
