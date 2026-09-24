@@ -91,7 +91,7 @@ test("recall tuning writes the official keys and reloads the plugin", async ({ p
     // The isolation switch and the credentials ride along untouched.
     expect(stored.plugin.recallPeerScope).toBe("actor");
     expect(stored.api_key).toBe("keep-this-secret");
-    await expect(page.getByRole("alert").filter({ hasText: "automatic reload did not complete" })).toHaveCount(0);
+    await expect(page.getByRole("alert")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Restart official memory plugin" })).toHaveCount(0);
   } finally {
     await fixture.close();
@@ -128,7 +128,7 @@ test("a fresh config is initialised to the plugin defaults on one reload", async
     await expect(page.getByLabel("Recall score threshold")).toHaveValue("0.5");
     await expect(page.getByLabel("Query expansion")).toHaveValue("off");
     await expect.poll(() => restarts).toBe(1);
-    await expect(page.getByRole("alert").filter({ hasText: "automatic reload did not complete" })).toHaveCount(0);
+    await expect(page.getByRole("alert")).toHaveCount(0);
   } finally {
     await fixture.close();
   }
@@ -136,20 +136,23 @@ test("a fresh config is initialised to the plugin defaults on one reload", async
 
 test("warnings stay reachable while the panel is collapsed", async ({ page }) => {
   const fixture = await startTuningFixture({
-    // No reload hook: the first-load initialisation writes the product
-    // defaults and then cannot apply them.
+    restartMemoryPlugin: async () => ({ restarted: true, count: 1 }),
     initialConfig: { plugin: { recallPeerScope: "actor" } },
+    env: { OPENVIKING_SCORE_THRESHOLD: "0.9" },
   });
   try {
     await page.goto(fixture.url);
     await expect(tuningPanel(page)).not.toHaveAttribute("open", "");
-    // The fallback sits outside the fold, so it is there without opening it.
-    await expect(page.getByRole("alert").filter({ hasText: "automatic reload did not complete" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Restart official memory plugin" })).toBeVisible();
+    // The env-override warning sits outside the fold and the reload outcome
+    // is the status line — both readable without opening the panel.
+    await expect(page.getByRole("alert").filter({ hasText: "OPENVIKING_SCORE_THRESHOLD" })).toBeVisible();
+    await expect(page.getByRole("status")).toContainText("The official memory plugin reloaded. The new setting is active.");
+    await expect(page.getByRole("button", { name: "Restart official memory plugin" })).toHaveCount(0);
 
+    // The first-load initialisation still ran with the panel closed.
     const stored = JSON.parse(await readFile(fixture.configPath, "utf8"));
-    expect(stored.plugin.scoreThreshold).toBe(0.5);
     expect(stored.plugin.recallQueryExpansion).toBe("off");
+    expect(stored.plugin.recallPeerScope).toBe("actor");
   } finally {
     await fixture.close();
   }

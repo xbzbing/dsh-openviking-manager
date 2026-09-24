@@ -86,8 +86,6 @@ export type TranslationKey =
   | "envOverrideWarning"
   | "reloadNotice"
   | "reloading"
-  | "restartRequired"
-  | "restartPlugin"
   | "restartSucceeded"
   | "restartUnavailable"
   | "restartFailed"
@@ -198,8 +196,6 @@ const en: Record<TranslationKey, string> = {
   envOverrideWarning: "OPENVIKING_RECALL_PEER_SCOPE is set and overrides this file setting. Remove the variable and restart the DSH process to change it.",
   reloadNotice: "Saving reloads the official memory plugin automatically: it commits and archives every open session once, and briefly rebuilds the OpenViking MCP tools.",
   reloading: "Reloading the official memory plugin…",
-  restartRequired: "The automatic reload did not complete, so the new setting is not active yet. Reload manually here or restart the DSH instance.",
-  restartPlugin: "Restart official memory plugin",
   restartSucceeded: "The official memory plugin reloaded. The new setting is active.",
   restartUnavailable: "The official memory plugin is not loaded in this process. Restart the DSH instance manually to apply the change.",
   restartFailed: "Unable to restart the official memory plugin: {error}",
@@ -309,8 +305,6 @@ const zh: Record<TranslationKey, string> = {
   envOverrideWarning: "环境变量 OPENVIKING_RECALL_PEER_SCOPE 已设置并覆盖此文件配置。请移除该变量并重启 DSH 进程。",
   reloadNotice: "保存后会自动重新加载官方记忆插件：会对所有打开的会话执行一次提交归档，并短暂重建 OpenViking MCP 工具。",
   reloading: "正在重新加载官方记忆插件…",
-  restartRequired: "自动重新加载未完成，新的设置尚未生效。可在此手动重新加载，或重启 DSH 实例。",
-  restartPlugin: "重启官方记忆插件",
   restartSucceeded: "官方记忆插件已重新加载，新设置已生效。",
   restartUnavailable: "当前进程中未加载官方记忆插件。请手动重启 DSH 实例使更改生效。",
   restartFailed: "无法重启官方记忆插件：{error}",

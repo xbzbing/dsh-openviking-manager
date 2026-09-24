@@ -63,7 +63,7 @@ test("isolation is on by default, written on first load, and reloaded automatica
     const storedAfterInit = JSON.parse(await readFile(fixture.configPath, "utf8"));
     expect(storedAfterInit.plugin.recallPeerScope).toBe("actor");
     expect(storedAfterInit.api_key).toBe("keep-this-secret");
-    await expect(page.getByRole("alert").filter({ hasText: "automatic reload did not complete" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Restart official memory plugin" })).toHaveCount(0);
 
     // Turning isolation off writes the key away and reloads again.
     await toggle.uncheck();
@@ -71,36 +71,32 @@ test("isolation is on by default, written on first load, and reloaded automatica
     await expect(page.getByRole("status")).toContainText("The official memory plugin reloaded. The new setting is active.");
     const storedAfterDisable = JSON.parse(await readFile(fixture.configPath, "utf8"));
     expect(storedAfterDisable.plugin.recallPeerScope).toBe(undefined);
-    await expect(page.getByRole("alert").filter({ hasText: "automatic reload did not complete" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Restart official memory plugin" })).toHaveCount(0);
   } finally {
     await fixture.close();
   }
 });
 
-test("a failed automatic reload falls back to the banner; disabling then needs no reload", async ({ page }) => {
+test("a failed automatic reload is reported on the status line; disabling then needs no reload", async ({ page }) => {
   const fixture = await startIsolationFixture();
   try {
     await page.goto(fixture.url);
     const toggle = page.getByLabel("Disallow sharing memories across topics");
-    // First-load initialization wrote `actor`, but no plugin can reload here.
-    // The recall tuning card initialises its own product defaults in the same
-    // load, so both cards carry a banner: assert on this card's copy.
+    // First-load initialization wrote `actor`, but no plugin can reload here:
+    // the outcome is a status line — no banner, no manual reload button.
     await expect(toggle).toBeChecked();
     await expect(page.getByRole("status")).toContainText("Restart the DSH instance manually");
-    const isolationCard = page.locator('section[aria-label="Memory isolation"]');
-    const banner = isolationCard.getByRole("alert").filter({ hasText: "automatic reload did not complete" });
-    await expect(banner).toBeVisible();
-    await expect(isolationCard.getByRole("button", { name: "Restart official memory plugin" })).toBeVisible();
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Restart official memory plugin" })).toHaveCount(0);
     const storedAfterInit = JSON.parse(await readFile(fixture.configPath, "utf8"));
     expect(storedAfterInit.plugin.recallPeerScope).toBe("actor");
     expect(storedAfterInit.api_key).toBe("keep-this-secret");
 
     // The running snapshot is still the official `all`, so writing `all` back
-    // matches it: saved with no reload and the banner clears.
+    // matches it: saved with no reload and the status line settles.
     await toggle.uncheck();
     await expect(page.getByRole("status")).toContainText("Memory isolation setting saved.");
-    await expect(banner).toHaveCount(0);
+    await expect(page.getByRole("alert")).toHaveCount(0);
     const storedAfterDisable = JSON.parse(await readFile(fixture.configPath, "utf8"));
     expect(storedAfterDisable.plugin.recallPeerScope).toBe(undefined);
   } finally {
@@ -123,7 +119,8 @@ test("renders the isolation section in Simplified Chinese", async ({ page }) => 
     await expect(page.getByText("保存后会自动重新加载官方记忆插件")).toBeVisible();
     await expect(toggle).toBeChecked();
     await expect(page.getByRole("status")).toContainText("官方记忆插件已重新加载，新设置已生效。");
-    await expect(page.getByRole("alert").filter({ hasText: "自动重新加载未完成" })).toHaveCount(0);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "重启官方记忆插件" })).toHaveCount(0);
   } finally {
     await fixture.close();
   }

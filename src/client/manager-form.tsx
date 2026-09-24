@@ -172,8 +172,9 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   };
 
   /** POST the reload and settle the status line. Busy is owned by the caller:
-   * this runs both from the automatic post-save path and the manual fallback
-   * button shown when the automatic reload did not complete. */
+   * this runs from every path that changed a key: the save handlers and the
+   * first-load initialisation; a reload that does not complete is reported on
+   * the status line. */
   const runRestart = async () => {
     try {
       const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-scope/restart`, { method: "POST" }))).value as RestartView;
@@ -203,8 +204,8 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
       }))).value as RecallScopeView;
       setRecallScope(value);
       // The applied plugin only picks the value up through a reload, so a
-      // changed file triggers one right away; the banner plus manual button
-      // remain as the fallback when it does not complete.
+      // changed file triggers one right away; a reload that does not complete
+      // is reported on the status line.
       if (value.restartPending) {
         setStatus(t("reloading"));
         await runRestart();
@@ -263,11 +264,6 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     } finally { setBusy(false); }
   };
 
-  const restartPlugin = async () => {
-    setBusy(true);
-    try { await runRestart(); } finally { setBusy(false); }
-  };
-
   /** Env vars currently outranking the file: those fields are read-only with
    * a warning rather than showing a file value that is not effective. */
   const tuningEnvVars = recallTuning === undefined
@@ -303,8 +299,8 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
       }))).value as RecallTuningView;
       setRecallTuning(value);
       // The applied plugin only reads these keys through a reload, so a changed
-      // file triggers one right away; the banner plus manual button stay as the
-      // fallback when it does not complete.
+      // file triggers one right away; a reload that does not complete is
+      // reported on the status line.
       if (value.restartPending) {
         setStatus(t("reloading"));
         await runRestart();
@@ -411,12 +407,6 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
         <p className="ovm-hint ovm-isolationHint">{t("isolationHint")}</p>
         <p className="ovm-hint ovm-isolationHint">{t("reloadNotice")}</p>
         {recallScope.source === "env" ? <p className="ovm-warning" role="alert">{t("envOverrideWarning")}</p> : null}
-        {recallScope.restartPending ? (
-          <div className="ovm-restartRow">
-            <p className="ovm-warning" role="alert">{t("restartRequired")}</p>
-            <button type="button" onClick={() => void restartPlugin()} disabled={busy}>{t("restartPlugin")}</button>
-          </div>
-        ) : null}
       </section>
     )}
     {recallTuning === undefined ? null : (
@@ -490,15 +480,9 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
             </form>
           </div>
         </details>
-        {/* Warnings sit outside the fold: a pending reload or an env override
-            has to stay reachable while the panel is closed. */}
+        {/* The env-override warning sits outside the fold: a closed panel must
+            not hide that the file value is not the effective one. */}
         {tuningEnvVars.length > 0 ? <p className="ovm-warning" role="alert">{t("tuningEnvWarning", { vars: tuningEnvVars.join(", ") })}</p> : null}
-        {recallTuning.restartPending ? (
-          <div className="ovm-restartRow">
-            <p className="ovm-warning" role="alert">{t("restartRequired")}</p>
-            <button type="button" onClick={() => void restartPlugin()} disabled={busy}>{t("restartPlugin")}</button>
-          </div>
-        ) : null}
       </section>
     )}
     <section className="ovm-card"><details className="ovm-recovery ovm-collapse"><summary><h2>{t("recoverTitle")}</h2></summary><div className="ovm-collapseContent"><p className="ovm-hint">{t("recoverHint")}</p>
