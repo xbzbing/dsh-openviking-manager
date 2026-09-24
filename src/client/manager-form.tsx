@@ -255,7 +255,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
           </span>
           <span>{t("allowCrossTopicLabel")}</span>
         </label>
-        <p className="ovm-hint">{t("isolationHint")}</p>
+        <p className="ovm-hint ovm-isolationHint">{t("isolationHint")}</p>
         {recallScope.source === "env" ? <p className="ovm-warning" role="alert">{t("envOverrideWarning")}</p> : null}
         {recallScope.restartPending ? (
           <div className="ovm-restartRow">
