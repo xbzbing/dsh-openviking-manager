@@ -8,6 +8,19 @@ OpenViking is an **open-source context database from Volcengine, purpose-built f
 
 See the official documentation for installing and configuring OpenViking: [DeepSeek Harness Memory Bundle](https://docs.openviking.ai/en/agent-integrations/17-dsh)
 
+## Install
+
+```bash
+# Install the official OpenViking plugin
+dsh plugin --profile web add @openviking/dsh-memory-plugin
+# Install the configuration manager
+dsh plugin --profile web add dsh-openviking-manager
+# You can also install straight from the GitHub repository, or from a local file path
+dsh plugin --profile web add github:xbzbing/dsh-openviking-manager
+```
+
+Restarting the corresponding DSH profile may be required afterwards; the `openviking-manager` configuration page is then available on the DSH plugins page.
+
 ## Features
 
 - Read, import, and atomically update `~/.openviking/ovcli.conf`.
@@ -38,19 +51,6 @@ Screenshots are captured from an isolated DSH instance by `npm run screenshots`;
 - Toggle state lives only in plugin process memory; restarting DSH resets every session to the default (on).
 - Turning a session off only affects subsequent agent steps: OpenViking context already injected into history remains until compaction, and writes the official plugin queued while the session was on may still be replayed by its global recovery. This plugin does not start, stop, or reconfigure the OpenViking server, and does not replace the official memory plugin.
 - The sharing switch only writes the officially declared `plugin.recallPeerScope` key and preserves every unknown key in `ovcli.conf`. The automatic reload after saving goes through the host's public Cordis mechanisms so the official plugin re-reads its configuration; it never modifies official code. Side effects (disclosed on the card): one final commit/archive pass over open sessions and a brief MCP tool rebuild. If the automatic reload does not complete, a manual button is offered; when the official plugin is not loaded, the page asks you to restart the DSH instance manually. The `OPENVIKING_RECALL_PEER_SCOPE` environment variable outranks every file and shows an override warning on the page.
-
-## Install
-
-```bash
-# Install the official OpenViking plugin
-dsh plugin --profile web add @openviking/dsh-memory-plugin
-# Install the configuration manager
-dsh plugin --profile web add dsh-openviking-manager
-# You can also install straight from the GitHub repository, or from a local file path
-dsh plugin --profile web add github:xbzbing/dsh-openviking-manager
-```
-
-Restarting the corresponding DSH profile may be required afterwards; the `openviking-manager` configuration page is then available on the DSH plugins page.
 
 ## Requirements
 

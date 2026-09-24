@@ -8,6 +8,19 @@ OpenViking 是**火山引擎开源，专门给 AI Agent 设计的上下文数据
 
 OpenViking 的安装配置详见其官方网站：[DeepSeek Harness 记忆插件](https://docs.openviking.ai/zh/agent-integrations/17-dsh)
 
+## 安装
+
+```bash
+# 安装 openviking 的官方插件
+dsh plugin --profile web add @openviking/dsh-memory-plugin
+# 安装配置管理器
+dsh plugin --profile web add dsh-openviking-manager
+# 也可以直接从 GitHub 仓库安装或者从 file 安装
+dsh plugin --profile web add github:xbzbing/dsh-openviking-manager
+```
+
+安装后可能需要重启对应的 DSH profile，在 DSH 插件页面可以看到`openviking-manager`的配置管理页面。
+
 ## 功能
 
 - 读取、导入和原子更新 `~/.openviking/ovcli.conf`；
@@ -38,19 +51,6 @@ OpenViking 的安装配置详见其官方网站：[DeepSeek Harness 记忆插件
 - 会话开关状态仅保存在插件进程内存中，重启 DSH 后所有会话恢复默认开启。
 - 关闭只对之后的 agent step 生效：历史消息里已注入的 OpenViking 上下文在被压缩前仍留在该会话中；关闭期间官方插件此前排队的待提交写入仍可能由其全局恢复逻辑补发。本插件不启动、停止或修改 OpenViking 服务端，也不替换官方记忆插件。
 - 跨主题共享开关只写官方声明的 `plugin.recallPeerScope` 键，保留 `ovcli.conf` 中的一切未知键；保存后的自动重载只经宿主 Cordis 公开机制重载官方插件使其重读配置，不修改官方代码，副作用是对打开的会话做一次提交归档并短暂重建 MCP 工具（卡片文案已提示）；自动重载未完成时给出手动按钮，官方插件未加载时提示手动重启 DSH。环境变量 `OPENVIKING_RECALL_PEER_SCOPE` 优先级更高，页面会显示其覆盖警告。
-
-## 安装
-
-```bash
-# 安装 openviking 的官方插件
-dsh plugin --profile web add @openviking/dsh-memory-plugin
-# 安装配置管理器
-dsh plugin --profile web add dsh-openviking-manager
-# 也可以直接从 GitHub 仓库安装或者从 file 安装
-dsh plugin --profile web add github:xbzbing/dsh-openviking-manager
-```
-
-安装后可能需要重启对应的 DSH profile，在 DSH 插件页面可以看到`openviking-manager`的配置管理页面。
 
 ## 环境要求
 
