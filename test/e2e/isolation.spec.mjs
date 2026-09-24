@@ -40,7 +40,7 @@ async function startIsolationFixture({ restartMemoryPlugin } = {}) {
   };
 }
 
-test("turning cross-topic sharing off asks for a plugin restart and applies it", async ({ page }) => {
+test("turning cross-topic sharing off saves, auto-reloads, and applies the setting", async ({ page }) => {
   let restarts = 0;
   const fixture = await startIsolationFixture({
     restartMemoryPlugin: async () => { restarts += 1; return { restarted: true, count: 1 }; },
@@ -50,39 +50,43 @@ test("turning cross-topic sharing off asks for a plugin restart and applies it",
     const toggle = page.getByLabel("Allow sharing memories across topics");
     await expect(toggle).toBeVisible();
     await expect(toggle).toBeChecked();
+    // The card warns up front that saving triggers an automatic reload.
+    await expect(page.getByText("Saving reloads the official memory plugin automatically")).toBeVisible();
 
     await toggle.uncheck();
-    await expect(page.getByRole("status")).toContainText("Restart the official memory plugin to apply it");
-    const banner = page.getByRole("alert").filter({ hasText: "Restart required" });
-    await expect(banner).toBeVisible();
-    await expect(page.getByRole("button", { name: "Restart official memory plugin" })).toBeVisible();
+    await expect(page.getByRole("status")).toContainText("The official memory plugin reloaded. The new setting is active.");
+    // Automatic reload succeeded: no fallback banner, no manual button.
+    await expect(page.getByRole("alert").filter({ hasText: "automatic reload did not complete" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Restart official memory plugin" })).toHaveCount(0);
+    expect(restarts).toBe(1);
 
     const storedAfterSave = JSON.parse(await readFile(fixture.configPath, "utf8"));
     expect(storedAfterSave.plugin.recallPeerScope).toBe("actor");
     expect(storedAfterSave.api_key).toBe("keep-this-secret");
 
-    await page.getByRole("button", { name: "Restart official memory plugin" }).click();
-    await expect(page.getByRole("status")).toContainText("The official memory plugin restarted");
-    await expect(banner).toHaveCount(0);
-    expect(restarts).toBe(1);
-
-    // Back to the official default: the key is removed, and because the
-    // plugin loaded `actor`, sharing again also needs a restart.
+    // Back to the official default: the key is removed and reloaded again.
     await toggle.check();
-    await expect(page.getByRole("status")).toContainText("Restart the official memory plugin to apply it");
+    // The status line still shows the previous round's identical success
+    // text, so the restart counter is the only trustworthy wait here.
+    await expect.poll(() => restarts).toBe(2);
+    await expect(page.getByRole("status")).toContainText("The official memory plugin reloaded. The new setting is active.");
     const storedAfterReenable = JSON.parse(await readFile(fixture.configPath, "utf8"));
     expect(storedAfterReenable.plugin.recallPeerScope).toBe(undefined);
-    await expect(page.getByRole("button", { name: "Restart official memory plugin" })).toBeVisible();
+    await expect(page.getByRole("alert").filter({ hasText: "automatic reload did not complete" })).toHaveCount(0);
   } finally {
     await fixture.close();
   }
 });
 
-test("without a reloadable plugin the user is told to restart the DSH instance", async ({ page }) => {
+test("a failed automatic reload falls back to the manual button and manual advice", async ({ page }) => {
   const fixture = await startIsolationFixture();
   try {
     await page.goto(fixture.url);
     await page.getByLabel("Allow sharing memories across topics").uncheck();
+    await expect(page.getByRole("status")).toContainText("Restart the DSH instance manually");
+    // The file kept the change; the fallback banner offers the manual path.
+    const banner = page.getByRole("alert").filter({ hasText: "automatic reload did not complete" });
+    await expect(banner).toBeVisible();
     await page.getByRole("button", { name: "Restart official memory plugin" }).click();
     await expect(page.getByRole("status")).toContainText("Restart the DSH instance manually");
     const stored = JSON.parse(await readFile(fixture.configPath, "utf8"));
@@ -98,15 +102,17 @@ test("renders the isolation section in Simplified Chinese", async ({ page }) => 
     Object.defineProperty(navigator, "language", { configurable: true, value: "zh-CN" });
     Object.defineProperty(navigator, "languages", { configurable: true, value: ["zh-CN", "zh"] });
   });
-  const fixture = await startIsolationFixture();
+  const fixture = await startIsolationFixture({
+    restartMemoryPlugin: async () => ({ restarted: true, count: 1 }),
+  });
   try {
     await page.goto(fixture.url);
     await expect(page.getByRole("heading", { name: "记忆隔离" })).toBeVisible();
     await expect(page.getByLabel("允许跨主题共享记忆")).toBeChecked();
+    await expect(page.getByText("保存后会自动重新加载官方记忆插件")).toBeVisible();
     await page.getByLabel("允许跨主题共享记忆").uncheck();
-    await expect(page.getByRole("status")).toContainText("需重启官方记忆插件后生效");
-    await expect(page.getByRole("alert").filter({ hasText: "需要重启" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "重启官方记忆插件" })).toBeVisible();
+    await expect(page.getByRole("status")).toContainText("官方记忆插件已重新加载，新设置已生效。");
+    await expect(page.getByRole("alert").filter({ hasText: "自动重新加载未完成" })).toHaveCount(0);
   } finally {
     await fixture.close();
   }

@@ -82,11 +82,11 @@ export type TranslationKey =
   | "allowCrossTopicLabel"
   | "isolationHint"
   | "isolationSaved"
-  | "isolationSavedRestart"
   | "isolationSaveFailed"
   | "envOverrideWarning"
+  | "reloadNotice"
+  | "reloading"
   | "restartRequired"
-  | "restartSideEffects"
   | "restartPlugin"
   | "restartSucceeded"
   | "restartUnavailable"
@@ -176,13 +176,13 @@ const en: Record<TranslationKey, string> = {
   allowCrossTopicLabel: "Allow sharing memories across topics",
   isolationHint: "When sharing is off, automatic recall only returns memories from the current project (peer). The user-level profile injection and the shared resources directory are not affected.",
   isolationSaved: "Memory isolation setting saved.",
-  isolationSavedRestart: "Memory isolation setting saved. Restart the official memory plugin to apply it.",
   isolationSaveFailed: "Unable to save the memory isolation setting.",
   envOverrideWarning: "OPENVIKING_RECALL_PEER_SCOPE is set and overrides this file setting. Remove the variable and restart the DSH process to change it.",
-  restartRequired: "Restart required: the new isolation setting takes effect after the official memory plugin restarts.",
-  restartSideEffects: "Restarting commits and archives every open session once, and briefly rebuilds the OpenViking MCP tools. Running conversations keep their state.",
+  reloadNotice: "Saving reloads the official memory plugin automatically: it commits and archives every open session once, and briefly rebuilds the OpenViking MCP tools.",
+  reloading: "Reloading the official memory plugin…",
+  restartRequired: "The automatic reload did not complete, so the new setting is not active yet. Reload manually here or restart the DSH instance.",
   restartPlugin: "Restart official memory plugin",
-  restartSucceeded: "The official memory plugin restarted. The new setting is active.",
+  restartSucceeded: "The official memory plugin reloaded. The new setting is active.",
   restartUnavailable: "The official memory plugin is not loaded in this process. Restart the DSH instance manually to apply the change.",
   restartFailed: "Unable to restart the official memory plugin: {error}",
 };
@@ -269,13 +269,13 @@ const zh: Record<TranslationKey, string> = {
   allowCrossTopicLabel: "允许跨主题共享记忆",
   isolationHint: "关闭共享后，自动召回仅返回当前项目（peer）的记忆；用户级画像注入和共享资源目录不受此开关影响。",
   isolationSaved: "记忆隔离设置已保存。",
-  isolationSavedRestart: "记忆隔离设置已保存。需重启官方记忆插件后生效。",
   isolationSaveFailed: "无法保存记忆隔离设置。",
   envOverrideWarning: "环境变量 OPENVIKING_RECALL_PEER_SCOPE 已设置并覆盖此文件配置。请移除该变量并重启 DSH 进程。",
-  restartRequired: "需要重启：新的隔离设置将在官方记忆插件重启后生效。",
-  restartSideEffects: "重启会对所有打开的会话执行一次提交归档，并短暂重建 OpenViking MCP 工具；进行中的对话状态保留。",
+  reloadNotice: "保存后会自动重新加载官方记忆插件：会对所有打开的会话执行一次提交归档，并短暂重建 OpenViking MCP 工具。",
+  reloading: "正在重新加载官方记忆插件…",
+  restartRequired: "自动重新加载未完成，新的设置尚未生效。可在此手动重新加载，或重启 DSH 实例。",
   restartPlugin: "重启官方记忆插件",
-  restartSucceeded: "官方记忆插件已重启，新设置已生效。",
+  restartSucceeded: "官方记忆插件已重新加载，新设置已生效。",
   restartUnavailable: "当前进程中未加载官方记忆插件。请手动重启 DSH 实例使更改生效。",
   restartFailed: "无法重启官方记忆插件：{error}",
 };

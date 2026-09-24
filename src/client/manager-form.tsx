@@ -98,12 +98,13 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     } catch { /* version info is non-critical; leave the section hidden on failure */ }
   };
   // The isolation section only renders when this endpoint answers, so hosts
-  // without the route (older fixtures) keep their previous page shape.
-  const loadRecallScope = async () => {
+  // without the route (older fixtures) keep their previous page shape. After
+  // an action, a transient failure instead keeps the current view on screen.
+  const loadRecallScope = async (hideOnFailure = true) => {
     try {
       const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-scope`))).value as RecallScopeView;
       setRecallScope(value);
-    } catch { setRecallScope(undefined); }
+    } catch { if (hideOnFailure) setRecallScope(undefined); }
   };
   useEffect(() => { void load(); void loadVersion(); void loadRecallScope(); }, []);
 
@@ -131,6 +132,22 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     finally { setBusy(false); }
   };
 
+  /** POST the reload and settle the status line. Busy is owned by the caller:
+   * this runs both from the automatic post-save path and the manual fallback
+   * button shown when the automatic reload did not complete. */
+  const runRestart = async () => {
+    try {
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-scope/restart`, { method: "POST" }))).value as RestartView;
+      if (value.restarted) setStatus(t("restartSucceeded"));
+      else if (value.reason === "plugin-unavailable") setStatus(t("restartUnavailable"));
+      else setStatus(t("restartFailed", { error: value.error ?? value.reason ?? "unknown" }));
+    } catch (error) {
+      setStatus(t("restartFailed", { error: error instanceof Error ? error.message : "unknown" }));
+    } finally {
+      await loadRecallScope(false);
+    }
+  };
+
   const setScope = async (allowSharing: boolean) => {
     // Optimistic flip: a controlled checkbox whose prop only changes after
     // the round-trip snaps back to its old state under the click, which reads
@@ -145,7 +162,15 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
         body: JSON.stringify({ scope: allowSharing ? "all" : "actor" }),
       }))).value as RecallScopeView;
       setRecallScope(value);
-      setStatus(value.restartPending ? t("isolationSavedRestart") : t("isolationSaved"));
+      // The applied plugin only picks the value up through a reload, so a
+      // changed file triggers one right away; the banner plus manual button
+      // remain as the fallback when it does not complete.
+      if (value.restartPending) {
+        setStatus(t("reloading"));
+        await runRestart();
+      } else {
+        setStatus(t("isolationSaved"));
+      }
     } catch {
       if (previous) setRecallScope(previous);
       setStatus(t("isolationSaveFailed"));
@@ -154,15 +179,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
 
   const restartPlugin = async () => {
     setBusy(true);
-    try {
-      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-scope/restart`, { method: "POST" }))).value as RestartView;
-      if (value.restarted) setStatus(t("restartSucceeded"));
-      else if (value.reason === "plugin-unavailable") setStatus(t("restartUnavailable"));
-      else setStatus(t("restartFailed", { error: value.error ?? value.reason ?? "unknown" }));
-      await loadRecallScope();
-    } catch (error) {
-      setStatus(t("restartFailed", { error: error instanceof Error ? error.message : "unknown" }));
-    } finally { setBusy(false); }
+    try { await runRestart(); } finally { setBusy(false); }
   };
 
   const repair = async () => {
@@ -256,11 +273,11 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
           <span>{t("allowCrossTopicLabel")}</span>
         </label>
         <p className="ovm-hint ovm-isolationHint">{t("isolationHint")}</p>
+        <p className="ovm-hint ovm-isolationHint">{t("reloadNotice")}</p>
         {recallScope.source === "env" ? <p className="ovm-warning" role="alert">{t("envOverrideWarning")}</p> : null}
         {recallScope.restartPending ? (
           <div className="ovm-restartRow">
             <p className="ovm-warning" role="alert">{t("restartRequired")}</p>
-            <p className="ovm-hint">{t("restartSideEffects")}</p>
             <button type="button" onClick={() => void restartPlugin()} disabled={busy}>{t("restartPlugin")}</button>
           </div>
         ) : null}
