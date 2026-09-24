@@ -4,6 +4,15 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { discoverLocalOpenViking } from "./local-discovery.js";
 import { loadOvcliConfig, loadOvcliUserKey, repairOvcliPermissions, saveOvcliConfig } from "./ovcli-config.js";
+import {
+  currentRecallScope,
+  normalizeRecallScope,
+  recallScopeView,
+  saveRecallScope,
+  snapshotLoadedRecallScope,
+  type RecallScopeEnv,
+} from "./recall-scope.js";
+import type { RestartResult } from "./openviking-restart.js";
 import { probeOpenViking } from "./openviking-client.js";
 import { createAccount, createUser, listAccounts, listUsers, rotateUserKey } from "./openviking-admin.js";
 import { isSessionOpenVikingEnabled, normalizeSessionId, setOpenVikingEnabled } from "./session-toggle.js";
@@ -18,6 +27,14 @@ const MAX_SESSION_ID_CHARS = 512;
 export interface ManagerApiOptions {
   ovcliPath?: string;
   ovconfPath?: string;
+  /** Host-injected reload of the official memory plugin. Absent means the
+   * official plugin cannot be restarted in this process (optional peer); the
+   * restart route then reports `plugin-unavailable` instead of failing. */
+  restartMemoryPlugin?: () => Promise<RestartResult>;
+  /** Env layer for the recall-scope view; defaults to process.env. Tests pass
+   * an explicit object so a machine-level OPENVIKING_* variable cannot leak
+   * into assertions. */
+  env?: RecallScopeEnv;
 }
 
 function configPathOf(options: ManagerApiOptions): string {
@@ -83,6 +100,13 @@ function rejectCrossOrigin(req: IncomingMessage, res: ServerResponse): boolean {
 export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
   const ovcliPath = configPathOf(options);
   const ovconfPath = ovconfPathOf(options);
+  const env = options.env ?? process.env;
+  // The official plugin resolves its config once at apply; constructing these
+  // routes happens at apply too, so this snapshot is the value it loaded. It
+  // only advances after a successful plugin restart.
+  let loadedScope = snapshotLoadedRecallScope(ovcliPath, env);
+  let restarting = false;
+  const scopeView = () => recallScopeView(ovcliPath, { env, loadedScope });
   return [
     {
       kind: "exact",
@@ -286,6 +310,68 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
           writeJson(res, 200, { ok: true, value });
         } catch (error) {
           writeJson(res, 500, { ok: false, error: error instanceof Error ? error.message : "Unable to read version information" });
+        }
+      },
+    },
+    {
+      kind: "exact",
+      path: `${MANAGER_API_PREFIX}/recall-scope`,
+      handler: async (req, res) => {
+        if (rejectCrossOrigin(req, res)) return;
+        if (req.method === "GET") {
+          try {
+            writeJson(res, 200, { ok: true, value: await scopeView() });
+          } catch (error) {
+            writeJson(res, 500, { ok: false, error: error instanceof Error ? error.message : "Unable to read the memory isolation setting" });
+          }
+          return;
+        }
+        if (req.method !== "PUT") {
+          writeJson(res, 405, { error: "method not allowed" });
+          return;
+        }
+        try {
+          const body = await readJson(req);
+          const scope = normalizeRecallScope(stringAt(body, "scope"));
+          if (scope === undefined) {
+            writeJson(res, 400, { ok: false, error: 'scope must be "all" or "actor"' });
+            return;
+          }
+          await saveRecallScope(ovcliPath, scope);
+          writeJson(res, 200, { ok: true, value: await scopeView() });
+        } catch (error) {
+          writeJson(res, 400, { ok: false, error: error instanceof Error ? error.message : "Unable to save the memory isolation setting" });
+        }
+      },
+    },
+    {
+      kind: "exact",
+      path: `${MANAGER_API_PREFIX}/recall-scope/restart`,
+      handler: async (req, res) => {
+        if (rejectCrossOrigin(req, res)) return;
+        if (req.method !== "POST") {
+          writeJson(res, 405, { error: "method not allowed" });
+          return;
+        }
+        if (restarting) {
+          writeJson(res, 409, { ok: false, code: "restart-in-progress", error: "A plugin restart is already running" });
+          return;
+        }
+        if (!options.restartMemoryPlugin) {
+          writeJson(res, 200, { ok: true, value: { restarted: false, count: 0, reason: "plugin-unavailable" } satisfies RestartResult });
+          return;
+        }
+        restarting = true;
+        try {
+          const result = await options.restartMemoryPlugin();
+          // A successful restart re-applied the plugin, so whatever the file
+          // says now is the value it loaded.
+          if (result.restarted) loadedScope = await currentRecallScope(ovcliPath, env);
+          writeJson(res, 200, { ok: true, value: result });
+        } catch (error) {
+          writeJson(res, 500, { ok: false, error: error instanceof Error ? error.message : "Unable to restart the official memory plugin" });
+        } finally {
+          restarting = false;
         }
       },
     },

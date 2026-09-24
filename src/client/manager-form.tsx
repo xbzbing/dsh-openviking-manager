@@ -4,8 +4,10 @@ import { browserLocale, createTranslation, type Translation } from "./i18n.js";
 export interface ConfigView { url: string; account: string; user: string; apiKeySet: boolean; apiKeyMasked: string; }
 interface ConfigResult { kind: "missing" | "invalid-json" | "invalid-shape" | "ready"; config: ConfigView; permissionWarning?: boolean; message?: string; }
 interface DiscoveryResult { ovcli: ConfigResult; suggestedEndpoint: string; localServer: { found: boolean; authMode?: string; rootKeyAvailable: boolean; configError?: string }; }
-interface ApiEnvelope { ok: boolean; value?: ConfigResult; error?: string; code?: string; }
+interface ApiEnvelope { ok: boolean; value?: unknown; error?: string; code?: string; }
 interface VersionView { current: string; repositoryUrl?: string; latest?: string; updateAvailable: boolean; releaseUrl?: string; checkedRemote: boolean; error?: string; }
+interface RecallScopeView { scope: "all" | "actor"; source: "env" | "plugin.dsh" | "plugin" | "default"; envOverride: string; restartPending: boolean; }
+interface RestartView { restarted: boolean; count: number; reason?: string; error?: string; }
 export interface ManagerFormProps { apiPrefix?: string; fetchFn?: typeof fetch; t?: Translation; }
 
 /** Mirrors ENDPOINT_NOT_CONFIGURED_CODE in src/manager-api.ts across the client boundary. */
@@ -74,6 +76,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   const [version, setVersion] = useState<VersionView>();
   const [versionStatus, setVersionStatus] = useState("");
   const [checkingVersion, setCheckingVersion] = useState(false);
+  const [recallScope, setRecallScope] = useState<RecallScopeView>();
 
   const load = async () => {
     setBusy(true);
@@ -90,11 +93,19 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   };
   const loadVersion = async () => {
     try {
-      const value = (await responseJson(await fetchFn(`${apiPrefix}/version`))).value as unknown as VersionView;
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/version`))).value as VersionView;
       setVersion(value);
     } catch { /* version info is non-critical; leave the section hidden on failure */ }
   };
-  useEffect(() => { void load(); void loadVersion(); }, []);
+  // The isolation section only renders when this endpoint answers, so hosts
+  // without the route (older fixtures) keep their previous page shape.
+  const loadRecallScope = async () => {
+    try {
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-scope`))).value as RecallScopeView;
+      setRecallScope(value);
+    } catch { setRecallScope(undefined); }
+  };
+  useEffect(() => { void load(); void loadVersion(); void loadRecallScope(); }, []);
 
   const checkUpdates = async () => {
     setCheckingVersion(true);
@@ -114,16 +125,50 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   const save = async (event: React.FormEvent) => {
     event.preventDefault(); setBusy(true);
     try {
-      const next = (await responseJson(await fetchFn(`${apiPrefix}/config`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...config, ...(apiKey === "" ? {} : { apiKey }) }) }))).value!;
+      const next = (await responseJson(await fetchFn(`${apiPrefix}/config`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...config, ...(apiKey === "" ? {} : { apiKey }) }) }))).value as ConfigResult;
       setConfig(next.config); setApiKey(""); setKind(next.kind); setPermissionWarning(false); setStatus(t("configurationSaved"));
     } catch (error) { setStatus(error instanceof Error ? error.message : t("unableSave")); }
     finally { setBusy(false); }
   };
 
+  const setScope = async (allowSharing: boolean) => {
+    // Optimistic flip: a controlled checkbox whose prop only changes after
+    // the round-trip snaps back to its old state under the click, which reads
+    // as "the toggle does nothing". Revert on failure instead.
+    const previous = recallScope;
+    setBusy(true);
+    if (previous) setRecallScope({ ...previous, scope: allowSharing ? "all" : "actor" });
+    try {
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-scope`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ scope: allowSharing ? "all" : "actor" }),
+      }))).value as RecallScopeView;
+      setRecallScope(value);
+      setStatus(value.restartPending ? t("isolationSavedRestart") : t("isolationSaved"));
+    } catch {
+      if (previous) setRecallScope(previous);
+      setStatus(t("isolationSaveFailed"));
+    } finally { setBusy(false); }
+  };
+
+  const restartPlugin = async () => {
+    setBusy(true);
+    try {
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-scope/restart`, { method: "POST" }))).value as RestartView;
+      if (value.restarted) setStatus(t("restartSucceeded"));
+      else if (value.reason === "plugin-unavailable") setStatus(t("restartUnavailable"));
+      else setStatus(t("restartFailed", { error: value.error ?? value.reason ?? "unknown" }));
+      await loadRecallScope();
+    } catch (error) {
+      setStatus(t("restartFailed", { error: error instanceof Error ? error.message : "unknown" }));
+    } finally { setBusy(false); }
+  };
+
   const repair = async () => {
     setBusy(true);
     try {
-      const next = (await responseJson(await fetchFn(`${apiPrefix}/repair-permissions`, { method: "POST" }))).value!;
+      const next = (await responseJson(await fetchFn(`${apiPrefix}/repair-permissions`, { method: "POST" }))).value as ConfigResult;
       setConfig(next.config); setPermissionWarning(next.permissionWarning === true); setStatus(t("permissionsRepaired"));
     } catch (error) { setStatus(error instanceof Error ? error.message : t("unableRepair")); }
     finally { setBusy(false); }
@@ -193,6 +238,29 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
         <p className="ovm-hint">{t("keyHint")}</p><div className="ovm-actions"><button type="submit" disabled={busy}>{t("save")}</button><button type="button" className="ovm-secondary" onClick={() => void verify()} disabled={busy}>{t("verify")}</button><a href={studioUrl} target="_blank" rel="noreferrer">{t("openStudio")}</a></div>
       </form>
     </section>
+    {recallScope === undefined ? null : (
+      <section className="ovm-card" aria-label={t("isolationTitle")}>
+        <h2>{t("isolationTitle")}</h2>
+        <label className="ovm-checkRow">
+          <input
+            type="checkbox"
+            disabled={busy || recallScope.source === "env"}
+            checked={recallScope.scope === "all"}
+            onChange={(event) => void setScope(event.target.checked)}
+          />
+          <span>{t("allowCrossTopicLabel")}</span>
+        </label>
+        <p className="ovm-hint">{t("isolationHint")}</p>
+        {recallScope.source === "env" ? <p className="ovm-warning" role="alert">{t("envOverrideWarning")}</p> : null}
+        {recallScope.restartPending ? (
+          <div className="ovm-restartRow">
+            <p className="ovm-warning" role="alert">{t("restartRequired")}</p>
+            <p className="ovm-hint">{t("restartSideEffects")}</p>
+            <button type="button" onClick={() => void restartPlugin()} disabled={busy}>{t("restartPlugin")}</button>
+          </div>
+        ) : null}
+      </section>
+    )}
     <section className="ovm-card"><details className="ovm-recovery"><summary><h2>{t("recoverTitle")}</h2></summary><div className="ovm-recoveryContent"><p className="ovm-hint">{t("recoverHint")}</p>
       {kind !== "ready" ? <p className="ovm-warning" role="alert">{t("endpointRequiredFirst")}</p> : null}
       <label>{t("temporaryRootKey")}<input type="password" value={rootApiKey} onChange={(event) => setRootApiKey(event.target.value)} placeholder={t("pasteRootKey")} /></label>

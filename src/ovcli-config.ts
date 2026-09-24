@@ -68,7 +68,7 @@ export function assertHttpEndpoint(raw: string): string {
   return parsed.toString().replace(/\/$/, "");
 }
 
-async function readStored(path: string): Promise<Record<string, unknown>> {
+export async function readOvcliObject(path: string): Promise<Record<string, unknown>> {
   try {
     const raw = await readFile(path, "utf8");
     const parsed: unknown = JSON.parse(raw);
@@ -82,8 +82,18 @@ async function readStored(path: string): Promise<Record<string, unknown>> {
   }
 }
 
+/** Atomically replace ovcli.conf with the caller's merged object, verbatim:
+ * unknown keys written by other tools survive, and the 0600 mode is kept. */
+export async function writeOvcliObject(path: string, next: Record<string, unknown>): Promise<void> {
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  const temporary = `${path}.tmp-${process.pid}-${Date.now()}`;
+  await writeFile(temporary, `${JSON.stringify(next, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  await chmod(temporary, 0o600);
+  await rename(temporary, path);
+}
+
 export async function loadOvcliUserKey(path: string): Promise<string> {
-  const stored = await readStored(path);
+  const stored = await readOvcliObject(path);
   return asString(stored.api_key);
 }
 
@@ -112,7 +122,7 @@ export async function loadOvcliConfig(path: string): Promise<OvcliLoadResult> {
 
 export async function saveOvcliConfig(path: string, input: OvcliConfigInput): Promise<OvcliConfigView> {
   const url = assertHttpEndpoint(input.url);
-  const existing = await readStored(path);
+  const existing = await readOvcliObject(path);
   const existingKey = asString(existing.api_key);
   const apiKey = input.apiKey === undefined ? existingKey : input.apiKey.trim();
   const next: Record<string, unknown> = {
@@ -123,11 +133,7 @@ export async function saveOvcliConfig(path: string, input: OvcliConfigInput): Pr
     user: input.user.trim(),
   };
 
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  const temporary = `${path}.tmp-${process.pid}-${Date.now()}`;
-  await writeFile(temporary, `${JSON.stringify(next, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-  await chmod(temporary, 0o600);
-  await rename(temporary, path);
+  await writeOvcliObject(path, next);
   return viewOf(next);
 }
 

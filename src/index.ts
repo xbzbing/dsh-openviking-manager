@@ -10,6 +10,7 @@ import {
 import { stripOpenVikingInjectedMessages } from "./ov-prestep.js";
 import { openVikingToolDenialReason } from "./ov-tool-guard.js";
 import { installOpenVikingRuntimeGate } from "./openviking-gate.js";
+import { restartOfficialOpenViking } from "./openviking-restart.js";
 
 export const name = "openviking-manager";
 export const inject = ["webServer", "tools"];
@@ -44,7 +45,12 @@ function agentSessionId(agent: AgentLike): string | undefined {
 export function apply(ctx: Context): void {
   const host = ctx as unknown as HostContext;
   host.effect(() => {
-    const disposers = makeManagerRoutes().map((route) => host.webServer.register(route));
+    // Restarting goes through the public cordis registry: it reloads the
+    // official plugin so an ovcli.conf change is re-read without restarting
+    // the DSH instance. The official code and behaviour stay untouched.
+    const disposers = makeManagerRoutes({
+      restartMemoryPlugin: () => restartOfficialOpenViking(ctx),
+    }).map((route) => host.webServer.register(route));
     return () => {
       for (const dispose of disposers) dispose();
     };

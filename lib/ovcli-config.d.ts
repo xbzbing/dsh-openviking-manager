@@ -29,6 +29,10 @@ export interface OvcliConfigInput {
     apiKey?: string;
 }
 export declare function assertHttpEndpoint(raw: string): string;
+export declare function readOvcliObject(path: string): Promise<Record<string, unknown>>;
+/** Atomically replace ovcli.conf with the caller's merged object, verbatim:
+ * unknown keys written by other tools survive, and the 0600 mode is kept. */
+export declare function writeOvcliObject(path: string, next: Record<string, unknown>): Promise<void>;
 export declare function loadOvcliUserKey(path: string): Promise<string>;
 export declare function loadOvcliConfig(path: string): Promise<OvcliLoadResult>;
 export declare function saveOvcliConfig(path: string, input: OvcliConfigInput): Promise<OvcliConfigView>;
