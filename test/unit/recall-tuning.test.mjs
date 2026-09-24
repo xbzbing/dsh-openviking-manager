@@ -6,6 +6,7 @@ import { join } from "node:path";
 import {
   effectiveRecallTuning,
   parseRecallTuningPatch,
+  recallTuningInitPatch,
   recallTuningPending,
   recallTuningView,
   saveRecallTuning,
@@ -29,6 +30,8 @@ test("an untouched config reports the official defaults with nothing configured"
     configured: false,
     envOverride: "",
     envVar: "OPENVIKING_SCORE_THRESHOLD",
+    default: 0.5,
+    pinned: true,
   });
   assert.deepEqual(state.recallLimit, {
     value: 10,
@@ -36,6 +39,8 @@ test("an untouched config reports the official defaults with nothing configured"
     configured: false,
     envOverride: "",
     envVar: "OPENVIKING_RECALL_LIMIT",
+    default: 10,
+    pinned: false,
   });
   assert.equal(state.recallQueryExpansion.value, "auto");
   assert.equal(state.recallQueryExpansion.configured, false);
@@ -46,7 +51,7 @@ test("an untouched config reports the official defaults with nothing configured"
 test("the effective value follows the official layer order, alias included", () => {
   assert.deepEqual(
     effectiveRecallTuning({ plugin: { scoreThreshold: 0.6 } }, {}).scoreThreshold,
-    { value: 0.6, source: "plugin", configured: true, envOverride: "", envVar: "OPENVIKING_SCORE_THRESHOLD" },
+    { value: 0.6, source: "plugin", configured: true, envOverride: "", envVar: "OPENVIKING_SCORE_THRESHOLD", default: 0.5, pinned: true },
   );
   // The harness section wins over the shared one, exactly as the official
   // loader merges them, and env outranks every file.
@@ -138,7 +143,7 @@ test("restoring the default removes the key instead of pinning it", async (t) =>
   await saveRecallTuning(path, {
     scoreThreshold: null,
     recallLimit: null,
-    recallQueryExpansion: "auto",
+    recallQueryExpansion: null,
     recallExcludeUris: [],
   });
 
@@ -231,6 +236,50 @@ test("a missing or unparsable file snapshots as the official defaults", async (t
   assert.equal(snapshotLoadedRecallTuning(broken, {}).recallQueryExpansion.value, "auto");
 });
 
+test("product defaults are offered for the pinned knobs and only they are initialised", () => {
+  const fresh = effectiveRecallTuning({}, {});
+  // The keyless file still behaves officially; what "default" means for the
+  // form is the product default the first load writes.
+  assert.equal(fresh.scoreThreshold.value, 0.35);
+  assert.equal(fresh.scoreThreshold.default, 0.5);
+  assert.equal(fresh.scoreThreshold.pinned, true);
+  assert.equal(fresh.recallQueryExpansion.value, "auto");
+  assert.equal(fresh.recallQueryExpansion.default, "off");
+  assert.equal(fresh.recallQueryExpansion.pinned, true);
+  assert.deepEqual(recallTuningInitPatch(fresh), { scoreThreshold: 0.5, recallQueryExpansion: "off" });
+
+  // Knobs without a product default keep the official one and are never pinned.
+  assert.equal(fresh.recallLimit.default, 10);
+  assert.equal(fresh.recallLimit.pinned, false);
+  assert.deepEqual(fresh.recallExcludeUris.default, []);
+  assert.equal(fresh.recallExcludeUris.pinned, false);
+
+  // A file that carries the keys has nothing left to write, whatever the value.
+  assert.deepEqual(
+    recallTuningInitPatch(effectiveRecallTuning({ plugin: { scoreThreshold: 0.6, recallQueryExpansion: "auto" } }, {})),
+    {},
+  );
+  // Env outranks the file, so the pinned knob it names is never written either.
+  assert.deepEqual(
+    recallTuningInitPatch(effectiveRecallTuning({}, { OPENVIKING_SCORE_THRESHOLD: "0.9" })),
+    { recallQueryExpansion: "off" },
+  );
+});
+
+test("an explicit automatic expansion is written, not dropped", async (t) => {
+  const path = await tempConfig(t, { plugin: { scoreThreshold: 0.5, recallQueryExpansion: "off" } });
+
+  await saveRecallTuning(path, { recallQueryExpansion: "auto" });
+
+  const stored = JSON.parse(await readFile(path, "utf8"));
+  assert.equal(stored.plugin.recallQueryExpansion, "auto");
+  assert.equal(stored.plugin.scoreThreshold, 0.5);
+  // Configured, so the next load does not re-pin the product default.
+  const state = effectiveRecallTuning(stored, {});
+  assert.equal(state.recallQueryExpansion.configured, true);
+  assert.deepEqual(recallTuningInitPatch(state), {});
+});
+
 test("the patch parser enforces the official value domain", () => {
   assert.deepEqual(parseRecallTuningPatch({ scoreThreshold: 0.6 }), { scoreThreshold: 0.6 });
   assert.deepEqual(parseRecallTuningPatch({ scoreThreshold: null, recallLimit: null }), {
@@ -252,7 +301,8 @@ test("the patch parser enforces the official value domain", () => {
   assert.throws(() => parseRecallTuningPatch({ scoreThreshold: Number.NaN }), /between 0 and 1/);
   assert.throws(() => parseRecallTuningPatch({ recallLimit: 0 }), /between 1 and 50/);
   assert.throws(() => parseRecallTuningPatch({ recallLimit: 2.5 }), /integer between 1 and 50/);
-  assert.throws(() => parseRecallTuningPatch({ recallQueryExpansion: "sometimes" }), /"auto" or "off"/);
+  assert.deepEqual(parseRecallTuningPatch({ recallQueryExpansion: null }), { recallQueryExpansion: null });
+  assert.throws(() => parseRecallTuningPatch({ recallQueryExpansion: "sometimes" }), /"auto", "off", or null/);
   assert.throws(() => parseRecallTuningPatch({ recallExcludeUris: "viking://a" }), /array of viking:\/\/ URIs/);
   assert.throws(() => parseRecallTuningPatch({ recallExcludeUris: ["https://example.com"] }), /viking:\/\/ URIs/);
   assert.throws(() => parseRecallTuningPatch({ recallExcludeUris: ["viking://two words"] }), /viking:\/\/ URIs/);

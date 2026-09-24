@@ -47,17 +47,19 @@ test("recall tuning writes the official keys and reloads the plugin", async ({ p
   let restarts = 0;
   const fixture = await startTuningFixture({
     restartMemoryPlugin: async () => { restarts += 1; return { restarted: true, count: 1 }; },
-    // Isolation is already pinned, so the only reload here comes from the save.
-    initialConfig: { plugin: { recallPeerScope: "actor" } },
+    // Isolation and both product defaults are already pinned, so the only
+    // reload here comes from the save itself.
+    initialConfig: { plugin: { recallPeerScope: "actor", scoreThreshold: 0.5, recallQueryExpansion: "off" } },
   });
   try {
     await page.goto(fixture.url);
     await expect(page.getByRole("heading", { name: "Recall tuning" })).toBeVisible();
-    // Unconfigured fields stay empty and show the official default as a hint.
-    await expect(page.getByLabel("Recall score threshold")).toHaveValue("");
-    await expect(page.getByLabel("Recall score threshold")).toHaveAttribute("placeholder", "default: 0.35");
+    // A pinned key loads into its field; an untouched one keeps the empty box
+    // with the default it would be initialised to as the placeholder.
+    await expect(page.getByLabel("Recall score threshold")).toHaveValue("0.5");
+    await expect(page.getByLabel("Recall score threshold")).toHaveAttribute("placeholder", "default: 0.5");
     await expect(page.getByLabel("Maximum injected items")).toHaveAttribute("placeholder", "default: 10");
-    await expect(page.getByLabel("Query expansion")).toHaveValue("auto");
+    await expect(page.getByLabel("Query expansion")).toHaveValue("off");
     await expect(page.getByLabel("Excluded URIs")).toHaveValue("");
     // The card warns up front that saving triggers an automatic reload.
     await expect(page.getByText("Saving these keys reloads the official memory plugin")).toBeVisible();
@@ -86,7 +88,42 @@ test("recall tuning writes the official keys and reloads the plugin", async ({ p
   }
 });
 
-test("clearing the fields restores the official default by dropping the keys", async ({ page }) => {
+test("a fresh config is initialised to the plugin defaults on one reload", async ({ page }) => {
+  let restarts = 0;
+  const fixture = await startTuningFixture({
+    restartMemoryPlugin: async () => { restarts += 1; return { restarted: true, count: 1 }; },
+    // Isolation is pinned already, so only the two product defaults are left
+    // to write — both in a single write, before a single reload.
+    initialConfig: { plugin: { recallPeerScope: "actor" } },
+  });
+  try {
+    await page.goto(fixture.url);
+    await expect(page.getByLabel("Recall score threshold")).toHaveValue("0.5");
+    await expect(page.getByLabel("Query expansion")).toHaveValue("off");
+    await expect.poll(() => restarts).toBe(1);
+    await expect(page.getByRole("status")).toContainText("The official memory plugin reloaded. The new setting is active.");
+
+    const stored = JSON.parse(await readFile(fixture.configPath, "utf8"));
+    expect(stored.plugin.scoreThreshold).toBe(0.5);
+    expect(stored.plugin.recallQueryExpansion).toBe("off");
+    // Knobs without a product default stay untouched.
+    expect(stored.plugin.recallLimit).toBe(undefined);
+    expect(stored.plugin.recallExcludeUris).toBe(undefined);
+    expect(stored.api_key).toBe("keep-this-secret");
+
+    // The file now carries the keys, so the next load has nothing to write
+    // and no further reload to ask for.
+    await page.reload();
+    await expect(page.getByLabel("Recall score threshold")).toHaveValue("0.5");
+    await expect(page.getByLabel("Query expansion")).toHaveValue("off");
+    await expect.poll(() => restarts).toBe(1);
+    await expect(page.getByRole("alert").filter({ hasText: "automatic reload did not complete" })).toHaveCount(0);
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("clearing a field restores that knob's default: the product one, or the official one", async ({ page }) => {
   let restarts = 0;
   const fixture = await startTuningFixture({
     restartMemoryPlugin: async () => { restarts += 1; return { restarted: true, count: 1 }; },
@@ -118,12 +155,16 @@ test("clearing the fields restores the official default by dropping the keys", a
     await expect.poll(() => restarts).toBe(1);
 
     const stored = JSON.parse(await readFile(fixture.configPath, "utf8"));
-    expect(stored.plugin.scoreThreshold).toBe(undefined);
+    // The pinned knob comes back as the product default rather than absent —
+    // otherwise the next load would write it right back.
+    expect(stored.plugin.scoreThreshold).toBe(0.5);
+    // "Automatic" is an explicit choice and is written, so it survives a reload.
+    expect(stored.plugin.recallQueryExpansion).toBe("auto");
+    // Knobs without a product default fall back to the official one: no key.
     expect(stored.plugin.recallLimit).toBe(undefined);
-    expect(stored.plugin.recallQueryExpansion).toBe(undefined);
     expect(stored.plugin.recallExcludeUris).toBe(undefined);
     expect(stored.plugin.recallPeerScope).toBe("actor");
-    await expect(page.getByLabel("Recall score threshold")).toHaveValue("");
+    await expect(page.getByLabel("Recall score threshold")).toHaveValue("0.5");
   } finally {
     await fixture.close();
   }
@@ -141,8 +182,10 @@ test("an env-configured knob is read-only and warns about the override", async (
     await expect(threshold).toHaveValue("0.9");
     expect(await threshold.isDisabled()).toBe(true);
     await expect(page.getByRole("alert").filter({ hasText: "OPENVIKING_SCORE_THRESHOLD" })).toBeVisible();
-    // Only the overridden field locks; the rest of the form stays editable.
+    // Only the overridden field locks; the rest of the form stays editable,
+    // and the pinned expansion is initialised as usual.
     expect(await page.getByLabel("Maximum injected items").isEnabled()).toBe(true);
+    await expect(page.getByLabel("Query expansion")).toHaveValue("off");
   } finally {
     await fixture.close();
   }
@@ -160,8 +203,9 @@ test("renders the recall tuning section in Simplified Chinese", async ({ page })
   try {
     await page.goto(fixture.url);
     await expect(page.getByRole("heading", { name: "召回调优" })).toBeVisible();
-    await expect(page.getByLabel("召回分数阈值")).toHaveAttribute("placeholder", "默认：0.35");
+    await expect(page.getByLabel("召回分数阈值")).toHaveAttribute("placeholder", "默认：0.5");
     await expect(page.getByLabel("单次注入条数上限")).toHaveAttribute("placeholder", "默认：10");
+    await expect(page.getByLabel("召回分数阈值")).toHaveValue("0.5");
     await expect(page.getByLabel("排除的 URI")).toBeVisible();
     await expect(page.getByRole("button", { name: "保存召回调优" })).toBeVisible();
     await expect(page.getByText("保存这些键同样会自动重新加载官方记忆插件")).toBeVisible();

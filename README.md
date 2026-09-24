@@ -32,7 +32,7 @@ dsh plugin --profile web add github:xbzbing/dsh-openviking-manager
 - 根据当前 endpoint 推导 Studio 地址（`<endpoint>/studio`），允许用户手工改为反向代理地址；
 - 会话级 OpenViking 开关：对话输入框左侧的按钮（默认开启）。关闭某个会话后，本插件会拦截官方插件在该会话的上下文注入、记忆写入/提交，并拒绝其 `mcp__openviking__*` 工具调用，使该会话不再读写 OpenViking；
 - 记忆隔离开关「不允许跨主题共享记忆」：写入官方 `ovcli.conf` 的 `plugin.recallPeerScope`，**默认开启**——首次打开配置页时若文件未定义该键，会自动写入 `actor` 并重载，使默认行为即为按主题隔离；关闭则写回官方默认 `all` 允许跨主题共享。保存后**自动重新加载**官方记忆插件使配置即刻生效（卡片文案会提前提示重载及其副作用；自动重载未完成时回退为手动重载按钮）；用户级画像注入与共享资源不受该开关影响；`.openviking/config.json` 等 workspace 配置由用户手工管理，本插件不读写；
-- 召回调优：在同一页调整官方插件的自动召回参数 —— `scoreThreshold`（召回分数阈值，默认 0.35）、`recallLimit`（单次注入条数上限，默认 10）、`recallQueryExpansion`（查询扩写，默认 auto）、`recallExcludeUris`（排除的 URI 子树，适合屏蔽 skills、resources 目录索引这类样板内容）。键名与取值域严格取自官方 config-schema，只写 `ovcli.conf` 的 `plugin` 段并保留其他键；字段留空即删除该键、恢复官方默认；`OPENVIKING_*` 环境变量优先级更高，被覆盖的字段只读并显示警告；保存后与隔离开关一样**自动重新加载**官方记忆插件；
+- 召回调优：在同一页调整官方插件的自动召回参数 —— `scoreThreshold`（召回分数阈值，本插件默认 0.5、官方默认 0.35）、`recallLimit`（单次注入条数上限，默认 10）、`recallQueryExpansion`（查询扩写，本插件默认关闭、官方默认 auto）、`recallExcludeUris`（排除的 URI 子树，适合屏蔽 skills、resources 目录索引这类样板内容）。键名与取值域严格取自官方 config-schema，只写 `ovcli.conf` 的 `plugin` 段并保留其他键；分数阈值与查询扩写带**产品默认**，首次打开配置页且文件未定义该键时自动写入并重载（与记忆隔离默认开启同一机制），字段留空即回到该键的默认值，其余键留空则删除该键、恢复官方默认；`OPENVIKING_*` 环境变量优先级更高，被覆盖的字段只读并显示警告；保存后与隔离开关一样**自动重新加载**官方记忆插件；
 - UI 跟随 DSH 系统语言设置，支持简体中文和英文。
 
 ## 界面
@@ -52,7 +52,7 @@ dsh plugin --profile web add github:xbzbing/dsh-openviking-manager
 - 会话开关状态仅保存在插件进程内存中，重启 DSH 后所有会话恢复默认开启。
 - 关闭只对之后的 agent step 生效：历史消息里已注入的 OpenViking 上下文在被压缩前仍留在该会话中；关闭期间官方插件此前排队的待提交写入仍可能由其全局恢复逻辑补发。本插件不启动、停止或修改 OpenViking 服务端，也不替换官方记忆插件。
 - 跨主题共享开关只写官方声明的 `plugin.recallPeerScope` 键，保留 `ovcli.conf` 中的一切未知键；保存后的自动重载只经宿主 Cordis 公开机制重载官方插件使其重读配置，不修改官方代码，副作用是对打开的会话做一次提交归档并短暂重建 MCP 工具（卡片文案已提示）；自动重载未完成时给出手动按钮，官方插件未加载时提示手动重启 DSH。环境变量 `OPENVIKING_RECALL_PEER_SCOPE` 优先级更高，页面会显示其覆盖警告。
-- 召回调优只写官方声明的 `scoreThreshold`、`recallLimit`、`recallQueryExpansion`、`recallExcludeUris` 四个键，取值域按官方 config-schema 校验，越界或格式错误的请求被拒绝且不落盘，`ovcli.conf` 中的其余键（含凭据）一律保留；`OPENVIKING_SCORE_THRESHOLD`、`OPENVIKING_RECALL_LIMIT`、`OPENVIKING_RECALL_QUERY_EXPANSION`、`OPENVIKING_RECALL_EXCLUDE_URIS` 优先级高于文件，被覆盖的字段只读并显示警告。
+- 召回调优只写官方声明的 `scoreThreshold`、`recallLimit`、`recallQueryExpansion`、`recallExcludeUris` 四个键，取值域按官方 config-schema 校验，越界或格式错误的请求被拒绝且不落盘，`ovcli.conf` 中的其余键（含凭据）一律保留。产品默认（`scoreThreshold` 0.5、`recallQueryExpansion` off）只是在首次打开配置页时写入一个官方键，不修改官方默认：文件或环境变量的取值仍然优先，尚未初始化的文件在此之前仍按官方默认运行；`OPENVIKING_SCORE_THRESHOLD`、`OPENVIKING_RECALL_LIMIT`、`OPENVIKING_RECALL_QUERY_EXPANSION`、`OPENVIKING_RECALL_EXCLUDE_URIS` 优先级高于文件，被覆盖的字段只读并显示警告。
 
 ## 环境要求
 

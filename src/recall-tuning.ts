@@ -24,6 +24,13 @@ import { harnessSection, pluginSection } from "./recall-scope.js";
  * managed by hand and out of this plugin's scope by contract, the second sits
  * below everything written here.
  *
+ * Two knobs additionally carry a *product* default (see PRODUCT_DEFAULTS):
+ * the manager writes it on first load whenever no layer supplied the key, the
+ * same way the isolation switch pins `recallPeerScope`. That is a write of a
+ * normal official key, never a redefinition of the official default — a file
+ * or env value still wins, and a keyless file still behaves officially until
+ * the page initialises it.
+ *
  * Like the official loader, a layer whose value does not parse is ignored
  * rather than overriding the layer below it. The one deliberate simplification
  * is a blank string: the official coercion treats it as "keep the previous
@@ -47,6 +54,13 @@ export interface RecallTuningKnob<T> {
   envOverride: string;
   /** Env var that outranks the file, for the UI's override warning. */
   envVar: string;
+  /** What "the default" means for this knob: the official default, unless the
+   * manager pins a product default (see `pinned`). */
+  default: T;
+  /** True when the manager writes `default` on first load instead of leaving
+   * the key absent — the product default, mirroring how the isolation switch
+   * pins `recallPeerScope: "actor"`. */
+  pinned: boolean;
 }
 
 export interface RecallTuningState {
@@ -59,14 +73,18 @@ export interface RecallTuningState {
 export interface RecallTuningView extends RecallTuningState {
   /** True when the file now asks for something the applied plugin has not loaded. */
   restartPending: boolean;
+  /** Pinned knobs no layer supplies yet, ready to write. Empty once the file
+   * carries them, which is what makes the first-load initialisation idempotent. */
+  initPatch: RecallTuningPatch;
 }
 
-/** Only the keys present in the request are written; `null` (and an empty
- * exclude list, and `auto`) restore the official default by removing the key. */
+/** Only the keys present in the request are written. `null` restores the
+ * official default by removing the key; a pinned knob's "restore the default"
+ * is instead its product default, which the UI sends as a plain value. */
 export interface RecallTuningPatch {
   scoreThreshold?: number | null;
   recallLimit?: number | null;
-  recallQueryExpansion?: RecallQueryExpansion;
+  recallQueryExpansion?: RecallQueryExpansion | null;
   recallExcludeUris?: string[] | null;
 }
 
@@ -123,6 +141,19 @@ const EXCLUDE_URIS: KnobSpec = {
 const SPECS = [SCORE_THRESHOLD, RECALL_LIMIT, QUERY_EXPANSION, EXCLUDE_URIS];
 
 export const RECALL_TUNING_ENV_VARS: readonly string[] = SPECS.map((spec) => spec.envVar);
+
+/** Product defaults this plugin initialises when no layer supplies a key.
+ *
+ * The official defaults (0.35 / auto) stay in the config-schema and remain
+ * what a keyless file *does*; these are what the first config-page load
+ * *writes*, the same way the isolation switch pins `recallPeerScope: "actor"`:
+ * weakly related recall is filtered out of the box and the server stops
+ * widening the prompt into extra search intents. Only an officially declared
+ * knob can carry one, and a layer that did supply the key is never overridden. */
+const PRODUCT_DEFAULTS = new Map<KnobSpec, unknown>([
+  [SCORE_THRESHOLD, 0.5],
+  [QUERY_EXPANSION, "off"],
+]);
 
 const UNPARSEABLE = Symbol("unparseable");
 const MAX_EXCLUDE_ENTRIES = 100;
@@ -207,12 +238,17 @@ function resolveKnob<T>(spec: KnobSpec, layers: KnobLayer[], env: RecallTuningEn
     }
   }
 
+  const pinned = PRODUCT_DEFAULTS.has(spec);
   return {
     value,
     source,
     configured,
     envOverride: source === "env" ? String(rawEnv ?? "") : "",
     envVar: spec.envVar,
+    // A product default changes what "restore the default" means for this
+    // knob; it never changes the effective value of a keyless file.
+    default: (pinned ? PRODUCT_DEFAULTS.get(spec) : spec.fallback) as T,
+    pinned,
   };
 }
 
@@ -270,6 +306,17 @@ export function recallTuningPending(current: RecallTuningState, loaded: RecallTu
     || !sameKnob(current.recallExcludeUris, loaded.recallExcludeUris);
 }
 
+/** The pinned knobs no layer supplies yet, as a ready-to-write patch. A file
+ * that already carries them yields `{}`, so initialising once is all it takes. */
+export function recallTuningInitPatch(state: RecallTuningState): RecallTuningPatch {
+  const patch: RecallTuningPatch = {};
+  if (state.scoreThreshold.pinned && state.scoreThreshold.source === "default") patch.scoreThreshold = state.scoreThreshold.default;
+  if (state.recallLimit.pinned && state.recallLimit.source === "default") patch.recallLimit = state.recallLimit.default;
+  if (state.recallQueryExpansion.pinned && state.recallQueryExpansion.source === "default") patch.recallQueryExpansion = state.recallQueryExpansion.default;
+  if (state.recallExcludeUris.pinned && state.recallExcludeUris.source === "default") patch.recallExcludeUris = state.recallExcludeUris.default;
+  return patch;
+}
+
 export async function recallTuningView(
   path: string,
   options: { env?: RecallTuningEnv; loaded: RecallTuningState },
@@ -278,7 +325,11 @@ export async function recallTuningView(
   const current = await currentRecallTuning(path, env);
   // An env-configured knob cannot drift: the plugin loaded the same variable
   // at startup and file edits never reach it, so it never reads as pending.
-  return { ...current, restartPending: recallTuningPending(current, options.loaded) };
+  return {
+    ...current,
+    restartPending: recallTuningPending(current, options.loaded),
+    initPatch: recallTuningInitPatch(current),
+  };
 }
 
 function invalid(message: string): Error {
@@ -344,8 +395,8 @@ export function parseRecallTuningPatch(raw: unknown): RecallTuningPatch {
   }
   if (Object.hasOwn(body, "recallQueryExpansion")) {
     const value = body.recallQueryExpansion;
-    if (value !== "auto" && value !== "off") {
-      throw invalid('recallQueryExpansion must be "auto" or "off"');
+    if (value !== null && value !== "auto" && value !== "off") {
+      throw invalid('recallQueryExpansion must be "auto", "off", or null');
     }
     patch.recallQueryExpansion = value;
   }
@@ -361,10 +412,12 @@ export function parseRecallTuningPatch(raw: unknown): RecallTuningPatch {
  *
  * - a supplied value is written to the shared section after clearing any
  *   `plugin.dsh` override, so one section is the single source of the key;
- * - restoring the default (`null`, `[]`, `auto`) removes the key from both
- *   sections — an absent key *is* the official default, so "back to default"
- *   restores stock behaviour instead of pinning a value a future default may
- *   move;
+ * - `null` (and an empty exclude list) removes the key from both sections —
+ *   an absent key *is* the official default, so that is what "back to stock"
+ *   means for a knob without a product default;
+ * - a pinned knob never comes back as absent through the UI: restoring its
+ *   default writes the product default instead, which keeps the value the
+ *   next page load would re-pin anyway from bouncing twice;
  * - `scoreThreshold` retires its official alias `recallScoreThreshold` when it
  *   is written or removed, so the stale spelling cannot mask the new value.
  *
@@ -418,7 +471,11 @@ export async function saveRecallTuning(path: string, patch: RecallTuningPatch): 
         put(RECALL_LIMIT, value, value === null);
         break;
       case "recallQueryExpansion":
-        put(QUERY_EXPANSION, value, value === "auto");
+        // `auto` is an explicit choice the UI offers, so it is written rather
+        // than dropped: dropping it would hand the key back to the official
+        // default and let the next load re-pin the product one. `null` still
+        // removes it for a caller that wants stock behaviour.
+        put(QUERY_EXPANSION, value, value === null);
         break;
       case "recallExcludeUris":
         put(EXCLUDE_URIS, value, value === null || value.length === 0);

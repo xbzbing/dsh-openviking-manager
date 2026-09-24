@@ -84,11 +84,14 @@ test("a failed automatic reload falls back to the banner; disabling then needs n
     await page.goto(fixture.url);
     const toggle = page.getByLabel("Disallow sharing memories across topics");
     // First-load initialization wrote `actor`, but no plugin can reload here.
+    // The recall tuning card initialises its own product defaults in the same
+    // load, so both cards carry a banner: assert on this card's copy.
     await expect(toggle).toBeChecked();
     await expect(page.getByRole("status")).toContainText("Restart the DSH instance manually");
-    const banner = page.getByRole("alert").filter({ hasText: "automatic reload did not complete" });
+    const isolationCard = page.locator('section[aria-label="Memory isolation"]');
+    const banner = isolationCard.getByRole("alert").filter({ hasText: "automatic reload did not complete" });
     await expect(banner).toBeVisible();
-    await expect(page.getByRole("button", { name: "Restart official memory plugin" })).toBeVisible();
+    await expect(isolationCard.getByRole("button", { name: "Restart official memory plugin" })).toBeVisible();
     const storedAfterInit = JSON.parse(await readFile(fixture.configPath, "utf8"));
     expect(storedAfterInit.plugin.recallPeerScope).toBe("actor");
     expect(storedAfterInit.api_key).toBe("keep-this-secret");

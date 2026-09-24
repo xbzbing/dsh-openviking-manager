@@ -20,6 +20,13 @@
  * managed by hand and out of this plugin's scope by contract, the second sits
  * below everything written here.
  *
+ * Two knobs additionally carry a *product* default (see PRODUCT_DEFAULTS):
+ * the manager writes it on first load whenever no layer supplied the key, the
+ * same way the isolation switch pins `recallPeerScope`. That is a write of a
+ * normal official key, never a redefinition of the official default — a file
+ * or env value still wins, and a keyless file still behaves officially until
+ * the page initialises it.
+ *
  * Like the official loader, a layer whose value does not parse is ignored
  * rather than overriding the layer below it. The one deliberate simplification
  * is a blank string: the official coercion treats it as "keep the previous
@@ -41,6 +48,13 @@ export interface RecallTuningKnob<T> {
     envOverride: string;
     /** Env var that outranks the file, for the UI's override warning. */
     envVar: string;
+    /** What "the default" means for this knob: the official default, unless the
+     * manager pins a product default (see `pinned`). */
+    default: T;
+    /** True when the manager writes `default` on first load instead of leaving
+     * the key absent — the product default, mirroring how the isolation switch
+     * pins `recallPeerScope: "actor"`. */
+    pinned: boolean;
 }
 export interface RecallTuningState {
     scoreThreshold: RecallTuningKnob<number>;
@@ -51,13 +65,17 @@ export interface RecallTuningState {
 export interface RecallTuningView extends RecallTuningState {
     /** True when the file now asks for something the applied plugin has not loaded. */
     restartPending: boolean;
+    /** Pinned knobs no layer supplies yet, ready to write. Empty once the file
+     * carries them, which is what makes the first-load initialisation idempotent. */
+    initPatch: RecallTuningPatch;
 }
-/** Only the keys present in the request are written; `null` (and an empty
- * exclude list, and `auto`) restore the official default by removing the key. */
+/** Only the keys present in the request are written. `null` restores the
+ * official default by removing the key; a pinned knob's "restore the default"
+ * is instead its product default, which the UI sends as a plain value. */
 export interface RecallTuningPatch {
     scoreThreshold?: number | null;
     recallLimit?: number | null;
-    recallQueryExpansion?: RecallQueryExpansion;
+    recallQueryExpansion?: RecallQueryExpansion | null;
     recallExcludeUris?: string[] | null;
 }
 export declare const RECALL_TUNING_ENV_VARS: readonly string[];
@@ -69,6 +87,9 @@ export declare function effectiveRecallTuning(config: Record<string, unknown>, e
 export declare function snapshotLoadedRecallTuning(path: string, env?: RecallTuningEnv): RecallTuningState;
 export declare function currentRecallTuning(path: string, env?: RecallTuningEnv): Promise<RecallTuningState>;
 export declare function recallTuningPending(current: RecallTuningState, loaded: RecallTuningState): boolean;
+/** The pinned knobs no layer supplies yet, as a ready-to-write patch. A file
+ * that already carries them yields `{}`, so initialising once is all it takes. */
+export declare function recallTuningInitPatch(state: RecallTuningState): RecallTuningPatch;
 export declare function recallTuningView(path: string, options: {
     env?: RecallTuningEnv;
     loaded: RecallTuningState;
@@ -80,10 +101,12 @@ export declare function parseRecallTuningPatch(raw: unknown): RecallTuningPatch;
  *
  * - a supplied value is written to the shared section after clearing any
  *   `plugin.dsh` override, so one section is the single source of the key;
- * - restoring the default (`null`, `[]`, `auto`) removes the key from both
- *   sections — an absent key *is* the official default, so "back to default"
- *   restores stock behaviour instead of pinning a value a future default may
- *   move;
+ * - `null` (and an empty exclude list) removes the key from both sections —
+ *   an absent key *is* the official default, so that is what "back to stock"
+ *   means for a knob without a product default;
+ * - a pinned knob never comes back as absent through the UI: restoring its
+ *   default writes the product default instead, which keeps the value the
+ *   next page load would re-pin anyway from bouncing twice;
  * - `scoreThreshold` retires its official alias `recallScoreThreshold` when it
  *   is written or removed, so the stale spelling cannot mask the new value.
  *

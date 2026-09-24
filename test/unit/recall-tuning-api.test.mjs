@@ -47,12 +47,15 @@ test("the default view reports the official defaults with nothing pending", asyn
   // Every manager route stays non-cacheable: the browser must not hold a key
   // value across a save.
   assert.equal(headers.get("cache-control"), "no-store");
+  // The keyless file still behaves officially (0.35 / auto) while the view
+  // already offers the product defaults and the patch that pins them.
   assert.deepEqual(json.value, {
-    scoreThreshold: { value: 0.35, source: "default", configured: false, envOverride: "", envVar: "OPENVIKING_SCORE_THRESHOLD" },
-    recallLimit: { value: 10, source: "default", configured: false, envOverride: "", envVar: "OPENVIKING_RECALL_LIMIT" },
-    recallQueryExpansion: { value: "auto", source: "default", configured: false, envOverride: "", envVar: "OPENVIKING_RECALL_QUERY_EXPANSION" },
-    recallExcludeUris: { value: [], source: "default", configured: false, envOverride: "", envVar: "OPENVIKING_RECALL_EXCLUDE_URIS" },
+    scoreThreshold: { value: 0.35, source: "default", configured: false, envOverride: "", envVar: "OPENVIKING_SCORE_THRESHOLD", default: 0.5, pinned: true },
+    recallLimit: { value: 10, source: "default", configured: false, envOverride: "", envVar: "OPENVIKING_RECALL_LIMIT", default: 10, pinned: false },
+    recallQueryExpansion: { value: "auto", source: "default", configured: false, envOverride: "", envVar: "OPENVIKING_RECALL_QUERY_EXPANSION", default: "off", pinned: true },
+    recallExcludeUris: { value: [], source: "default", configured: false, envOverride: "", envVar: "OPENVIKING_RECALL_EXCLUDE_URIS", default: [], pinned: false },
     restartPending: false,
+    initPatch: { scoreThreshold: 0.5, recallQueryExpansion: "off" },
   });
 });
 
@@ -99,20 +102,31 @@ test("saving the tuning keys writes them, then a restart clears the pending stat
   const after = await request(base, TUNING_PATH);
   assert.equal(after.json.value.restartPending, false);
 
-  // Clearing a field restores the official default by dropping the key.
+  // Removing a key is still the way back to the official default, and the
+  // view then offers the product defaults again for the next initialisation.
   const cleared = await request(base, TUNING_PATH, {
     method: "PUT",
-    body: { scoreThreshold: null, recallLimit: null, recallQueryExpansion: "auto", recallExcludeUris: [] },
+    body: { scoreThreshold: null, recallLimit: null, recallQueryExpansion: null, recallExcludeUris: [] },
   });
   assert.equal(cleared.status, 200);
   assert.equal(cleared.json.value.scoreThreshold.configured, false);
   assert.equal(cleared.json.value.restartPending, true);
+  assert.deepEqual(cleared.json.value.initPatch, { scoreThreshold: 0.5, recallQueryExpansion: "off" });
   const emptied = JSON.parse(await readFile(configPath, "utf8"));
   assert.ok(!("scoreThreshold" in emptied.plugin));
   assert.ok(!("recallLimit" in emptied.plugin));
   assert.ok(!("recallQueryExpansion" in emptied.plugin));
   assert.ok(!("recallExcludeUris" in emptied.plugin));
   assert.equal(emptied.plugin.recallPeerScope, "actor");
+
+  // An explicit "automatic" is written rather than dropped, so the choice
+  // survives a reload instead of being re-pinned to the product default.
+  const automatic = await request(base, TUNING_PATH, { method: "PUT", body: { recallQueryExpansion: "auto" } });
+  assert.equal(automatic.status, 200);
+  assert.equal(automatic.json.value.recallQueryExpansion.value, "auto");
+  assert.equal(automatic.json.value.recallQueryExpansion.configured, true);
+  assert.equal(automatic.json.value.initPatch.recallQueryExpansion, undefined);
+  assert.equal(JSON.parse(await readFile(configPath, "utf8")).plugin.recallQueryExpansion, "auto");
 });
 
 test("an out-of-domain value is rejected and the file stays untouched", async (t) => {

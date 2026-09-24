@@ -7,13 +7,15 @@ interface DiscoveryResult { ovcli: ConfigResult; suggestedEndpoint: string; loca
 interface ApiEnvelope { ok: boolean; value?: unknown; error?: string; code?: string; }
 interface VersionView { current: string; repositoryUrl?: string; latest?: string; updateAvailable: boolean; releaseUrl?: string; checkedRemote: boolean; error?: string; }
 interface RecallScopeView { scope: "all" | "actor"; source: "env" | "plugin.dsh" | "plugin" | "default"; envOverride: string; restartPending: boolean; }
-interface RecallTuningKnobView<T> { value: T; source: "env" | "plugin.dsh" | "plugin" | "default"; configured: boolean; envOverride: string; envVar: string; }
+interface RecallTuningKnobView<T> { value: T; source: "env" | "plugin.dsh" | "plugin" | "default"; configured: boolean; envOverride: string; envVar: string; default: T; pinned: boolean; }
 interface RecallTuningView {
   scoreThreshold: RecallTuningKnobView<number>;
   recallLimit: RecallTuningKnobView<number>;
   recallQueryExpansion: RecallTuningKnobView<"auto" | "off">;
   recallExcludeUris: RecallTuningKnobView<string[]>;
   restartPending: boolean;
+  /** Pinned knobs no layer supplies yet — written once on first load. */
+  initPatch: { scoreThreshold?: number; recallLimit?: number; recallQueryExpansion?: "auto" | "off"; recallExcludeUris?: string[] };
 }
 /** Field state held between loads: a string so "empty" can mean "official
  * default" — which the server turns back into an absent key. */
@@ -113,29 +115,28 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   // The isolation section only renders when this endpoint answers, so hosts
   // without the route (older fixtures) keep their previous page shape. After
   // an action, a transient failure instead keeps the current view on screen.
-  const loadRecallScope = async (hideOnFailure = true, initializeDefault = false) => {
+  const loadRecallScope = async (hideOnFailure = true): Promise<RecallScopeView | undefined> => {
     try {
       const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-scope`))).value as RecallScopeView;
       setRecallScope(value);
-      // The product default is topic isolation, but an undefined key means the
-      // official `all` (sharing). Pin the default once on first load — same
-      // write + automatic-reload path as flipping the switch.
-      if (initializeDefault && value.source === "default") void setScope(true);
-    } catch { if (hideOnFailure) setRecallScope(undefined); }
+      return value;
+    } catch { if (hideOnFailure) setRecallScope(undefined); return undefined; }
   };
   // Same contract as the isolation section: a host without the route keeps its
   // previous page shape, and a failure after an action keeps the current view.
-  const loadRecallTuning = async (hideOnFailure = true) => {
+  const loadRecallTuning = async (hideOnFailure = true): Promise<RecallTuningView | undefined> => {
     try {
       const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-tuning`))).value as RecallTuningView;
       setRecallTuning(value);
-    } catch { if (hideOnFailure) setRecallTuning(undefined); }
+      return value;
+    } catch { if (hideOnFailure) setRecallTuning(undefined); return undefined; }
   };
 
-  useEffect(() => { void load(); void loadVersion(); void loadRecallScope(true, true); void loadRecallTuning(true); }, []);
+  useEffect(() => { void load(); void loadVersion(); void initializeRecallSettings(); }, []);
 
   // The draft follows the loaded view: an empty field means the key is absent,
-  // so "clear the box" and "restore the official default" are one action.
+  // so "clear the box" restores that knob's default — the product one when it
+  // is pinned, the official one otherwise.
   useEffect(() => {
     if (!recallTuning) return;
     setTuningDraft({
@@ -216,6 +217,52 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     } finally { setBusy(false); }
   };
 
+  /** First open of a config that still carries the official defaults pins the
+   * product ones: the isolation switch's `actor`, the tuning knobs' 0.5 and
+   * off. Both writes land before a single reload — two independent
+   * initialisations would race the restart guard and reload the official
+   * plugin twice — and a key some layer already supplied is never touched. */
+  const initializeRecallSettings = async () => {
+    const scope = await loadRecallScope(true);
+    const tuning = await loadRecallTuning(true);
+    const pinScope = scope?.source === "default";
+    const tuningPatch = tuning?.initPatch ?? {};
+    const pinTuning = Object.keys(tuningPatch).length > 0;
+    if (!pinScope && !pinTuning) return;
+    setBusy(true);
+    let step: "scope" | "tuning" = "scope";
+    try {
+      let pending = false;
+      if (pinScope) {
+        const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-scope`, {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ scope: "actor" }),
+        }))).value as RecallScopeView;
+        setRecallScope(value);
+        pending = pending || value.restartPending;
+      }
+      step = "tuning";
+      if (pinTuning) {
+        const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-tuning`, {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(tuningPatch),
+        }))).value as RecallTuningView;
+        setRecallTuning(value);
+        pending = pending || value.restartPending;
+      }
+      if (pending) {
+        setStatus(t("reloading"));
+        await runRestart();
+      }
+    } catch (error) {
+      setStatus(step === "scope"
+        ? t("isolationSaveFailed")
+        : t("tuningSaveFailed", { error: error instanceof Error ? error.message : "unknown" }));
+    } finally { setBusy(false); }
+  };
+
   const restartPlugin = async () => {
     setBusy(true);
     try { await runRestart(); } finally { setBusy(false); }
@@ -234,10 +281,15 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
 
   const saveTuning = async (event: React.FormEvent) => {
     event.preventDefault();
-    // An empty field asks the server to drop the key — the official default —
-    // rather than to store an empty value.
+    const tuning = recallTuning;
+    if (!tuning) return;
+    // An empty field restores the default rather than storing an empty value:
+    // the product default (0.5) for the pinned threshold, the official default
+    // — an absent key — for the item limit and the exclude list.
     const payload = {
-      scoreThreshold: tuningDraft.scoreThreshold.trim() === "" ? null : Number(tuningDraft.scoreThreshold),
+      scoreThreshold: tuningDraft.scoreThreshold.trim() === ""
+        ? (tuning.scoreThreshold.pinned ? tuning.scoreThreshold.default : null)
+        : Number(tuningDraft.scoreThreshold),
       recallLimit: tuningDraft.recallLimit.trim() === "" ? null : Number(tuningDraft.recallLimit),
       recallQueryExpansion: tuningDraft.recallQueryExpansion,
       recallExcludeUris: tuningDraft.recallExcludeUris.split("\n").map((line) => line.trim()).filter(Boolean),
@@ -381,7 +433,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
                   max={1}
                   step="any"
                   value={tuningDraft.scoreThreshold}
-                  placeholder={t("defaultPlaceholder", { value: "0.35" })}
+                  placeholder={t("defaultPlaceholder", { value: String(recallTuning.scoreThreshold.default) })}
                   disabled={busy || recallTuning.scoreThreshold.source === "env"}
                   onChange={(event) => setTuningDraft({ ...tuningDraft, scoreThreshold: event.target.value })}
                 />
@@ -396,7 +448,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
                   max={50}
                   step={1}
                   value={tuningDraft.recallLimit}
-                  placeholder={t("defaultPlaceholder", { value: "10" })}
+                  placeholder={t("defaultPlaceholder", { value: String(recallTuning.recallLimit.default) })}
                   disabled={busy || recallTuning.recallLimit.source === "env"}
                   onChange={(event) => setTuningDraft({ ...tuningDraft, recallLimit: event.target.value })}
                 />
