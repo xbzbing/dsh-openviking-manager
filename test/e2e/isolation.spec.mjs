@@ -39,7 +39,14 @@ async function startIsolationFixture({ restartMemoryPlugin, initialConfig } = {}
     configPath,
     // Destroy idle keep-alive sockets before awaiting close so teardown never
     // waits out the browser connection's idle timeout.
-    close: () => new Promise((resolve, reject) => { server.close((error) => (error ? reject(error) : resolve())); server.closeIdleConnections?.(); }),
+    close: () => new Promise((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+      server.closeIdleConnections?.();
+      // A socket that is still finishing a request (or that the browser reuses
+      // right after the idle sweep) keeps close() pending until it goes idle;
+      // force it after a grace period so teardown can never eat the budget.
+      setTimeout(() => server.closeAllConnections?.(), 500).unref();
+    }),
   };
 }
 

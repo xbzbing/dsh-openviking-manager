@@ -30,7 +30,14 @@ async function startOpenVikingFixture() {
     // Destroy idle keep-alive sockets before awaiting close: otherwise a
     // lingering browser connection keeps the server "busy" until its idle
     // timeout and can eat the whole test budget during teardown.
-    close: () => new Promise((resolve, reject) => { server.close((error) => (error ? reject(error) : resolve())); server.closeIdleConnections?.(); }),
+    close: () => new Promise((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+      server.closeIdleConnections?.();
+      // A socket that is still finishing a request (or that the browser reuses
+      // right after the idle sweep) keeps close() pending until it goes idle;
+      // force it after a grace period so teardown can never eat the budget.
+      setTimeout(() => server.closeAllConnections?.(), 500).unref();
+    }),
   };
 }
 
@@ -57,7 +64,14 @@ async function startManagerFixture(openVikingUrl, { writeConfig = true } = {}) {
     // Destroy idle keep-alive sockets before awaiting close: otherwise a
     // lingering browser connection keeps the server "busy" until its idle
     // timeout and can eat the whole test budget during teardown.
-    close: () => new Promise((resolve, reject) => { server.close((error) => (error ? reject(error) : resolve())); server.closeIdleConnections?.(); }),
+    close: () => new Promise((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+      server.closeIdleConnections?.();
+      // A socket that is still finishing a request (or that the browser reuses
+      // right after the idle sweep) keeps close() pending until it goes idle;
+      // force it after a grace period so teardown can never eat the budget.
+      setTimeout(() => server.closeAllConnections?.(), 500).unref();
+    }),
   };
 }
 
