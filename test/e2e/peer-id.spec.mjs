@@ -49,6 +49,10 @@ test("peer id is empty by default and saving a value writes plugin.peerId then r
   let restarts = 0;
   const fixture = await startPeerIdFixture({
     restartMemoryPlugin: async () => { restarts += 1; return { restarted: true, count: 1 }; },
+    // Pin isolation and both product defaults up front so first-load
+    // initialization triggers no reload of its own: the only restart here is
+    // the peer-id save, which keeps the count unambiguous.
+    initialConfig: { plugin: { recallPeerScope: "actor", scoreThreshold: 0.5, recallQueryExpansion: "off" } },
   });
   try {
     await page.goto(fixture.url);
@@ -61,9 +65,14 @@ test("peer id is empty by default and saving a value writes plugin.peerId then r
 
     await field.fill("github.com-xbzbing-dsh-openviking-manager");
     await page.getByRole("button", { name: "Save peer id" }).click();
+    // Poll the file itself rather than the restart count: the write lands
+    // before the reload, and this cannot race an unrelated restart.
+    await expect.poll(async () => {
+      const next = JSON.parse(await readFile(fixture.configPath, "utf8"));
+      return next.plugin?.peerId;
+    }).toBe("github.com-xbzbing-dsh-openviking-manager");
     await expect.poll(() => restarts).toBe(1);
     const stored = JSON.parse(await readFile(fixture.configPath, "utf8"));
-    expect(stored.plugin.peerId).toBe("github.com-xbzbing-dsh-openviking-manager");
     expect(stored.api_key).toBe("keep-this-secret");
 
     // Clearing restores automatic derivation by removing the key.
