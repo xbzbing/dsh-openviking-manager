@@ -1,6 +1,6 @@
 {
   "name": "dsh-openviking-manager",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "DSH UI manager for OpenViking connection, user keys, and local configuration.",
   "license": "MIT",
   "repository": {
