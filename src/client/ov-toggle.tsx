@@ -89,6 +89,8 @@ export function OpenVikingToggle({ sessionId, t, apiPrefix = DEFAULT_TOGGLE_API_
     }
   };
 
+  const stateHint = failed ? t("toggleFailed") : enabled ? t("toggleStateOn") : t("toggleStateOff");
+
   return (
     <button
       type="button"
@@ -96,12 +98,12 @@ export function OpenVikingToggle({ sessionId, t, apiPrefix = DEFAULT_TOGGLE_API_
       aria-pressed={enabled}
       aria-busy={busy}
       aria-label={t("toggleAction")}
-      title={failed ? t("toggleFailed") : t("toggleAction")}
+      data-ovm-tip={stateHint}
       disabled={busy}
       onClick={() => void toggle()}
     >
       <span className="ovm-ovToggleDot" aria-hidden="true" />
-      {busy ? "..." : enabled ? t("toggleLabel") : t("toggleLabelOff")}
+      {t("toggleLabel")}
     </button>
   );
 }

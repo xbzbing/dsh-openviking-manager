@@ -67,7 +67,8 @@ export type TranslationKey =
   | "adminOperationComplete"
   | "keyRotated"
   | "toggleLabel"
-  | "toggleLabelOff"
+  | "toggleStateOn"
+  | "toggleStateOff"
   | "toggleAction"
   | "toggleFailed"
   | "aboutTitle"
@@ -176,8 +177,9 @@ const en: Record<TranslationKey, string> = {
   userId: "User ID",
   adminOperationComplete: "{operation} completed. The new user key is ready to save.",
   keyRotated: "Key rotated. Save the new user key on this device and update other devices.",
-  toggleLabel: "OpenViking on",
-  toggleLabelOff: "OpenViking off",
+  toggleLabel: "OpenViking",
+  toggleStateOn: "OpenViking memory is on for this session",
+  toggleStateOff: "OpenViking memory is off for this session",
   toggleAction: "Toggle OpenViking memory for this session",
   toggleFailed: "Unable to update the OpenViking toggle.",
   aboutTitle: "About this plugin",
@@ -285,8 +287,9 @@ const zh: Record<TranslationKey, string> = {
   userId: "用户 ID",
   adminOperationComplete: "{operation} 已完成。新的用户 Key 已准备好保存。",
   keyRotated: "Key 已轮换。请在本设备保存新 Key，并更新其他设备。",
-  toggleLabel: "OpenViking 开",
-  toggleLabelOff: "OpenViking 关",
+  toggleLabel: "OpenViking",
+  toggleStateOn: "本会话 OpenViking 记忆已开启",
+  toggleStateOff: "本会话 OpenViking 记忆已关闭",
   toggleAction: "切换本会话的 OpenViking 记忆开关",
   toggleFailed: "无法更新 OpenViking 开关。",
   aboutTitle: "关于本插件",

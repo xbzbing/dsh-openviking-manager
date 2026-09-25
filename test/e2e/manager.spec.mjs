@@ -132,3 +132,44 @@ test("keeps the toggle unavailable while its initial state read is pending", asy
     await fixture.close();
   }
 });
+
+test("shows the session state as a color marker with the detail on hover", async ({ page }) => {
+  const fixture = await startManagerFixture();
+  try {
+    // The toggle state lives in process memory, so earlier tests in this worker
+    // may already have flipped this session; pin it before the page reads it.
+    const pin = await fetch(`${fixture.url}/plugins/dsh-openviking-manager/api/session-toggle`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sessionId: "standalone-session", enabled: true }),
+    });
+    expect(pin.ok).toBe(true);
+
+    await page.goto(fixture.url);
+    const toggle = page.getByRole("button", { name: "Toggle OpenViking memory for this session" });
+    const dotColor = () => toggle.locator(".ovm-ovToggleDot").evaluate((element) => getComputedStyle(element).backgroundColor);
+    const tooltip = () => toggle.evaluate((element) => {
+      const style = getComputedStyle(element, "::after");
+      return { content: style.content, opacity: style.opacity };
+    });
+
+    // The pill carries only the plugin name; state is a color, not a word.
+    await expect(toggle).toHaveText("OpenViking");
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(await dotColor()).toBe("rgb(31, 138, 112)");
+    expect((await tooltip()).opacity).toBe("0");
+
+    await toggle.hover();
+    await expect.poll(async () => (await tooltip()).opacity).toBe("1");
+    expect((await tooltip()).content).toContain("OpenViking memory is on for this session");
+
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    await expect(toggle).toHaveClass(/ovm-ovToggleOff/);
+    expect(await dotColor()).toBe("rgb(154, 165, 177)");
+    await toggle.hover();
+    await expect.poll(async () => (await tooltip()).content).toContain("OpenViking memory is off for this session");
+  } finally {
+    await fixture.close();
+  }
+});
