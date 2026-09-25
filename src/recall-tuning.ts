@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
-import { readOvcliObject, writeOvcliObject } from "./ovcli-config.js";
+import { readOvcliObject } from "./ovcli-config.js";
 import { harnessSection, pluginSection } from "./recall-scope.js";
 
-/** Config-face editing for the official recall tuning knobs.
+/** Config-face resolution for the official recall tuning knobs.
  *
  * The keys, value domains and defaults below are the ones declared in the
  * official `shared/config-schema.mjs` of `@openviking/dsh-memory-plugin`
@@ -13,6 +13,11 @@ import { harnessSection, pluginSection } from "./recall-scope.js";
  *   recallLimit           int     1..50    default 10    OPENVIKING_RECALL_LIMIT   (sendOnlyWhenConfigured)
  *   recallQueryExpansion  enum    auto|off default auto  OPENVIKING_RECALL_QUERY_EXPANSION (sendOnlyWhenConfigured)
  *   recallExcludeUris     list              default []    OPENVIKING_RECALL_EXCLUDE_URIS
+ *
+ * This module owns the read/compute path — the knob specs, layer resolution
+ * and view assembly. The write path (request validation and the ovcli.conf
+ * `plugin`-section save) lives in `recall-tuning-persistence.ts`, which imports
+ * the specs exported here so both paths share one definition.
  *
  * Only ovcli.conf's `plugin` section is written — the same face the official
  * loader reads — and every other key (credentials, sections, unknown entries)
@@ -90,7 +95,7 @@ export interface RecallTuningPatch {
 
 type KnobKind = "number" | "int" | "enum" | "list";
 
-interface KnobSpec {
+export interface KnobSpec {
   key: string;
   aliases: string[];
   envVar: string;
@@ -101,7 +106,7 @@ interface KnobSpec {
   values?: readonly string[];
 }
 
-const SCORE_THRESHOLD: KnobSpec = {
+export const SCORE_THRESHOLD: KnobSpec = {
   key: "scoreThreshold",
   aliases: ["recallScoreThreshold"],
   envVar: "OPENVIKING_SCORE_THRESHOLD",
@@ -111,7 +116,7 @@ const SCORE_THRESHOLD: KnobSpec = {
   max: 1,
 };
 
-const RECALL_LIMIT: KnobSpec = {
+export const RECALL_LIMIT: KnobSpec = {
   key: "recallLimit",
   aliases: [],
   envVar: "OPENVIKING_RECALL_LIMIT",
@@ -121,7 +126,7 @@ const RECALL_LIMIT: KnobSpec = {
   max: 50,
 };
 
-const QUERY_EXPANSION: KnobSpec = {
+export const QUERY_EXPANSION: KnobSpec = {
   key: "recallQueryExpansion",
   aliases: [],
   envVar: "OPENVIKING_RECALL_QUERY_EXPANSION",
@@ -130,7 +135,7 @@ const QUERY_EXPANSION: KnobSpec = {
   values: ["auto", "off"],
 };
 
-const EXCLUDE_URIS: KnobSpec = {
+export const EXCLUDE_URIS: KnobSpec = {
   key: "recallExcludeUris",
   aliases: [],
   envVar: "OPENVIKING_RECALL_EXCLUDE_URIS",
@@ -150,17 +155,14 @@ export const RECALL_TUNING_ENV_VARS: readonly string[] = SPECS.map((spec) => spe
  * weakly related recall is filtered out of the box and the server stops
  * widening the prompt into extra search intents. Only an officially declared
  * knob can carry one, and a layer that did supply the key is never overridden. */
-const PRODUCT_DEFAULTS = new Map<KnobSpec, unknown>([
+export const PRODUCT_DEFAULTS = new Map<KnobSpec, unknown>([
   [SCORE_THRESHOLD, 0.5],
   [QUERY_EXPANSION, "off"],
 ]);
 
 const UNPARSEABLE = Symbol("unparseable");
-const MAX_EXCLUDE_ENTRIES = 100;
-const MAX_EXCLUDE_ENTRY_CHARS = 512;
-const VIKING_URI_RE = /^viking:\/\/\S+$/;
 
-function asRecord(value: unknown): Record<string, unknown> | undefined {
+export function asRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? value as Record<string, unknown>
     : undefined;
@@ -330,166 +332,4 @@ export async function recallTuningView(
     restartPending: recallTuningPending(current, options.loaded),
     initPatch: recallTuningInitPatch(current),
   };
-}
-
-function invalid(message: string): Error {
-  return new Error(message);
-}
-
-function numberOrNull(raw: unknown, key: string, min: number, max: number): number | null | undefined {
-  if (raw === null) return null;
-  if (typeof raw !== "number" || !Number.isFinite(raw)) {
-    if (raw === undefined) return undefined;
-    throw invalid(`${key} must be a number between ${min} and ${max}, or null`);
-  }
-  if (raw < min || raw > max) throw invalid(`${key} must be a number between ${min} and ${max}, or null`);
-  return raw;
-}
-
-function intOrNull(raw: unknown, key: string, min: number, max: number): number | null | undefined {
-  if (raw === null) return null;
-  if (typeof raw !== "number" || !Number.isInteger(raw)) {
-    if (raw === undefined) return undefined;
-    throw invalid(`${key} must be an integer between ${min} and ${max}, or null`);
-  }
-  if (raw < min || raw > max) throw invalid(`${key} must be an integer between ${min} and ${max}, or null`);
-  return raw;
-}
-
-function uriListOrNull(raw: unknown, key: string): string[] | null | undefined {
-  if (raw === null) return null;
-  if (!Array.isArray(raw)) {
-    if (raw === undefined) return undefined;
-    throw invalid(`${key} must be an array of viking:// URIs, or null`);
-  }
-  if (raw.length > MAX_EXCLUDE_ENTRIES) {
-    throw invalid(`${key} accepts at most ${MAX_EXCLUDE_ENTRIES} entries`);
-  }
-  const entries: string[] = [];
-  for (const item of raw) {
-    // The official knob takes the list verbatim; the UI validates so a typo
-    // cannot silently turn into a filter that never matches.
-    if (typeof item !== "string" || item.length > MAX_EXCLUDE_ENTRY_CHARS || !VIKING_URI_RE.test(item)) {
-      throw invalid(`${key} entries must be viking:// URIs without spaces, one string each`);
-    }
-    entries.push(item);
-  }
-  return entries;
-}
-
-/** Validate a PUT body into a patch. Unknown keys are ignored; a missing key
- * leaves that knob untouched, which is what makes a partial save safe. */
-export function parseRecallTuningPatch(raw: unknown): RecallTuningPatch {
-  const body = asRecord(raw);
-  if (body === undefined) throw invalid("request body must be a JSON object");
-
-  const patch: RecallTuningPatch = {};
-
-  if (Object.hasOwn(body, "scoreThreshold")) {
-    const value = numberOrNull(body.scoreThreshold, "scoreThreshold", 0, 1);
-    if (value !== undefined) patch.scoreThreshold = value;
-  }
-  if (Object.hasOwn(body, "recallLimit")) {
-    const value = intOrNull(body.recallLimit, "recallLimit", 1, 50);
-    if (value !== undefined) patch.recallLimit = value;
-  }
-  if (Object.hasOwn(body, "recallQueryExpansion")) {
-    const value = body.recallQueryExpansion;
-    if (value !== null && value !== "auto" && value !== "off") {
-      throw invalid('recallQueryExpansion must be "auto", "off", or null');
-    }
-    patch.recallQueryExpansion = value;
-  }
-  if (Object.hasOwn(body, "recallExcludeUris")) {
-    const value = uriListOrNull(body.recallExcludeUris, "recallExcludeUris");
-    if (value !== undefined) patch.recallExcludeUris = value;
-  }
-
-  return patch;
-}
-
-/** Write the patch to ovcli.conf's `plugin` section.
- *
- * - a supplied value is written to the shared section after clearing any
- *   `plugin.dsh` override, so one section is the single source of the key;
- * - `null` (and an empty exclude list) removes the key from both sections —
- *   an absent key *is* the official default, so that is what "back to stock"
- *   means for a knob without a product default;
- * - a pinned knob never comes back as absent through the UI: restoring its
- *   default writes the product default instead, which keeps the value the
- *   next page load would re-pin anyway from bouncing twice;
- * - `scoreThreshold` retires its official alias `recallScoreThreshold` when it
- *   is written or removed, so the stale spelling cannot mask the new value.
- *
- * Every other key (credentials, sections, unknown entries) is preserved. */
-export async function saveRecallTuning(path: string, patch: RecallTuningPatch): Promise<void> {
-  const entries = Object.entries(patch).filter(([, value]) => value !== undefined);
-  if (entries.length === 0) return;
-
-  const existing = await readOvcliObject(path);
-  const shared = pluginSection(existing);
-  if (existing.plugin !== undefined && shared === undefined) {
-    throw new Error('ovcli.conf "plugin" section must be an object');
-  }
-  const nextShared: Record<string, unknown> = { ...(shared ?? {}) };
-  const harness = shared === undefined ? undefined : asRecord(shared.dsh);
-  const nextHarness: Record<string, unknown> | undefined = harness === undefined ? undefined : { ...harness };
-  let harnessTouched = false;
-
-  /** Retire a key from both sections — "remove it" for a default restore. */
-  const drop = (...names: string[]) => {
-    for (const name of names) delete nextShared[name];
-    dropFromHarness(...names);
-  };
-
-  /** Clear a key from the harness section only, so the shared section stays
-   * the single source of it while a stale `plugin.dsh` override cannot win. */
-  const dropFromHarness = (...names: string[]) => {
-    if (nextHarness === undefined) return;
-    for (const name of names) {
-      if (!Object.hasOwn(nextHarness, name)) continue;
-      delete nextHarness[name];
-      harnessTouched = true;
-    }
-  };
-
-  /** Write a value to the shared section; `null`/`auto`/empty means restore
-   * the official default by removing the key instead of pinning it. Retiring
-   * the key from both sections first keeps one name per section, so a stale
-   * `plugin.dsh` override or the legacy alias cannot mask the new value. */
-  const put = (spec: KnobSpec, value: unknown, restore: boolean) => {
-    drop(spec.key, ...spec.aliases);
-    if (!restore) nextShared[spec.key] = value;
-  };
-
-  for (const [name, value] of entries) {
-    switch (name as keyof RecallTuningPatch) {
-      case "scoreThreshold":
-        put(SCORE_THRESHOLD, value, value === null);
-        break;
-      case "recallLimit":
-        put(RECALL_LIMIT, value, value === null);
-        break;
-      case "recallQueryExpansion":
-        // `auto` is an explicit choice the UI offers, so it is written rather
-        // than dropped: dropping it would hand the key back to the official
-        // default and let the next load re-pin the product one. `null` still
-        // removes it for a caller that wants stock behaviour.
-        put(QUERY_EXPANSION, value, value === null);
-        break;
-      case "recallExcludeUris":
-        put(EXCLUDE_URIS, value, value === null || value.length === 0);
-        break;
-    }
-  }
-
-  // The harness section only disappears when this write emptied it; an
-  // untouched `plugin.dsh` keeps whatever other keys it carries.
-  if (harnessTouched && nextHarness !== undefined) {
-    if (Object.keys(nextHarness).length > 0) nextShared.dsh = nextHarness;
-    else delete nextShared.dsh;
-  }
-
-  const next: Record<string, unknown> = { ...existing, plugin: nextShared };
-  await writeOvcliObject(path, next);
 }

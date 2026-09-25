@@ -1,4 +1,4 @@
-/** Config-face editing for the official recall tuning knobs.
+/** Config-face resolution for the official recall tuning knobs.
  *
  * The keys, value domains and defaults below are the ones declared in the
  * official `shared/config-schema.mjs` of `@openviking/dsh-memory-plugin`
@@ -9,6 +9,11 @@
  *   recallLimit           int     1..50    default 10    OPENVIKING_RECALL_LIMIT   (sendOnlyWhenConfigured)
  *   recallQueryExpansion  enum    auto|off default auto  OPENVIKING_RECALL_QUERY_EXPANSION (sendOnlyWhenConfigured)
  *   recallExcludeUris     list              default []    OPENVIKING_RECALL_EXCLUDE_URIS
+ *
+ * This module owns the read/compute path — the knob specs, layer resolution
+ * and view assembly. The write path (request validation and the ovcli.conf
+ * `plugin`-section save) lives in `recall-tuning-persistence.ts`, which imports
+ * the specs exported here so both paths share one definition.
  *
  * Only ovcli.conf's `plugin` section is written — the same face the official
  * loader reads — and every other key (credentials, sections, unknown entries)
@@ -78,7 +83,32 @@ export interface RecallTuningPatch {
     recallQueryExpansion?: RecallQueryExpansion | null;
     recallExcludeUris?: string[] | null;
 }
+type KnobKind = "number" | "int" | "enum" | "list";
+export interface KnobSpec {
+    key: string;
+    aliases: string[];
+    envVar: string;
+    kind: KnobKind;
+    fallback: unknown;
+    min?: number;
+    max?: number;
+    values?: readonly string[];
+}
+export declare const SCORE_THRESHOLD: KnobSpec;
+export declare const RECALL_LIMIT: KnobSpec;
+export declare const QUERY_EXPANSION: KnobSpec;
+export declare const EXCLUDE_URIS: KnobSpec;
 export declare const RECALL_TUNING_ENV_VARS: readonly string[];
+/** Product defaults this plugin initialises when no layer supplies a key.
+ *
+ * The official defaults (0.35 / auto) stay in the config-schema and remain
+ * what a keyless file *does*; these are what the first config-page load
+ * *writes*, the same way the isolation switch pins `recallPeerScope: "actor"`:
+ * weakly related recall is filtered out of the box and the server stops
+ * widening the prompt into extra search intents. Only an officially declared
+ * knob can carry one, and a layer that did supply the key is never overridden. */
+export declare const PRODUCT_DEFAULTS: Map<KnobSpec, unknown>;
+export declare function asRecord(value: unknown): Record<string, unknown> | undefined;
 /** The four knobs resolved through env → plugin.dsh → plugin → default. */
 export declare function effectiveRecallTuning(config: Record<string, unknown>, env?: RecallTuningEnv): RecallTuningState;
 /** Synchronous snapshot taken when the routes are constructed — the moment the
@@ -94,21 +124,4 @@ export declare function recallTuningView(path: string, options: {
     env?: RecallTuningEnv;
     loaded: RecallTuningState;
 }): Promise<RecallTuningView>;
-/** Validate a PUT body into a patch. Unknown keys are ignored; a missing key
- * leaves that knob untouched, which is what makes a partial save safe. */
-export declare function parseRecallTuningPatch(raw: unknown): RecallTuningPatch;
-/** Write the patch to ovcli.conf's `plugin` section.
- *
- * - a supplied value is written to the shared section after clearing any
- *   `plugin.dsh` override, so one section is the single source of the key;
- * - `null` (and an empty exclude list) removes the key from both sections —
- *   an absent key *is* the official default, so that is what "back to stock"
- *   means for a knob without a product default;
- * - a pinned knob never comes back as absent through the UI: restoring its
- *   default writes the product default instead, which keeps the value the
- *   next page load would re-pin anyway from bouncing twice;
- * - `scoreThreshold` retires its official alias `recallScoreThreshold` when it
- *   is written or removed, so the stale spelling cannot mask the new value.
- *
- * Every other key (credentials, sections, unknown entries) is preserved. */
-export declare function saveRecallTuning(path: string, patch: RecallTuningPatch): Promise<void>;
+export {};

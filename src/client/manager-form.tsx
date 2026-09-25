@@ -30,6 +30,16 @@ const fallback: ConfigView = { url: "http://127.0.0.1:1933", account: "", user: 
 
 type AdminTab = "list-accounts" | "create-account" | "create-user" | "rotate-user-key";
 
+/** Shapes returned by the `/admin` route's `value` field, one per operation.
+ * Each field is optional because a single handler reads whichever the current
+ * operation produced. */
+interface AdminResponse {
+  accounts?: Array<{ accountId: string }>;
+  users?: Array<{ userId: string; role: string }>;
+  created?: { accountId: string; userId: string; userKey: string };
+  userKey?: string;
+}
+
 const adminTabs: Array<{ id: AdminTab; title: "listAccounts" | "createAccount" | "createUser" | "regenerateKey" }> = [
   { id: "list-accounts", title: "listAccounts" },
   { id: "create-account", title: "createAccount" },
@@ -328,7 +338,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     if (kind !== "ready") { setAdminStatus(t("endpointRequiredFirst")); return; }
     setBusy(true);
     try {
-      const value = (await responseJson(await fetchFn(`${apiPrefix}/admin`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ operation, rootApiKey, ...fields }) }))).value as unknown as { accounts?: Array<{ accountId: string }>; users?: Array<{ userId: string; role: string }>; created?: { accountId: string; userId: string; userKey: string }; userKey?: string };
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/admin`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ operation, rootApiKey, ...fields }) }))).value as AdminResponse;
       if (operation === "accounts") {
         const accounts = (value.accounts ?? []).map((item) => item.accountId);
         setAdminAccounts(accounts); setSelectedAccount(accounts[0] ?? ""); setAdminUsers([]); setSelectedUser(""); setAdminStatus(t("foundAccounts", { count: accounts.length }));

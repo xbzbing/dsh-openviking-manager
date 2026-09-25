@@ -5,13 +5,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   effectiveRecallTuning,
-  parseRecallTuningPatch,
   recallTuningInitPatch,
   recallTuningPending,
   recallTuningView,
-  saveRecallTuning,
   snapshotLoadedRecallTuning,
 } from "../../lib/recall-tuning.js";
+import { parseRecallTuningPatch, saveRecallTuning } from "../../lib/recall-tuning-persistence.js";
 
 async function tempConfig(t, value) {
   const directory = await mkdtemp(join(tmpdir(), "dsh-ovm-recall-tuning-"));
