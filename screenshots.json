@@ -1,10 +1,10 @@
 [
+  "docs/assets/banner-zh.png",
   "docs/assets/screenshots/zh/01-plugin-list.png",
   "docs/assets/screenshots/zh/02-configuration.png",
   "docs/assets/screenshots/zh/03-recovery-accounts.png",
-  "docs/assets/screenshots/zh/04-create-user.png",
+  "docs/assets/banner-en.png",
   "docs/assets/screenshots/en/01-plugin-list.png",
   "docs/assets/screenshots/en/02-configuration.png",
-  "docs/assets/screenshots/en/03-recovery-accounts.png",
-  "docs/assets/screenshots/en/04-create-user.png"
+  "docs/assets/screenshots/en/03-recovery-accounts.png"
 ]

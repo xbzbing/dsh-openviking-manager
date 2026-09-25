@@ -2,6 +2,8 @@
 
 English | [简体中文](README.md)
 
+![OpenViking Manager](docs/assets/banner-en.png)
+
 `dsh-openviking-manager` is a DSH Web UI plugin for managing an existing OpenViking service connection, user keys, and local configuration diagnostics, plus a per-session OpenViking memory toggle. It manages client configuration and enablement only; memory synchronization, commit, and recall remain the responsibility of the official [`@openviking/dsh-memory-plugin`](https://www.npmjs.com/package/@openviking/dsh-memory-plugin).
 
 OpenViking is an **open-source context database from Volcengine, purpose-built for AI agents**, solving long-context, memory, and knowledge-base management for agents. It requires deploying the corresponding server; because the service supports remote access and account isolation, it also serves as a remote memory hub shared across devices and sessions. This plugin only adds a configuration UI for OpenViking, to make the local client configuration easier to manage.
