@@ -103,7 +103,7 @@ export function OpenVikingToggle({ sessionId, t, apiPrefix = DEFAULT_TOGGLE_API_
       onClick={() => void toggle()}
     >
       <span className="ovm-ovToggleDot" aria-hidden="true" />
-      {t("toggleLabel")}
+      <span className="ovm-ovToggleLabel">{t("toggleLabel")}</span>
     </button>
   );
 }

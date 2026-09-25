@@ -180,3 +180,40 @@ test("shows the session state as a color marker with the detail on hover", async
     await fixture.close();
   }
 });
+
+test("collapses the toggle to a dot when the screen or the composer row gets narrow", async ({ page }) => {
+  const fixture = await startManagerFixture();
+  try {
+    await page.goto(fixture.url);
+    const toggle = page.getByRole("button", { name: "Toggle OpenViking memory for this session" });
+    const label = toggle.locator(".ovm-ovToggleLabel");
+    const dot = toggle.locator(".ovm-ovToggleDot");
+
+    await expect(label).toBeVisible();
+    const fullWidth = (await toggle.boundingBox())?.width ?? 0;
+
+    // Narrow window: the word is dropped and only the state dot stays.
+    await page.setViewportSize({ width: 420, height: 820 });
+    await expect(label).toBeHidden();
+    await expect(dot).toBeVisible();
+    expect(Math.round((await toggle.boundingBox())?.width ?? 0)).toBe(28);
+
+    // A wide window brings the word back.
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await expect(label).toBeVisible();
+
+    // A squeezed size container (the composer row narrowed by open sidebars)
+    // collapses the pill without any change to the window size.
+    await page.addStyleTag({ content: "#root{container-type:inline-size}" });
+    const root = page.locator("#root");
+    await root.evaluate((element) => { element.style.width = "380px"; });
+    await expect(label).toBeHidden();
+    await expect(dot).toBeVisible();
+    expect((await toggle.boundingBox())?.width ?? 0).toBeLessThan(fullWidth);
+
+    await root.evaluate((element) => { element.style.width = "900px"; });
+    await expect(label).toBeVisible();
+  } finally {
+    await fixture.close();
+  }
+});
