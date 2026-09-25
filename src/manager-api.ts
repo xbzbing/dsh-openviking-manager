@@ -13,6 +13,14 @@ import {
   type RecallScopeEnv,
 } from "./recall-scope.js";
 import {
+  currentPeerId,
+  normalizePeerId,
+  peerIdView,
+  savePeerId,
+  snapshotLoadedPeerId,
+} from "./recall-peer.js";
+import { derivePeerId } from "./derive-peer.js";
+import {
   currentRecallTuning,
   recallTuningView,
   snapshotLoadedRecallTuning,
@@ -112,9 +120,11 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
   // only advances after a successful plugin restart.
   let loadedScope = snapshotLoadedRecallScope(ovcliPath, env);
   let loadedTuning = snapshotLoadedRecallTuning(ovcliPath, env);
+  let loadedPeerId = snapshotLoadedPeerId(ovcliPath, env);
   let restarting = false;
   const scopeView = () => recallScopeView(ovcliPath, { env, loadedScope });
   const tuningView = () => recallTuningView(ovcliPath, { env, loaded: loadedTuning });
+  const peerView = () => peerIdView(ovcliPath, { env, loadedPeerId });
   return [
     {
       kind: "exact",
@@ -382,6 +392,51 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
     },
     {
       kind: "exact",
+      path: `${MANAGER_API_PREFIX}/recall-peer`,
+      handler: async (req, res) => {
+        if (rejectCrossOrigin(req, res)) return;
+        if (req.method === "GET") {
+          try {
+            writeJson(res, 200, { ok: true, value: await peerView() });
+          } catch (error) {
+            writeJson(res, 500, { ok: false, error: error instanceof Error ? error.message : "Unable to read the actor peer id" });
+          }
+          return;
+        }
+        if (req.method !== "PUT") {
+          writeJson(res, 405, { error: "method not allowed" });
+          return;
+        }
+        try {
+          // Only the official `plugin.peerId` key, and only after the value has
+          // been validated against the server's peer-id charset.
+          const body = await readJson(req);
+          const peerId = normalizePeerId(stringAt(body, "peerId"));
+          await savePeerId(ovcliPath, peerId);
+          writeJson(res, 200, { ok: true, value: await peerView() });
+        } catch (error) {
+          writeJson(res, 400, { ok: false, error: error instanceof Error ? error.message : "Unable to save the actor peer id" });
+        }
+      },
+    },
+    {
+      kind: "exact",
+      path: `${MANAGER_API_PREFIX}/recall-peer/derive`,
+      handler: async (req, res) => {
+        if (rejectCrossOrigin(req, res)) return;
+        if (req.method !== "GET") {
+          writeJson(res, 405, { error: "method not allowed" });
+          return;
+        }
+        try {
+          writeJson(res, 200, { ok: true, value: await derivePeerId() });
+        } catch (error) {
+          writeJson(res, 500, { ok: false, error: error instanceof Error ? error.message : "Unable to derive the peer id" });
+        }
+      },
+    },
+    {
+      kind: "exact",
       path: `${MANAGER_API_PREFIX}/recall-scope/restart`,
       handler: async (req, res) => {
         if (rejectCrossOrigin(req, res)) return;
@@ -406,6 +461,7 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
           if (result.restarted) {
             loadedScope = await currentRecallScope(ovcliPath, env);
             loadedTuning = await currentRecallTuning(ovcliPath, env);
+            loadedPeerId = await currentPeerId(ovcliPath, env);
           }
           writeJson(res, 200, { ok: true, value: result });
         } catch (error) {

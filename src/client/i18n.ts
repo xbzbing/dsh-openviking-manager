@@ -85,6 +85,21 @@ export type TranslationKey =
   | "isolationSaved"
   | "isolationSaveFailed"
   | "envOverrideWarning"
+  | "peerIdLabel"
+  | "peerIdPlaceholder"
+  | "peerIdHint"
+  | "peerIdHintEmpty"
+  | "peerIdHintSet"
+  | "peerIdMultiRepoNotice"
+  | "peerIdEnvWarning"
+  | "peerIdCredentialWarning"
+  | "fillCurrentRepo"
+  | "peerIdDetected"
+  | "peerIdNotInRepo"
+  | "peerIdSaved"
+  | "peerIdSaveFailed"
+  | "savePeerId"
+  | "peerIdReloadNotice"
   | "reloadNotice"
   | "reloading"
   | "restartSucceeded"
@@ -196,6 +211,21 @@ const en: Record<TranslationKey, string> = {
   isolationSaved: "Memory isolation setting saved.",
   isolationSaveFailed: "Unable to save the memory isolation setting.",
   envOverrideWarning: "OPENVIKING_RECALL_PEER_SCOPE is set and overrides this file setting. Remove the variable and restart the DSH process to change it.",
+  peerIdLabel: "Actor peer id (advanced)",
+  peerIdPlaceholder: "leave empty for automatic per-repository isolation",
+  peerIdHint: "Which peer (topic) this DSH process reports. This is process-level and different from the isolation switch above, which only sets the recall range.",
+  peerIdHintEmpty: "Empty (recommended): the plugin derives a peer from each session's workspace git identity, so every repository is automatically its own topic. This is what you want when one DSH instance works across multiple repositories.",
+  peerIdHintSet: "Set: every session in this process is pinned to this one peer and the automatic per-repository derivation is overridden. Use it only when one DSH instance serves a single repository, or when you deliberately want several repositories to share one topic. It also lets the OpenViking MCP tools scope to this peer instead of falling back to broad recall.",
+  peerIdMultiRepoNotice: "For multi-repository isolation, leave this empty. The \"OpenViking MCP: actor-scoped recall needs an explicit peer id\" log line is expected in that case and can be ignored — it only affects the manual MCP tools, not the automatically injected memories.",
+  peerIdEnvWarning: "OPENVIKING_PEER_ID is set in the environment and overrides this file. Remove the variable and restart the DSH process to change it.",
+  peerIdCredentialWarning: "A top-level actor_peer_id / peer_id in ovcli.conf currently pins the peer. This plugin does not edit that credential key; saving a value here adds a plugin.peerId that outranks it, and clearing this field falls back to that credential rather than to automatic derivation.",
+  fillCurrentRepo: "Fill from current repository",
+  peerIdDetected: "Detected peer id for the current repository: {peerId}",
+  peerIdNotInRepo: "The current workspace has no git remote to derive a peer id from. Leave the field empty for automatic behaviour, or enter one manually.",
+  peerIdSaved: "Actor peer id saved.",
+  peerIdSaveFailed: "Unable to save the actor peer id: {error}",
+  savePeerId: "Save peer id",
+  peerIdReloadNotice: "Saving the peer id reloads the official memory plugin the same way the isolation switch does: every open session is committed and archived once, and the OpenViking MCP tools are rebuilt briefly.",
   reloadNotice: "Saving reloads the official memory plugin automatically: it commits and archives every open session once, and briefly rebuilds the OpenViking MCP tools.",
   reloading: "Reloading the official memory plugin…",
   restartSucceeded: "The official memory plugin reloaded. The new setting is active.",
@@ -306,6 +336,21 @@ const zh: Record<TranslationKey, string> = {
   isolationSaved: "记忆隔离设置已保存。",
   isolationSaveFailed: "无法保存记忆隔离设置。",
   envOverrideWarning: "环境变量 OPENVIKING_RECALL_PEER_SCOPE 已设置并覆盖此文件配置。请移除该变量并重启 DSH 进程。",
+  peerIdLabel: "Actor peer id（高级）",
+  peerIdPlaceholder: "留空则按仓库自动隔离",
+  peerIdHint: "本 DSH 进程归属哪个 peer（主题）。这是进程级设置，与上方隔离开关不同——隔离开关只决定召回范围。",
+  peerIdHintEmpty: "留空（推荐）：插件按每个会话所在 workspace 的 git 身份自动推导 peer，每个仓库自动成为独立主题。当一个 DSH 实例在多个仓库间工作时，这正是你需要的。",
+  peerIdHintSet: "填写：本进程的所有会话都被钉死到这一个 peer，自动的按仓库推导被覆盖。仅适用于「一个 DSH 实例只服务单个仓库」，或你有意让多个仓库共享同一主题的情况。填写后 OpenViking MCP 工具也能限定到该 peer，不再退化为广召回。",
+  peerIdMultiRepoNotice: "如需多仓库工作时的记忆隔离，请留空。此时出现的「OpenViking MCP: actor-scoped recall needs an explicit peer id」日志属正常现象，可忽略——它只影响手动调用的 MCP 工具，不影响自动注入到上下文的记忆隔离。",
+  peerIdEnvWarning: "环境变量 OPENVIKING_PEER_ID 已设置并覆盖此文件配置。请移除该变量并重启 DSH 进程。",
+  peerIdCredentialWarning: "ovcli.conf 顶层的 actor_peer_id / peer_id 当前钉住了 peer。本插件不编辑该凭证键；在此保存的值会写入优先级更高的 plugin.peerId，而清空此字段会回落到该凭证键，而不是回到自动推导。",
+  fillCurrentRepo: "填入当前仓库",
+  peerIdDetected: "已识别当前仓库的 peer id：{peerId}",
+  peerIdNotInRepo: "当前工作区没有可用于推导 peer id 的 git 远端。可留空使用自动行为，或手动输入。",
+  peerIdSaved: "Actor peer id 已保存。",
+  peerIdSaveFailed: "无法保存 actor peer id：{error}",
+  savePeerId: "保存 peer id",
+  peerIdReloadNotice: "保存 peer id 会像隔离开关一样自动重新加载官方记忆插件：会对所有打开的会话执行一次提交归档，并短暂重建 OpenViking MCP 工具。",
   reloadNotice: "保存后会自动重新加载官方记忆插件：会对所有打开的会话执行一次提交归档，并短暂重建 OpenViking MCP 工具。",
   reloading: "正在重新加载官方记忆插件…",
   restartSucceeded: "官方记忆插件已重新加载，新设置已生效。",

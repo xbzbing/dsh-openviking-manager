@@ -7,6 +7,8 @@ interface DiscoveryResult { ovcli: ConfigResult; suggestedEndpoint: string; loca
 interface ApiEnvelope { ok: boolean; value?: unknown; error?: string; code?: string; }
 interface VersionView { current: string; repositoryUrl?: string; latest?: string; updateAvailable: boolean; releaseUrl?: string; checkedRemote: boolean; error?: string; }
 interface RecallScopeView { scope: "all" | "actor"; source: "env" | "plugin.dsh" | "plugin" | "default"; envOverride: string; restartPending: boolean; }
+interface PeerIdView { peerId: string; source: "env" | "plugin.dsh" | "plugin" | "ovcli" | "default"; envOverride: string; ovcliOverride: string; restartPending: boolean; }
+interface DerivedPeerView { peerId: string; }
 interface RecallTuningKnobView<T> { value: T; source: "env" | "plugin.dsh" | "plugin" | "default"; configured: boolean; envOverride: string; envVar: string; default: T; pinned: boolean; }
 interface RecallTuningView {
   scoreThreshold: RecallTuningKnobView<number>;
@@ -102,6 +104,8 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   const [recallScope, setRecallScope] = useState<RecallScopeView>();
   const [recallTuning, setRecallTuning] = useState<RecallTuningView>();
   const [tuningDraft, setTuningDraft] = useState<RecallTuningDraft>({ scoreThreshold: "", recallLimit: "", recallQueryExpansion: "auto", recallExcludeUris: "" });
+  const [peerId, setPeerId] = useState<PeerIdView>();
+  const [peerIdDraft, setPeerIdDraft] = useState("");
 
   const load = async () => {
     setBusy(true);
@@ -141,8 +145,24 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
       return value;
     } catch { if (hideOnFailure) setRecallTuning(undefined); return undefined; }
   };
+  // Same contract again: a host without the route keeps its previous page
+  // shape, and a failure after an action keeps the current view.
+  const loadPeerId = async (hideOnFailure = true): Promise<PeerIdView | undefined> => {
+    try {
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-peer`))).value as PeerIdView;
+      setPeerId(value);
+      return value;
+    } catch { if (hideOnFailure) setPeerId(undefined); return undefined; }
+  };
 
-  useEffect(() => { void load(); void loadVersion(); void initializeRecallSettings(); }, []);
+  useEffect(() => { void load(); void loadVersion(); void initializeRecallSettings(); void loadPeerId(); }, []);
+
+  // The peer id draft follows the loaded view: an empty box means "no
+  // plugin.peerId", which restores the automatic per-repository derivation.
+  useEffect(() => {
+    if (!peerId) return;
+    setPeerIdDraft(peerId.source === "plugin" || peerId.source === "plugin.dsh" ? peerId.peerId : "");
+  }, [peerId]);
 
   // The draft follows the loaded view: an empty field means the key is absent,
   // so "clear the box" restores that knob's default — the product one when it
@@ -196,6 +216,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     } finally {
       await loadRecallScope(false);
       await loadRecallTuning(false);
+      await loadPeerId(false);
     }
   };
 
@@ -324,6 +345,49 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     }
   };
 
+  /** Env or a top-level credential currently outranks plugin.peerId: the field
+   * is read-only then, with a warning, rather than showing a value that would
+   * not take effect. */
+  const peerIdLocked = peerId !== undefined && (peerId.source === "env" || peerId.source === "ovcli");
+
+  const savePeerIdValue = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!peerId) return;
+    setBusy(true);
+    try {
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-peer`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ peerId: peerIdDraft.trim() }),
+      }))).value as PeerIdView;
+      setPeerId(value);
+      // The applied plugin only reads the peer through a reload, so a changed
+      // file triggers one right away; an incomplete reload is reported on the
+      // status line.
+      if (value.restartPending) {
+        setStatus(t("reloading"));
+        await runRestart();
+      } else {
+        setStatus(t("peerIdSaved"));
+      }
+    } catch (error) {
+      setStatus(t("peerIdSaveFailed", { error: error instanceof Error ? error.message : "unknown" }));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const fillCurrentRepo = async () => {
+    setBusy(true);
+    try {
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-peer/derive`))).value as DerivedPeerView;
+      if (value.peerId === "") setStatus(t("peerIdNotInRepo"));
+      else { setPeerIdDraft(value.peerId); setStatus(t("peerIdDetected", { peerId: value.peerId })); }
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : t("peerIdNotInRepo"));
+    } finally { setBusy(false); }
+  };
+
   const repair = async () => {
     setBusy(true);
     try {
@@ -417,6 +481,37 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
         <p className="ovm-hint ovm-isolationHint">{t("isolationHint")}</p>
         <p className="ovm-hint ovm-isolationHint">{t("reloadNotice")}</p>
         {recallScope.source === "env" ? <p className="ovm-warning" role="alert">{t("envOverrideWarning")}</p> : null}
+      </section>
+    )}
+    {peerId === undefined ? null : (
+      <section className="ovm-card" aria-label={t("peerIdLabel")}>
+        <details className="ovm-peerId ovm-collapse">
+          <summary><h2>{t("peerIdLabel")}</h2></summary>
+          <div className="ovm-collapseContent">
+            <p className="ovm-hint">{t("peerIdHint")}</p>
+            <form onSubmit={(event) => void savePeerIdValue(event)}>
+              <label>{t("peerIdLabel")}
+                <input
+                  value={peerIdLocked ? (peerId.envOverride || peerId.ovcliOverride) : peerIdDraft}
+                  placeholder={t("peerIdPlaceholder")}
+                  disabled={busy || peerIdLocked}
+                  onChange={(event) => setPeerIdDraft(event.target.value)}
+                />
+              </label>
+              <div className="ovm-actions">
+                <button type="button" className="ovm-secondary" disabled={busy || peerIdLocked} onClick={() => void fillCurrentRepo()}>{t("fillCurrentRepo")}</button>
+                <button type="submit" disabled={busy || peerIdLocked}>{t("savePeerId")}</button>
+              </div>
+            </form>
+            <p className="ovm-hint">{peerIdDraft.trim() === "" ? t("peerIdHintEmpty") : t("peerIdHintSet")}</p>
+            <p className="ovm-hint ovm-isolationHint">{t("peerIdMultiRepoNotice")}</p>
+            <p className="ovm-hint">{t("peerIdReloadNotice")}</p>
+          </div>
+        </details>
+        {/* Overrides sit outside the fold: a closed panel must not hide that the
+            file value is not the effective one. */}
+        {peerId.source === "env" ? <p className="ovm-warning" role="alert">{t("peerIdEnvWarning")}</p> : null}
+        {peerId.source === "ovcli" ? <p className="ovm-warning" role="alert">{t("peerIdCredentialWarning")}</p> : null}
       </section>
     )}
     {recallTuning === undefined ? null : (
