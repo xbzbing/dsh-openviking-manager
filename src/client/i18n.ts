@@ -117,6 +117,10 @@ export type TranslationKey =
   | "queryExpansionOff"
   | "excludeUrisLabel"
   | "excludeUrisHint"
+  | "timeoutMsLabel"
+  | "timeoutMsHint"
+  | "recallContextTimeoutMsLabel"
+  | "recallContextTimeoutMsHint"
   | "defaultPlaceholder"
   | "saveTuning"
   | "tuningSaved"
@@ -232,7 +236,7 @@ const en: Record<TranslationKey, string> = {
   restartUnavailable: "The official memory plugin is not loaded in this process. Restart the DSH instance manually to apply the change.",
   restartFailed: "Unable to restart the official memory plugin: {error}",
   tuningTitle: "Recall tuning",
-  tuningIntro: "Fine-tune what the official memory plugin injects into each step. Values are written to ovcli.conf's plugin section; the threshold and query expansion are initialised to this plugin's defaults (0.5, off), while the item limit and excluded URIs keep the official defaults when left empty.",
+  tuningIntro: "Fine-tune what the official memory plugin injects into each step. Values are written to ovcli.conf's plugin section; the threshold, query expansion and request timeout are initialised to this plugin's defaults (0.5, off, 15000ms), while the item limit, excluded URIs and recall search timeout keep the official defaults when left empty.",
   scoreThresholdLabel: "Recall score threshold",
   scoreThresholdHint: "Memories scoring below this are not injected. Raising it filters out weakly related hits. This plugin defaults to 0.5 (official default 0.35).",
   recallLimitLabel: "Maximum injected items",
@@ -243,6 +247,10 @@ const en: Record<TranslationKey, string> = {
   queryExpansionOff: "Off",
   excludeUrisLabel: "Excluded URIs",
   excludeUrisHint: "One viking:// URI per line. Matching subtrees are never recalled — handy for generated directory files such as skills or resources indexes.",
+  timeoutMsLabel: "Request timeout (ms)",
+  timeoutMsHint: "How long one memory request may take before it fails, 1000 to 300000. Lower it when the backend hangs so a stuck recall does not stall the reply. This plugin defaults to 15000 (official dsh default 10000).",
+  recallContextTimeoutMsLabel: "Recall search timeout (ms)",
+  recallContextTimeoutMsHint: "Caps the session-aware recall search, 0 to 600000. Empty (0) keeps the built-in floor (15s with query expansion, 45s with rewrite), which the request timeout above cannot shorten. Set a value here to force the search to fail faster when the backend's search/rerank is stuck.",
   defaultPlaceholder: "default: {value}",
   saveTuning: "Save recall tuning",
   tuningSaved: "Recall tuning saved.",
@@ -357,7 +365,7 @@ const zh: Record<TranslationKey, string> = {
   restartUnavailable: "当前进程中未加载官方记忆插件。请手动重启 DSH 实例使更改生效。",
   restartFailed: "无法重启官方记忆插件：{error}",
   tuningTitle: "召回调优",
-  tuningIntro: "调整官方记忆插件每次注入的内容。取值写入 ovcli.conf 的 plugin 段；分数阈值与查询扩写首次打开时按本插件默认写入（0.5、关闭），条数上限与排除 URI 留空则保持官方默认。",
+  tuningIntro: "调整官方记忆插件每次注入的内容。取值写入 ovcli.conf 的 plugin 段；分数阈值、查询扩写与请求超时首次打开时按本插件默认写入（0.5、关闭、15000 毫秒），条数上限、排除 URI 与召回搜索超时留空则保持官方默认。",
   scoreThresholdLabel: "召回分数阈值",
   scoreThresholdHint: "低于该分数的记忆不会注入。调高可过滤弱相关内容。本插件默认 0.5（官方默认 0.35）。",
   recallLimitLabel: "单次注入条数上限",
@@ -368,6 +376,10 @@ const zh: Record<TranslationKey, string> = {
   queryExpansionOff: "关闭",
   excludeUrisLabel: "排除的 URI",
   excludeUrisHint: "每行一个 viking:// URI。匹配到这些子树的记忆不会被召回，适合排除 skills、resources 之类自动生成的目录索引。",
+  timeoutMsLabel: "请求超时（毫秒）",
+  timeoutMsHint: "单次记忆请求在失败前最多等待多久，取值 1000–300000。后端卡死时调低它，避免召回卡住整个回合。本插件默认 15000（官方 dsh 默认 10000）。",
+  recallContextTimeoutMsLabel: "召回搜索超时（毫秒）",
+  recallContextTimeoutMsHint: "限制会话感知召回搜索的超时，取值 0–600000。留空（0）保留内置地板（含查询扩写为 15s、含改写为 45s），上面的请求超时压不动它。填入具体值可在后端 search/rerank 卡死时让搜索更快失败。",
   defaultPlaceholder: "默认：{value}",
   saveTuning: "保存召回调优",
   tuningSaved: "召回调优设置已保存。",

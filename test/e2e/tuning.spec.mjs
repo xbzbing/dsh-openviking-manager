@@ -61,9 +61,9 @@ test("recall tuning writes the official keys and reloads the plugin", async ({ p
   let restarts = 0;
   const fixture = await startTuningFixture({
     restartMemoryPlugin: async () => { restarts += 1; return { restarted: true, count: 1 }; },
-    // Isolation and both product defaults are already pinned, so the only
+    // Isolation and all three product defaults are already pinned, so the only
     // reload here comes from the save itself.
-    initialConfig: { plugin: { recallPeerScope: "actor", scoreThreshold: 0.5, recallQueryExpansion: "off" } },
+    initialConfig: { plugin: { recallPeerScope: "actor", scoreThreshold: 0.5, recallQueryExpansion: "off", timeoutMs: 15000 } },
   });
   try {
     await page.goto(fixture.url);
@@ -78,6 +78,9 @@ test("recall tuning writes the official keys and reloads the plugin", async ({ p
     await expect(page.getByLabel("Maximum injected items")).toHaveAttribute("placeholder", "default: 10");
     await expect(page.getByLabel("Query expansion")).toHaveValue("off");
     await expect(page.getByLabel("Excluded URIs")).toHaveValue("");
+    // The request timeout is a pinned knob that loads its product default.
+    await expect(page.getByLabel("Request timeout (ms)")).toHaveValue("15000");
+    await expect(page.getByLabel("Recall search timeout (ms)")).toHaveAttribute("placeholder", "default: 0");
     // The card warns up front that saving triggers an automatic reload.
     await expect(page.getByText("Saving these keys reloads the official memory plugin")).toBeVisible();
 
@@ -85,6 +88,8 @@ test("recall tuning writes the official keys and reloads the plugin", async ({ p
     await page.getByLabel("Maximum injected items").fill("6");
     await page.getByLabel("Query expansion").selectOption("off");
     await page.getByLabel("Excluded URIs").fill("viking://user/xubingzhen/skills\nviking://resources\n");
+    await page.getByLabel("Request timeout (ms)").fill("12000");
+    await page.getByLabel("Recall search timeout (ms)").fill("2000");
     await page.getByRole("button", { name: "Save recall tuning" }).click();
 
     await expect(page.getByRole("status")).toContainText("The official memory plugin reloaded. The new setting is active.");
@@ -95,6 +100,8 @@ test("recall tuning writes the official keys and reloads the plugin", async ({ p
     expect(stored.plugin.recallLimit).toBe(6);
     expect(stored.plugin.recallQueryExpansion).toBe("off");
     expect(stored.plugin.recallExcludeUris).toEqual(["viking://user/xubingzhen/skills", "viking://resources"]);
+    expect(stored.plugin.timeoutMs).toBe(12000);
+    expect(stored.plugin.recallContextTimeoutMs).toBe(2000);
     // The isolation switch and the credentials ride along untouched.
     expect(stored.plugin.recallPeerScope).toBe("actor");
     expect(stored.api_key).toBe("keep-this-secret");
@@ -118,15 +125,18 @@ test("a fresh config is initialised to the plugin defaults on one reload", async
     await expandTuning(page);
     await expect(page.getByLabel("Recall score threshold")).toHaveValue("0.5");
     await expect(page.getByLabel("Query expansion")).toHaveValue("off");
+    await expect(page.getByLabel("Request timeout (ms)")).toHaveValue("15000");
     await expect.poll(() => restarts).toBe(1);
     await expect(page.getByRole("status")).toContainText("The official memory plugin reloaded. The new setting is active.");
 
     const stored = JSON.parse(await readFile(fixture.configPath, "utf8"));
     expect(stored.plugin.scoreThreshold).toBe(0.5);
     expect(stored.plugin.recallQueryExpansion).toBe("off");
+    expect(stored.plugin.timeoutMs).toBe(15000);
     // Knobs without a product default stay untouched.
     expect(stored.plugin.recallLimit).toBe(undefined);
     expect(stored.plugin.recallExcludeUris).toBe(undefined);
+    expect(stored.plugin.recallContextTimeoutMs).toBe(undefined);
     expect(stored.api_key).toBe("keep-this-secret");
 
     // The file now carries the keys, so the next load has nothing to write
@@ -134,6 +144,7 @@ test("a fresh config is initialised to the plugin defaults on one reload", async
     await page.reload();
     await expect(page.getByLabel("Recall score threshold")).toHaveValue("0.5");
     await expect(page.getByLabel("Query expansion")).toHaveValue("off");
+    await expect(page.getByLabel("Request timeout (ms)")).toHaveValue("15000");
     await expect.poll(() => restarts).toBe(1);
     await expect(page.getByRole("alert")).toHaveCount(0);
   } finally {
@@ -176,6 +187,8 @@ test("clearing a field restores that knob's default: the product one, or the off
         recallLimit: 6,
         recallQueryExpansion: "off",
         recallExcludeUris: ["viking://user/xubingzhen/skills"],
+        timeoutMs: 12000,
+        recallContextTimeoutMs: 2000,
       },
     },
   });
@@ -187,11 +200,15 @@ test("clearing a field restores that knob's default: the product one, or the off
     await expect(page.getByLabel("Maximum injected items")).toHaveValue("6");
     await expect(page.getByLabel("Query expansion")).toHaveValue("off");
     await expect(page.getByLabel("Excluded URIs")).toHaveValue("viking://user/xubingzhen/skills");
+    await expect(page.getByLabel("Request timeout (ms)")).toHaveValue("12000");
+    await expect(page.getByLabel("Recall search timeout (ms)")).toHaveValue("2000");
 
     await page.getByLabel("Recall score threshold").fill("");
     await page.getByLabel("Maximum injected items").fill("");
     await page.getByLabel("Query expansion").selectOption("auto");
     await page.getByLabel("Excluded URIs").fill("");
+    await page.getByLabel("Request timeout (ms)").fill("");
+    await page.getByLabel("Recall search timeout (ms)").fill("");
     await page.getByRole("button", { name: "Save recall tuning" }).click();
 
     await expect(page.getByRole("status")).toContainText("The official memory plugin reloaded. The new setting is active.");
@@ -203,11 +220,15 @@ test("clearing a field restores that knob's default: the product one, or the off
     expect(stored.plugin.scoreThreshold).toBe(0.5);
     // "Automatic" is an explicit choice and is written, so it survives a reload.
     expect(stored.plugin.recallQueryExpansion).toBe("auto");
+    // The request timeout is pinned too: clearing it restores 15000, not absent.
+    expect(stored.plugin.timeoutMs).toBe(15000);
     // Knobs without a product default fall back to the official one: no key.
     expect(stored.plugin.recallLimit).toBe(undefined);
     expect(stored.plugin.recallExcludeUris).toBe(undefined);
+    expect(stored.plugin.recallContextTimeoutMs).toBe(undefined);
     expect(stored.plugin.recallPeerScope).toBe("actor");
     await expect(page.getByLabel("Recall score threshold")).toHaveValue("0.5");
+    await expect(page.getByLabel("Request timeout (ms)")).toHaveValue("15000");
   } finally {
     await fixture.close();
   }

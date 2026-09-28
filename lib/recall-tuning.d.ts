@@ -5,10 +5,12 @@
  * (read from 0.5.x); that file stays the single source of truth and this
  * module never invents a knob of its own:
  *
- *   scoreThreshold        number  0..1     default 0.35  OPENVIKING_SCORE_THRESHOLD
- *   recallLimit           int     1..50    default 10    OPENVIKING_RECALL_LIMIT   (sendOnlyWhenConfigured)
- *   recallQueryExpansion  enum    auto|off default auto  OPENVIKING_RECALL_QUERY_EXPANSION (sendOnlyWhenConfigured)
- *   recallExcludeUris     list              default []    OPENVIKING_RECALL_EXCLUDE_URIS
+ *   scoreThreshold          number  0..1         default 0.35   OPENVIKING_SCORE_THRESHOLD
+ *   recallLimit             int     1..50        default 10     OPENVIKING_RECALL_LIMIT   (sendOnlyWhenConfigured)
+ *   recallQueryExpansion    enum    auto|off     default auto   OPENVIKING_RECALL_QUERY_EXPANSION (sendOnlyWhenConfigured)
+ *   recallExcludeUris       list                 default []     OPENVIKING_RECALL_EXCLUDE_URIS
+ *   timeoutMs               int     1000..300000 default 10000  OPENVIKING_TIMEOUT_MS (alias requestTimeoutMs; dsh harness default 10000)
+ *   recallContextTimeoutMs  int     0..600000    default 0      OPENVIKING_RECALL_CONTEXT_TIMEOUT_MS (0 = derive from the server-stage floors)
  *
  * This module owns the read/compute path — the knob specs, layer resolution
  * and view assembly. The write path (request validation and the ovcli.conf
@@ -25,12 +27,18 @@
  * managed by hand and out of this plugin's scope by contract, the second sits
  * below everything written here.
  *
- * Two knobs additionally carry a *product* default (see PRODUCT_DEFAULTS):
+ * Three knobs additionally carry a *product* default (see PRODUCT_DEFAULTS):
  * the manager writes it on first load whenever no layer supplied the key, the
  * same way the isolation switch pins `recallPeerScope`. That is a write of a
  * normal official key, never a redefinition of the official default — a file
  * or env value still wins, and a keyless file still behaves officially until
- * the page initialises it.
+ * the page initialises it. `timeoutMs` is pinned to 15000: the base request
+ * budget the official loader would otherwise give a dsh host is 10000, and with
+ * query expansion off (the product default here) the session-aware search
+ * request keeps that base budget rather than the 15s expansion floor, so this
+ * one key is what caps a hung backend. `recallContextTimeoutMs` stays unpinned
+ * (official default 0 = derive) so it only takes effect when someone sets it to
+ * cap the server-assembled search below the expansion/rewrite floors.
  *
  * Like the official loader, a layer whose value does not parse is ignored
  * rather than overriding the layer below it. The one deliberate simplification
@@ -66,6 +74,8 @@ export interface RecallTuningState {
     recallLimit: RecallTuningKnob<number>;
     recallQueryExpansion: RecallTuningKnob<RecallQueryExpansion>;
     recallExcludeUris: RecallTuningKnob<string[]>;
+    timeoutMs: RecallTuningKnob<number>;
+    recallContextTimeoutMs: RecallTuningKnob<number>;
 }
 export interface RecallTuningView extends RecallTuningState {
     /** True when the file now asks for something the applied plugin has not loaded. */
@@ -82,6 +92,8 @@ export interface RecallTuningPatch {
     recallLimit?: number | null;
     recallQueryExpansion?: RecallQueryExpansion | null;
     recallExcludeUris?: string[] | null;
+    timeoutMs?: number | null;
+    recallContextTimeoutMs?: number | null;
 }
 type KnobKind = "number" | "int" | "enum" | "list";
 export interface KnobSpec {
@@ -98,15 +110,18 @@ export declare const SCORE_THRESHOLD: KnobSpec;
 export declare const RECALL_LIMIT: KnobSpec;
 export declare const QUERY_EXPANSION: KnobSpec;
 export declare const EXCLUDE_URIS: KnobSpec;
+export declare const TIMEOUT_MS: KnobSpec;
+export declare const RECALL_CONTEXT_TIMEOUT_MS: KnobSpec;
 export declare const RECALL_TUNING_ENV_VARS: readonly string[];
 /** Product defaults this plugin initialises when no layer supplies a key.
  *
- * The official defaults (0.35 / auto) stay in the config-schema and remain
- * what a keyless file *does*; these are what the first config-page load
+ * The official defaults (0.35 / auto / 10000) stay in the config-schema and
+ * remain what a keyless file *does*; these are what the first config-page load
  * *writes*, the same way the isolation switch pins `recallPeerScope: "actor"`:
- * weakly related recall is filtered out of the box and the server stops
- * widening the prompt into extra search intents. Only an officially declared
- * knob can carry one, and a layer that did supply the key is never overridden. */
+ * weakly related recall is filtered out of the box, the server stops widening
+ * the prompt into extra search intents, and a hung backend is capped at 15s
+ * per request instead of the base dsh budget. Only an officially declared knob
+ * can carry one, and a layer that did supply the key is never overridden. */
 export declare const PRODUCT_DEFAULTS: Map<KnobSpec, unknown>;
 export declare function asRecord(value: unknown): Record<string, unknown> | undefined;
 /** The four knobs resolved through env → plugin.dsh → plugin → default. */

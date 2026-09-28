@@ -9,10 +9,12 @@ import { harnessSection, pluginSection } from "./recall-scope.js";
  * (read from 0.5.x); that file stays the single source of truth and this
  * module never invents a knob of its own:
  *
- *   scoreThreshold        number  0..1     default 0.35  OPENVIKING_SCORE_THRESHOLD
- *   recallLimit           int     1..50    default 10    OPENVIKING_RECALL_LIMIT   (sendOnlyWhenConfigured)
- *   recallQueryExpansion  enum    auto|off default auto  OPENVIKING_RECALL_QUERY_EXPANSION (sendOnlyWhenConfigured)
- *   recallExcludeUris     list              default []    OPENVIKING_RECALL_EXCLUDE_URIS
+ *   scoreThreshold          number  0..1         default 0.35   OPENVIKING_SCORE_THRESHOLD
+ *   recallLimit             int     1..50        default 10     OPENVIKING_RECALL_LIMIT   (sendOnlyWhenConfigured)
+ *   recallQueryExpansion    enum    auto|off     default auto   OPENVIKING_RECALL_QUERY_EXPANSION (sendOnlyWhenConfigured)
+ *   recallExcludeUris       list                 default []     OPENVIKING_RECALL_EXCLUDE_URIS
+ *   timeoutMs               int     1000..300000 default 10000  OPENVIKING_TIMEOUT_MS (alias requestTimeoutMs; dsh harness default 10000)
+ *   recallContextTimeoutMs  int     0..600000    default 0      OPENVIKING_RECALL_CONTEXT_TIMEOUT_MS (0 = derive from the server-stage floors)
  *
  * This module owns the read/compute path — the knob specs, layer resolution
  * and view assembly. The write path (request validation and the ovcli.conf
@@ -29,12 +31,18 @@ import { harnessSection, pluginSection } from "./recall-scope.js";
  * managed by hand and out of this plugin's scope by contract, the second sits
  * below everything written here.
  *
- * Two knobs additionally carry a *product* default (see PRODUCT_DEFAULTS):
+ * Three knobs additionally carry a *product* default (see PRODUCT_DEFAULTS):
  * the manager writes it on first load whenever no layer supplied the key, the
  * same way the isolation switch pins `recallPeerScope`. That is a write of a
  * normal official key, never a redefinition of the official default — a file
  * or env value still wins, and a keyless file still behaves officially until
- * the page initialises it.
+ * the page initialises it. `timeoutMs` is pinned to 15000: the base request
+ * budget the official loader would otherwise give a dsh host is 10000, and with
+ * query expansion off (the product default here) the session-aware search
+ * request keeps that base budget rather than the 15s expansion floor, so this
+ * one key is what caps a hung backend. `recallContextTimeoutMs` stays unpinned
+ * (official default 0 = derive) so it only takes effect when someone sets it to
+ * cap the server-assembled search below the expansion/rewrite floors.
  *
  * Like the official loader, a layer whose value does not parse is ignored
  * rather than overriding the layer below it. The one deliberate simplification
@@ -73,6 +81,8 @@ export interface RecallTuningState {
   recallLimit: RecallTuningKnob<number>;
   recallQueryExpansion: RecallTuningKnob<RecallQueryExpansion>;
   recallExcludeUris: RecallTuningKnob<string[]>;
+  timeoutMs: RecallTuningKnob<number>;
+  recallContextTimeoutMs: RecallTuningKnob<number>;
 }
 
 export interface RecallTuningView extends RecallTuningState {
@@ -91,6 +101,8 @@ export interface RecallTuningPatch {
   recallLimit?: number | null;
   recallQueryExpansion?: RecallQueryExpansion | null;
   recallExcludeUris?: string[] | null;
+  timeoutMs?: number | null;
+  recallContextTimeoutMs?: number | null;
 }
 
 type KnobKind = "number" | "int" | "enum" | "list";
@@ -143,21 +155,48 @@ export const EXCLUDE_URIS: KnobSpec = {
   fallback: [],
 };
 
-const SPECS = [SCORE_THRESHOLD, RECALL_LIMIT, QUERY_EXPANSION, EXCLUDE_URIS];
+export const TIMEOUT_MS: KnobSpec = {
+  key: "timeoutMs",
+  aliases: ["requestTimeoutMs"],
+  envVar: "OPENVIKING_TIMEOUT_MS",
+  kind: "int",
+  // The dsh harness default in config-schema (harness.dsh = 10000), not the
+  // generic 15000: this is the base budget the official loader hands a dsh host
+  // when no layer supplies the key.
+  fallback: 10000,
+  min: 1000,
+  max: 300000,
+};
+
+export const RECALL_CONTEXT_TIMEOUT_MS: KnobSpec = {
+  key: "recallContextTimeoutMs",
+  aliases: [],
+  envVar: "OPENVIKING_RECALL_CONTEXT_TIMEOUT_MS",
+  kind: "int",
+  // 0 = keep the built-in derivation (max of timeoutMs and the expansion/rewrite
+  // floor); a positive value caps the session-aware search below those floors.
+  fallback: 0,
+  min: 0,
+  max: 600000,
+};
+
+const SPECS = [SCORE_THRESHOLD, RECALL_LIMIT, QUERY_EXPANSION, EXCLUDE_URIS, TIMEOUT_MS, RECALL_CONTEXT_TIMEOUT_MS];
 
 export const RECALL_TUNING_ENV_VARS: readonly string[] = SPECS.map((spec) => spec.envVar);
 
 /** Product defaults this plugin initialises when no layer supplies a key.
  *
- * The official defaults (0.35 / auto) stay in the config-schema and remain
- * what a keyless file *does*; these are what the first config-page load
+ * The official defaults (0.35 / auto / 10000) stay in the config-schema and
+ * remain what a keyless file *does*; these are what the first config-page load
  * *writes*, the same way the isolation switch pins `recallPeerScope: "actor"`:
- * weakly related recall is filtered out of the box and the server stops
- * widening the prompt into extra search intents. Only an officially declared
- * knob can carry one, and a layer that did supply the key is never overridden. */
+ * weakly related recall is filtered out of the box, the server stops widening
+ * the prompt into extra search intents, and a hung backend is capped at 15s
+ * per request instead of the base dsh budget. Only an officially declared knob
+ * can carry one, and a layer that did supply the key is never overridden. */
 export const PRODUCT_DEFAULTS = new Map<KnobSpec, unknown>([
   [SCORE_THRESHOLD, 0.5],
   [QUERY_EXPANSION, "off"],
+  [TIMEOUT_MS, 15000],
 ]);
 
 const UNPARSEABLE = Symbol("unparseable");
@@ -265,6 +304,8 @@ export function effectiveRecallTuning(
     recallLimit: resolveKnob<number>(RECALL_LIMIT, layers, env),
     recallQueryExpansion: resolveKnob<RecallQueryExpansion>(QUERY_EXPANSION, layers, env),
     recallExcludeUris: resolveKnob<string[]>(EXCLUDE_URIS, layers, env),
+    timeoutMs: resolveKnob<number>(TIMEOUT_MS, layers, env),
+    recallContextTimeoutMs: resolveKnob<number>(RECALL_CONTEXT_TIMEOUT_MS, layers, env),
   };
 }
 
@@ -305,7 +346,9 @@ export function recallTuningPending(current: RecallTuningState, loaded: RecallTu
   return !sameKnob(current.scoreThreshold, loaded.scoreThreshold)
     || !sameKnob(current.recallLimit, loaded.recallLimit)
     || !sameKnob(current.recallQueryExpansion, loaded.recallQueryExpansion)
-    || !sameKnob(current.recallExcludeUris, loaded.recallExcludeUris);
+    || !sameKnob(current.recallExcludeUris, loaded.recallExcludeUris)
+    || !sameKnob(current.timeoutMs, loaded.timeoutMs)
+    || !sameKnob(current.recallContextTimeoutMs, loaded.recallContextTimeoutMs);
 }
 
 /** The pinned knobs no layer supplies yet, as a ready-to-write patch. A file
@@ -316,6 +359,8 @@ export function recallTuningInitPatch(state: RecallTuningState): RecallTuningPat
   if (state.recallLimit.pinned && state.recallLimit.source === "default") patch.recallLimit = state.recallLimit.default;
   if (state.recallQueryExpansion.pinned && state.recallQueryExpansion.source === "default") patch.recallQueryExpansion = state.recallQueryExpansion.default;
   if (state.recallExcludeUris.pinned && state.recallExcludeUris.source === "default") patch.recallExcludeUris = state.recallExcludeUris.default;
+  if (state.timeoutMs.pinned && state.timeoutMs.source === "default") patch.timeoutMs = state.timeoutMs.default;
+  if (state.recallContextTimeoutMs.pinned && state.recallContextTimeoutMs.source === "default") patch.recallContextTimeoutMs = state.recallContextTimeoutMs.default;
   return patch;
 }
 

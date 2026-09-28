@@ -49,10 +49,10 @@ test("peer id is empty by default and saving a value writes plugin.peerId then r
   let restarts = 0;
   const fixture = await startPeerIdFixture({
     restartMemoryPlugin: async () => { restarts += 1; return { restarted: true, count: 1 }; },
-    // Pin isolation and both product defaults up front so first-load
+    // Pin isolation and all three product defaults up front so first-load
     // initialization triggers no reload of its own: the only restart here is
     // the peer-id save, which keeps the count unambiguous.
-    initialConfig: { plugin: { recallPeerScope: "actor", scoreThreshold: 0.5, recallQueryExpansion: "off" } },
+    initialConfig: { plugin: { recallPeerScope: "actor", scoreThreshold: 0.5, recallQueryExpansion: "off", timeoutMs: 15000 } },
   });
   try {
     await page.goto(fixture.url);

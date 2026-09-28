@@ -5,9 +5,11 @@ import {
   EXCLUDE_URIS,
   type KnobSpec,
   QUERY_EXPANSION,
+  RECALL_CONTEXT_TIMEOUT_MS,
   RECALL_LIMIT,
   type RecallTuningPatch,
   SCORE_THRESHOLD,
+  TIMEOUT_MS,
 } from "./recall-tuning.js";
 
 /** Write path for the official recall tuning knobs: request-body validation
@@ -91,6 +93,14 @@ export function parseRecallTuningPatch(raw: unknown): RecallTuningPatch {
     const value = uriListOrNull(body.recallExcludeUris, "recallExcludeUris");
     if (value !== undefined) patch.recallExcludeUris = value;
   }
+  if (Object.hasOwn(body, "timeoutMs")) {
+    const value = intOrNull(body.timeoutMs, "timeoutMs", 1000, 300000);
+    if (value !== undefined) patch.timeoutMs = value;
+  }
+  if (Object.hasOwn(body, "recallContextTimeoutMs")) {
+    const value = intOrNull(body.recallContextTimeoutMs, "recallContextTimeoutMs", 0, 600000);
+    if (value !== undefined) patch.recallContextTimeoutMs = value;
+  }
 
   return patch;
 }
@@ -146,6 +156,8 @@ const SPEC_BY_KEY: Record<keyof RecallTuningPatch, KnobSpec> = {
   recallLimit: RECALL_LIMIT,
   recallQueryExpansion: QUERY_EXPANSION,
   recallExcludeUris: EXCLUDE_URIS,
+  timeoutMs: TIMEOUT_MS,
+  recallContextTimeoutMs: RECALL_CONTEXT_TIMEOUT_MS,
 };
 
 /** Write the patch to ovcli.conf's `plugin` section.

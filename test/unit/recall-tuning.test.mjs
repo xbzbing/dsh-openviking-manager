@@ -45,6 +45,27 @@ test("an untouched config reports the official defaults with nothing configured"
   assert.equal(state.recallQueryExpansion.configured, false);
   assert.deepEqual(state.recallExcludeUris.value, []);
   assert.equal(state.recallExcludeUris.envVar, "OPENVIKING_RECALL_EXCLUDE_URIS");
+
+  // The base request timeout carries a product default of 15000 (official dsh
+  // default 10000); the recall search timeout stays unpinned at the official 0.
+  assert.deepEqual(state.timeoutMs, {
+    value: 10000,
+    source: "default",
+    configured: false,
+    envOverride: "",
+    envVar: "OPENVIKING_TIMEOUT_MS",
+    default: 15000,
+    pinned: true,
+  });
+  assert.deepEqual(state.recallContextTimeoutMs, {
+    value: 0,
+    source: "default",
+    configured: false,
+    envOverride: "",
+    envVar: "OPENVIKING_RECALL_CONTEXT_TIMEOUT_MS",
+    default: 0,
+    pinned: false,
+  });
 });
 
 test("the effective value follows the official layer order, alias included", () => {
@@ -74,6 +95,11 @@ test("the effective value follows the official layer order, alias included", () 
   // sendOnlyWhenConfigured knobs distinguish "absent" from "explicitly 10".
   assert.equal(effectiveRecallTuning({ plugin: { recallLimit: 10 } }, {}).recallLimit.configured, true);
   assert.equal(effectiveRecallTuning({ plugin: { recallQueryExpansion: "auto" } }, {}).recallQueryExpansion.configured, true);
+  // timeoutMs resolves its official alias requestTimeoutMs, and env outranks it.
+  assert.equal(effectiveRecallTuning({ plugin: { requestTimeoutMs: 8000 } }, {}).timeoutMs.value, 8000);
+  assert.equal(effectiveRecallTuning({ plugin: { requestTimeoutMs: 8000 } }, {}).timeoutMs.configured, true);
+  assert.equal(effectiveRecallTuning({ plugin: { timeoutMs: 8000 } }, { OPENVIKING_TIMEOUT_MS: "20000" }).timeoutMs.value, 20000);
+  assert.equal(effectiveRecallTuning({}, { OPENVIKING_RECALL_CONTEXT_TIMEOUT_MS: "2000" }).recallContextTimeoutMs.value, 2000);
 });
 
 test("a layer that does not parse is ignored, and out-of-domain values clamp", () => {
@@ -84,6 +110,10 @@ test("a layer that does not parse is ignored, and out-of-domain values clamp", (
   assert.equal(effectiveRecallTuning({ plugin: { scoreThreshold: 2 } }, {}).scoreThreshold.value, 1);
   assert.equal(effectiveRecallTuning({ plugin: { recallLimit: 0 } }, {}).recallLimit.value, 1);
   assert.equal(effectiveRecallTuning({ plugin: { recallLimit: 999 } }, {}).recallLimit.value, 50);
+  // The two timeout knobs clamp into their config-schema domains as well.
+  assert.equal(effectiveRecallTuning({ plugin: { timeoutMs: 10 } }, {}).timeoutMs.value, 1000);
+  assert.equal(effectiveRecallTuning({ plugin: { timeoutMs: 999999 } }, {}).timeoutMs.value, 300000);
+  assert.equal(effectiveRecallTuning({ plugin: { recallContextTimeoutMs: 999999 } }, {}).recallContextTimeoutMs.value, 600000);
   assert.deepEqual(
     effectiveRecallTuning({ plugin: { recallExcludeUris: "viking://a, viking://b" } }, {}).recallExcludeUris.value,
     ["viking://a", "viking://b"],
@@ -111,6 +141,8 @@ test("saving writes official keys to the shared section and keeps everything els
     recallLimit: 6,
     recallQueryExpansion: "off",
     recallExcludeUris: ["viking://user/xubingzhen/skills"],
+    timeoutMs: 15000,
+    recallContextTimeoutMs: 2000,
   });
 
   const stored = JSON.parse(await readFile(path, "utf8"));
@@ -118,6 +150,8 @@ test("saving writes official keys to the shared section and keeps everything els
   assert.equal(stored.plugin.recallLimit, 6, "the shared section wins over a stale harness override");
   assert.equal(stored.plugin.recallQueryExpansion, "off");
   assert.deepEqual(stored.plugin.recallExcludeUris, ["viking://user/xubingzhen/skills"]);
+  assert.equal(stored.plugin.timeoutMs, 15000);
+  assert.equal(stored.plugin.recallContextTimeoutMs, 2000);
   // Keys this module does not manage are untouched, including the isolation
   // switch and the other keys the harness section carries.
   assert.equal(stored.plugin.recallPeerScope, "actor");
@@ -245,28 +279,35 @@ test("product defaults are offered for the pinned knobs and only they are initia
   assert.equal(fresh.recallQueryExpansion.value, "auto");
   assert.equal(fresh.recallQueryExpansion.default, "off");
   assert.equal(fresh.recallQueryExpansion.pinned, true);
-  assert.deepEqual(recallTuningInitPatch(fresh), { scoreThreshold: 0.5, recallQueryExpansion: "off" });
+  // The request timeout is pinned to 15000 while a keyless file still loads the
+  // official dsh default of 10000.
+  assert.equal(fresh.timeoutMs.value, 10000);
+  assert.equal(fresh.timeoutMs.default, 15000);
+  assert.equal(fresh.timeoutMs.pinned, true);
+  assert.deepEqual(recallTuningInitPatch(fresh), { scoreThreshold: 0.5, recallQueryExpansion: "off", timeoutMs: 15000 });
 
   // Knobs without a product default keep the official one and are never pinned.
   assert.equal(fresh.recallLimit.default, 10);
   assert.equal(fresh.recallLimit.pinned, false);
   assert.deepEqual(fresh.recallExcludeUris.default, []);
   assert.equal(fresh.recallExcludeUris.pinned, false);
+  assert.equal(fresh.recallContextTimeoutMs.default, 0);
+  assert.equal(fresh.recallContextTimeoutMs.pinned, false);
 
   // A file that carries the keys has nothing left to write, whatever the value.
   assert.deepEqual(
-    recallTuningInitPatch(effectiveRecallTuning({ plugin: { scoreThreshold: 0.6, recallQueryExpansion: "auto" } }, {})),
+    recallTuningInitPatch(effectiveRecallTuning({ plugin: { scoreThreshold: 0.6, recallQueryExpansion: "auto", timeoutMs: 10000 } }, {})),
     {},
   );
   // Env outranks the file, so the pinned knob it names is never written either.
   assert.deepEqual(
     recallTuningInitPatch(effectiveRecallTuning({}, { OPENVIKING_SCORE_THRESHOLD: "0.9" })),
-    { recallQueryExpansion: "off" },
+    { recallQueryExpansion: "off", timeoutMs: 15000 },
   );
 });
 
 test("an explicit automatic expansion is written, not dropped", async (t) => {
-  const path = await tempConfig(t, { plugin: { scoreThreshold: 0.5, recallQueryExpansion: "off" } });
+  const path = await tempConfig(t, { plugin: { scoreThreshold: 0.5, recallQueryExpansion: "off", timeoutMs: 15000 } });
 
   await saveRecallTuning(path, { recallQueryExpansion: "auto" });
 
@@ -306,4 +347,15 @@ test("the patch parser enforces the official value domain", () => {
   assert.throws(() => parseRecallTuningPatch({ recallExcludeUris: ["https://example.com"] }), /viking:\/\/ URIs/);
   assert.throws(() => parseRecallTuningPatch({ recallExcludeUris: ["viking://two words"] }), /viking:\/\/ URIs/);
   assert.deepEqual(parseRecallTuningPatch({ recallExcludeUris: [] }), { recallExcludeUris: [] });
+
+  // The two timeout knobs enforce their config-schema integer domains.
+  assert.deepEqual(parseRecallTuningPatch({ timeoutMs: 15000 }), { timeoutMs: 15000 });
+  assert.deepEqual(parseRecallTuningPatch({ timeoutMs: null }), { timeoutMs: null });
+  assert.deepEqual(parseRecallTuningPatch({ recallContextTimeoutMs: 0 }), { recallContextTimeoutMs: 0 });
+  assert.deepEqual(parseRecallTuningPatch({ recallContextTimeoutMs: null }), { recallContextTimeoutMs: null });
+  assert.throws(() => parseRecallTuningPatch({ timeoutMs: 500 }), /between 1000 and 300000/);
+  assert.throws(() => parseRecallTuningPatch({ timeoutMs: 400000 }), /between 1000 and 300000/);
+  assert.throws(() => parseRecallTuningPatch({ timeoutMs: 1500.5 }), /integer between 1000 and 300000/);
+  assert.throws(() => parseRecallTuningPatch({ recallContextTimeoutMs: -1 }), /between 0 and 600000/);
+  assert.throws(() => parseRecallTuningPatch({ recallContextTimeoutMs: 700000 }), /between 0 and 600000/);
 });

@@ -15,13 +15,15 @@ interface RecallTuningView {
   recallLimit: RecallTuningKnobView<number>;
   recallQueryExpansion: RecallTuningKnobView<"auto" | "off">;
   recallExcludeUris: RecallTuningKnobView<string[]>;
+  timeoutMs: RecallTuningKnobView<number>;
+  recallContextTimeoutMs: RecallTuningKnobView<number>;
   restartPending: boolean;
   /** Pinned knobs no layer supplies yet — written once on first load. */
-  initPatch: { scoreThreshold?: number; recallLimit?: number; recallQueryExpansion?: "auto" | "off"; recallExcludeUris?: string[] };
+  initPatch: { scoreThreshold?: number; recallLimit?: number; recallQueryExpansion?: "auto" | "off"; recallExcludeUris?: string[]; timeoutMs?: number; recallContextTimeoutMs?: number };
 }
 /** Field state held between loads: a string so "empty" can mean "official
  * default" — which the server turns back into an absent key. */
-interface RecallTuningDraft { scoreThreshold: string; recallLimit: string; recallQueryExpansion: "auto" | "off"; recallExcludeUris: string; }
+interface RecallTuningDraft { scoreThreshold: string; recallLimit: string; recallQueryExpansion: "auto" | "off"; recallExcludeUris: string; timeoutMs: string; recallContextTimeoutMs: string; }
 interface RestartView { restarted: boolean; count: number; reason?: string; error?: string; }
 export interface ManagerFormProps { apiPrefix?: string; fetchFn?: typeof fetch; t?: Translation; }
 
@@ -103,7 +105,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   const [checkingVersion, setCheckingVersion] = useState(false);
   const [recallScope, setRecallScope] = useState<RecallScopeView>();
   const [recallTuning, setRecallTuning] = useState<RecallTuningView>();
-  const [tuningDraft, setTuningDraft] = useState<RecallTuningDraft>({ scoreThreshold: "", recallLimit: "", recallQueryExpansion: "auto", recallExcludeUris: "" });
+  const [tuningDraft, setTuningDraft] = useState<RecallTuningDraft>({ scoreThreshold: "", recallLimit: "", recallQueryExpansion: "auto", recallExcludeUris: "", timeoutMs: "", recallContextTimeoutMs: "" });
   const [peerId, setPeerId] = useState<PeerIdView>();
   const [peerIdDraft, setPeerIdDraft] = useState("");
 
@@ -174,6 +176,8 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
       recallLimit: recallTuning.recallLimit.configured ? String(recallTuning.recallLimit.value) : "",
       recallQueryExpansion: recallTuning.recallQueryExpansion.value,
       recallExcludeUris: recallTuning.recallExcludeUris.value.join("\n"),
+      timeoutMs: recallTuning.timeoutMs.configured ? String(recallTuning.timeoutMs.value) : "",
+      recallContextTimeoutMs: recallTuning.recallContextTimeoutMs.configured ? String(recallTuning.recallContextTimeoutMs.value) : "",
     });
   }, [recallTuning]);
 
@@ -304,6 +308,8 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
         recallTuning.recallLimit,
         recallTuning.recallQueryExpansion,
         recallTuning.recallExcludeUris,
+        recallTuning.timeoutMs,
+        recallTuning.recallContextTimeoutMs,
       ].filter((knob) => knob.source === "env").map((knob) => knob.envVar);
 
   const saveTuning = async (event: React.FormEvent) => {
@@ -320,6 +326,10 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
       recallLimit: tuningDraft.recallLimit.trim() === "" ? null : Number(tuningDraft.recallLimit),
       recallQueryExpansion: tuningDraft.recallQueryExpansion,
       recallExcludeUris: tuningDraft.recallExcludeUris.split("\n").map((line) => line.trim()).filter(Boolean),
+      timeoutMs: tuningDraft.timeoutMs.trim() === ""
+        ? (tuning.timeoutMs.pinned ? tuning.timeoutMs.default : null)
+        : Number(tuningDraft.timeoutMs),
+      recallContextTimeoutMs: tuningDraft.recallContextTimeoutMs.trim() === "" ? null : Number(tuningDraft.recallContextTimeoutMs),
     };
     setBusy(true);
     try {
@@ -578,6 +588,36 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
                     />
                   </label>
                   <p className="ovm-hint">{t("excludeUrisHint")}</p>
+                </div>
+                <div className="ovm-tuningField">
+                  <label>{t("timeoutMsLabel")}
+                    <input
+                      type="number"
+                      min={1000}
+                      max={300000}
+                      step={500}
+                      value={tuningDraft.timeoutMs}
+                      placeholder={t("defaultPlaceholder", { value: String(recallTuning.timeoutMs.default) })}
+                      disabled={busy || recallTuning.timeoutMs.source === "env"}
+                      onChange={(event) => setTuningDraft({ ...tuningDraft, timeoutMs: event.target.value })}
+                    />
+                  </label>
+                  <p className="ovm-hint">{t("timeoutMsHint")}</p>
+                </div>
+                <div className="ovm-tuningField">
+                  <label>{t("recallContextTimeoutMsLabel")}
+                    <input
+                      type="number"
+                      min={0}
+                      max={600000}
+                      step={500}
+                      value={tuningDraft.recallContextTimeoutMs}
+                      placeholder={t("defaultPlaceholder", { value: String(recallTuning.recallContextTimeoutMs.default) })}
+                      disabled={busy || recallTuning.recallContextTimeoutMs.source === "env"}
+                      onChange={(event) => setTuningDraft({ ...tuningDraft, recallContextTimeoutMs: event.target.value })}
+                    />
+                  </label>
+                  <p className="ovm-hint">{t("recallContextTimeoutMsHint")}</p>
                 </div>
               </div>
               <p className="ovm-hint">{t("tuningReloadNotice")}</p>

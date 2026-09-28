@@ -54,8 +54,10 @@ test("the default view reports the official defaults with nothing pending", asyn
     recallLimit: { value: 10, source: "default", configured: false, envOverride: "", envVar: "OPENVIKING_RECALL_LIMIT", default: 10, pinned: false },
     recallQueryExpansion: { value: "auto", source: "default", configured: false, envOverride: "", envVar: "OPENVIKING_RECALL_QUERY_EXPANSION", default: "off", pinned: true },
     recallExcludeUris: { value: [], source: "default", configured: false, envOverride: "", envVar: "OPENVIKING_RECALL_EXCLUDE_URIS", default: [], pinned: false },
+    timeoutMs: { value: 10000, source: "default", configured: false, envOverride: "", envVar: "OPENVIKING_TIMEOUT_MS", default: 15000, pinned: true },
+    recallContextTimeoutMs: { value: 0, source: "default", configured: false, envOverride: "", envVar: "OPENVIKING_RECALL_CONTEXT_TIMEOUT_MS", default: 0, pinned: false },
     restartPending: false,
-    initPatch: { scoreThreshold: 0.5, recallQueryExpansion: "off" },
+    initPatch: { scoreThreshold: 0.5, recallQueryExpansion: "off", timeoutMs: 15000 },
   });
 });
 
@@ -76,6 +78,8 @@ test("saving the tuning keys writes them, then a restart clears the pending stat
       recallLimit: 6,
       recallQueryExpansion: "off",
       recallExcludeUris: ["viking://user/xubingzhen/skills", "viking://resources"],
+      timeoutMs: 15000,
+      recallContextTimeoutMs: 2000,
     },
   });
 
@@ -84,6 +88,8 @@ test("saving the tuning keys writes them, then a restart clears the pending stat
   assert.equal(saved.json.value.recallLimit.value, 6);
   assert.equal(saved.json.value.recallQueryExpansion.value, "off");
   assert.deepEqual(saved.json.value.recallExcludeUris.value, ["viking://user/xubingzhen/skills", "viking://resources"]);
+  assert.equal(saved.json.value.timeoutMs.value, 15000);
+  assert.equal(saved.json.value.recallContextTimeoutMs.value, 2000);
   assert.equal(saved.json.value.restartPending, true);
 
   const stored = JSON.parse(await readFile(configPath, "utf8"));
@@ -91,6 +97,8 @@ test("saving the tuning keys writes them, then a restart clears the pending stat
   assert.equal(stored.plugin.recallLimit, 6);
   assert.equal(stored.plugin.recallQueryExpansion, "off");
   assert.deepEqual(stored.plugin.recallExcludeUris, ["viking://user/xubingzhen/skills", "viking://resources"]);
+  assert.equal(stored.plugin.timeoutMs, 15000);
+  assert.equal(stored.plugin.recallContextTimeoutMs, 2000);
   // The isolation switch and the credentials ride along untouched.
   assert.equal(stored.plugin.recallPeerScope, "actor");
   assert.equal(stored.api_key, "keep-this-secret");
@@ -106,17 +114,19 @@ test("saving the tuning keys writes them, then a restart clears the pending stat
   // view then offers the product defaults again for the next initialisation.
   const cleared = await request(base, TUNING_PATH, {
     method: "PUT",
-    body: { scoreThreshold: null, recallLimit: null, recallQueryExpansion: null, recallExcludeUris: [] },
+    body: { scoreThreshold: null, recallLimit: null, recallQueryExpansion: null, recallExcludeUris: [], timeoutMs: null, recallContextTimeoutMs: null },
   });
   assert.equal(cleared.status, 200);
   assert.equal(cleared.json.value.scoreThreshold.configured, false);
   assert.equal(cleared.json.value.restartPending, true);
-  assert.deepEqual(cleared.json.value.initPatch, { scoreThreshold: 0.5, recallQueryExpansion: "off" });
+  assert.deepEqual(cleared.json.value.initPatch, { scoreThreshold: 0.5, recallQueryExpansion: "off", timeoutMs: 15000 });
   const emptied = JSON.parse(await readFile(configPath, "utf8"));
   assert.ok(!("scoreThreshold" in emptied.plugin));
   assert.ok(!("recallLimit" in emptied.plugin));
   assert.ok(!("recallQueryExpansion" in emptied.plugin));
   assert.ok(!("recallExcludeUris" in emptied.plugin));
+  assert.ok(!("timeoutMs" in emptied.plugin));
+  assert.ok(!("recallContextTimeoutMs" in emptied.plugin));
   assert.equal(emptied.plugin.recallPeerScope, "actor");
 
   // An explicit "automatic" is written rather than dropped, so the choice
@@ -148,6 +158,13 @@ test("an out-of-domain value is rejected and the file stays untouched", async (t
   const badExpansion = await request(base, TUNING_PATH, { method: "PUT", body: { recallQueryExpansion: "sometimes" } });
   assert.equal(badExpansion.status, 400);
   assert.equal(JSON.parse(await readFile(configPath, "utf8")).plugin.recallQueryExpansion, undefined);
+
+  const badTimeout = await request(base, TUNING_PATH, { method: "PUT", body: { timeoutMs: 500 } });
+  assert.equal(badTimeout.status, 400);
+  assert.match(badTimeout.json.error, /between 1000 and 300000/);
+  const badContextTimeout = await request(base, TUNING_PATH, { method: "PUT", body: { recallContextTimeoutMs: 700000 } });
+  assert.equal(badContextTimeout.status, 400);
+  assert.equal(JSON.parse(await readFile(configPath, "utf8")).plugin.timeoutMs, undefined);
 });
 
 test("a partial save only touches the key it names", async (t) => {
