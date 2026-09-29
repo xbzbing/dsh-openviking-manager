@@ -67,6 +67,22 @@ dsh plugin --profile web add github:xbzbing/dsh-openviking-manager
 - 一个可访问的 OpenViking 服务
 - 官方 `@openviking/dsh-memory-plugin` `>= 0.3.2`（不设上限；本仓库已完整测试至 `0.5.0`）
 
+## 服务端兼容性
+
+本插件只写 `ovcli.conf` 的 `plugin` 段，只调用数据面 `/health`、`/ready`、`/api/v1/system/status` 与 Admin 的 `accounts`/`users`/`key` 端点，不依赖任何已移除或废弃的接口，因此对 OpenViking 服务端 v0.4.22 的破坏性变更（Session `used` 上报接口移除、`/admin/accounts/{id}/settings` 与 `/admin/agent-evolution` 标记废弃、`skills/find` 返回结构调整等）无需任何适配。
+
+唯一值得留意的语义变化（v0.4.22 #5358）：本地向量引擎（`vectordb.backend = local`/`cuvs`）的纯 cosine 分数由 `[-1,1]` 映射为 `(cos + 1) / 2`，即 `[0,1]`。排序不变、现有索引无需重建、服务端降级即恢复原始分数，但**阈值不会自动调整**。本插件的 `scoreThreshold` 默认 0.5 与官方默认 0.35 都是原样透传给服务端 `score_threshold`/`min_score` 的，映射后同等阈值下召回会放宽：
+
+| 阈值 | 旧分数域（[-1,1]）含义 | 新分数域（[0,1]）含义 |
+| --- | --- | --- |
+| 0.35（官方默认） | `cos ≥ 0.35` | `cos ≥ -0.3` |
+| 0.5（本插件默认） | `cos ≥ 0.5` | `cos ≥ 0` |
+| 0.75 | `cos ≥ 0.75` | `cos ≥ 0.5`（等价旧 0.5 的效果） |
+
+- 要与旧版（≤ 0.4.21）保持相同的过滤强度，把 `scoreThreshold` 调到 0.75；
+- 只用远端向量库（`http`/`volcengine`/`vikingdb`）或 IP/L2/稀疏融合分数时**不受影响**，无需调整；
+- 升级后若发现弱相关内容变多，可在 0.5–0.75 之间按需微调。
+
 ## 开发
 
 ```bash

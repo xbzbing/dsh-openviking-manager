@@ -67,6 +67,22 @@ Screenshots are captured from an isolated DSH instance by `npm run screenshots`;
 - A reachable OpenViking service
 - Official `@openviking/dsh-memory-plugin` `>= 0.3.2` (no upper bound; this repository has been fully tested through `0.5.0`)
 
+## Server compatibility
+
+This plugin writes only the `plugin` section of `ovcli.conf` and calls only the data-plane `/health`, `/ready` and `/api/v1/system/status` endpoints plus the Admin `accounts`/`users`/`key` endpoints. It relies on no removed or deprecated endpoint, so the breaking changes in OpenViking server v0.4.22 (removal of the session `used` report, deprecation of `/admin/accounts/{id}/settings` and `/admin/agent-evolution`, the restructured `skills/find` response, and so on) need no adaptation here.
+
+The one semantic change worth noting (v0.4.22 #5358): the local vector engines (`vectordb.backend = local`/`cuvs`) map pure cosine scores from `[-1,1]` to `(cos + 1) / 2`, i.e. `[0,1]`. Ranking is unchanged, existing indexes need no rebuild, and a server downgrade restores raw scores — but **thresholds are not adjusted automatically**. This plugin's `scoreThreshold` default (0.5) and the official default (0.35) are passed through verbatim as the server's `score_threshold`/`min_score`, so after the mapping the same threshold admits more weak matches:
+
+| Threshold | Old domain ([-1,1]) means | New domain ([0,1]) means |
+| --- | --- | --- |
+| 0.35 (official default) | `cos ≥ 0.35` | `cos ≥ -0.3` |
+| 0.5 (this plugin's default) | `cos ≥ 0.5` | `cos ≥ 0` |
+| 0.75 | `cos ≥ 0.75` | `cos ≥ 0.5` (equivalent to the old 0.5) |
+
+- To keep the same filtering strength as ≤ 0.4.21, set `scoreThreshold` to 0.75;
+- Remote vector backends (`http`/`volcengine`/`vikingdb`) and IP/L2/sparse-fusion scores are **unaffected** — no adjustment is needed;
+- If weak matches become more visible after upgrading, tune between 0.5 and 0.75 as needed.
+
 ## Development
 
 ```bash
