@@ -83,6 +83,12 @@ The one semantic change worth noting (v0.4.22 #5358): the local vector engines (
 - Remote vector backends (`http`/`volcengine`/`vikingdb`) and IP/L2/sparse-fusion scores are **unaffected** — no adjustment is needed;
 - If weak matches become more visible after upgrading, tune between 0.5 and 0.75 as needed.
 
+### OpenViking server v0.5.0
+
+- **Config-file location follows the official plugin**: the `ovcli.conf` / `ov.conf` this plugin reads and writes now resolve through the same chain as the official plugin's `shared/credentials.mjs` — `OPENVIKING_CLI_CONFIG_FILE` selects `ovcli.conf`, `OPENVIKING_CONFIG_FILE` selects `ov.conf`, each falling back to the default under `~/.openviking`, with the same backward-compat where a lone ovcli-shaped `OPENVIKING_CONFIG_FILE` stands in for `ovcli.conf`. v0.5.0 (#5551) makes `OPENVIKING_CLI_CONFIG_FILE` the canonical selector for `ov status` / `ov config`, so the config page always edits the file the running plugin actually loads instead of a different one when that variable is set.
+- **`recallExcludeUris` with a directory excludes the whole subtree**: since v0.5.0 (#5627), passing a directory URI in `exclude_uris` excludes the entire subtree (older servers matched the string exactly, so a directory excluded nothing). This plugin passes the key through verbatim; the name and value domain (a list of URIs) are unchanged, so no adaptation is needed — expect every entry under a directory to be excluded when you list one.
+- Working Memory defaulting off, plugin commit archiving all messages, context recall no longer returning system preset directories, and the MCP `remember` return-text change are all server- or official-plugin-internal; none touch the keys this plugin writes or the endpoints it calls, so no adaptation is needed. OpenViking Gateway is a separate component (its own process, the `gateway` section of `ov.conf`, and `/api/v1/admin/gateway/*`); this plugin neither configures nor orchestrates the gateway.
+
 ## Development
 
 ```bash
@@ -107,6 +113,7 @@ The Playwright suite covers `ovcli.conf` import and save, invalid endpoint prote
 ```text
 src/
   ovcli-config.ts       ovcli.conf read, validation, atomic writes, permissions
+  openviking-paths.ts   resolve ovcli.conf / ov.conf paths like the official plugin
   local-discovery.ts    non-sensitive ov.conf discovery
   openviking-client.ts  data-plane connection and identity validation
   openviking-admin.ts   official Admin API adapter

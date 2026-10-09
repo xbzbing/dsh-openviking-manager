@@ -83,6 +83,12 @@ dsh plugin --profile web add github:xbzbing/dsh-openviking-manager
 - 只用远端向量库（`http`/`volcengine`/`vikingdb`）或 IP/L2/稀疏融合分数时**不受影响**，无需调整；
 - 升级后若发现弱相关内容变多，可在 0.5–0.75 之间按需微调。
 
+### OpenViking 服务端 v0.5.0
+
+- **配置文件定位跟随官方插件**：本插件读写的 `ovcli.conf` / `ov.conf` 现按官方插件 `shared/credentials.mjs` 的同一套链解析——`OPENVIKING_CLI_CONFIG_FILE` 选 `ovcli.conf`、`OPENVIKING_CONFIG_FILE` 选 `ov.conf`，均回退到 `~/.openviking` 下的默认文件，并沿用「仅设 `OPENVIKING_CONFIG_FILE` 且其内容是 ovcli 形状时充当 `ovcli.conf`」的向后兼容。v0.5.0（#5551）把 `OPENVIKING_CLI_CONFIG_FILE` 定为 `ov status`/`ov config` 的统一真源，因此配置页始终编辑官方插件实际加载的那个文件，不会在设了该变量时写错文件。
+- **`recallExcludeUris` 传目录=排除整棵子树**：v0.5.0（#5627）起，`exclude_uris` 传目录 URI 会排除整棵子树（旧版按字符串精确匹配，传目录实际什么都不排除）。本插件只把该键原样透传，键名与取值域（URI 列表）不变，无需适配；填目录时请预期其下所有条目都会被排除。
+- Working Memory 默认关闭、插件 commit 归档全部消息、context 召回不再返回系统预置目录、MCP `remember` 返回文案变化等 v0.5.0 变更均发生在服务端或官方记忆插件内部，不触及本插件写的键或调用的端点，无需适配。OpenViking Gateway 是独立组件（独立进程、`ov.conf` 的 `gateway` 段、`/api/v1/admin/gateway/*`），本插件不配置、不编排网关。
+
 ## 开发
 
 ```bash
@@ -107,6 +113,7 @@ Playwright E2E 覆盖导入并保存 `ovcli.conf`、非法 endpoint 保护、服
 ```text
 src/
   ovcli-config.ts       ovcli.conf 读取、校验、原子写入和权限修复
+  openviking-paths.ts   跟随官方插件解析 ovcli.conf / ov.conf 的路径
   local-discovery.ts    ov.conf 非敏感发现
   openviking-client.ts  数据面连通性与身份验证
   openviking-admin.ts   官方 Admin API 适配

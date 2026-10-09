@@ -11,9 +11,11 @@ export interface ManagerApiOptions {
      * official plugin cannot be restarted in this process (optional peer); the
      * restart route then reports `plugin-unavailable` instead of failing. */
     restartMemoryPlugin?: () => Promise<RestartResult>;
-    /** Env layer for the recall-scope view; defaults to process.env. Tests pass
-     * an explicit object so a machine-level OPENVIKING_* variable cannot leak
-     * into assertions. */
+    /** Env layer for the recall-scope view and for resolving which ovcli.conf /
+     * ov.conf the official plugin reads; defaults to process.env. Tests pass an
+     * explicit object so a machine-level OPENVIKING_* variable cannot leak into
+     * assertions. An explicit `ovcliPath` / `ovconfPath` still wins over the env
+     * resolution, keeping path-injecting tests fully hermetic. */
     env?: RecallScopeEnv;
 }
 export declare function makeManagerRoutes(options?: ManagerApiOptions): WebRoute[];

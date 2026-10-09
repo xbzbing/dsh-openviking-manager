@@ -1,7 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { resolveOpenVikingPaths } from "./openviking-paths.js";
 import { discoverLocalOpenViking } from "./local-discovery.js";
 import { loadOvcliConfig, loadOvcliUserKey, repairOvcliPermissions, saveOvcliConfig } from "./ovcli-config.js";
 import {
@@ -45,20 +44,28 @@ export interface ManagerApiOptions {
    * official plugin cannot be restarted in this process (optional peer); the
    * restart route then reports `plugin-unavailable` instead of failing. */
   restartMemoryPlugin?: () => Promise<RestartResult>;
-  /** Env layer for the recall-scope view; defaults to process.env. Tests pass
-   * an explicit object so a machine-level OPENVIKING_* variable cannot leak
-   * into assertions. */
+  /** Env layer for the recall-scope view and for resolving which ovcli.conf /
+   * ov.conf the official plugin reads; defaults to process.env. Tests pass an
+   * explicit object so a machine-level OPENVIKING_* variable cannot leak into
+   * assertions. An explicit `ovcliPath` / `ovconfPath` still wins over the env
+   * resolution, keeping path-injecting tests fully hermetic. */
   env?: RecallScopeEnv;
 }
 
-function configPathOf(options: ManagerApiOptions): string {
-  return options.ovcliPath ?? join(homedir(), ".openviking", "ovcli.conf");
+/** Resolve the two config paths this manager operates on. An explicitly
+ * supplied path always wins (test injection); otherwise the paths follow the
+ * official plugin's `OPENVIKING_CLI_CONFIG_FILE` / `OPENVIKING_CONFIG_FILE`
+ * chain so the UI edits the same file the running plugin loads. */
+function resolvePaths(options: ManagerApiOptions, env: RecallScopeEnv): { ovcliPath: string; ovconfPath: string } {
+  if (options.ovcliPath !== undefined && options.ovconfPath !== undefined) {
+    return { ovcliPath: options.ovcliPath, ovconfPath: options.ovconfPath };
+  }
+  const resolved = resolveOpenVikingPaths(env);
+  return {
+    ovcliPath: options.ovcliPath ?? resolved.ovcliPath,
+    ovconfPath: options.ovconfPath ?? resolved.ovconfPath,
+  };
 }
-
-function ovconfPathOf(options: ManagerApiOptions): string {
-  return options.ovconfPath ?? join(homedir(), ".openviking", "ov.conf");
-}
-
 
 function writeJson(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, {
@@ -112,9 +119,8 @@ function rejectCrossOrigin(req: IncomingMessage, res: ServerResponse): boolean {
 }
 
 export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
-  const ovcliPath = configPathOf(options);
-  const ovconfPath = ovconfPathOf(options);
   const env = options.env ?? process.env;
+  const { ovcliPath, ovconfPath } = resolvePaths(options, env);
   // The official plugin resolves its config once at apply; constructing these
   // routes happens at apply too, so this snapshot is the value it loaded. It
   // only advances after a successful plugin restart.
