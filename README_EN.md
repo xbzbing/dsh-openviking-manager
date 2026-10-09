@@ -63,9 +63,9 @@ Screenshots are captured from an isolated DSH instance by `npm run screenshots`;
 ## Requirements
 
 - Node.js `>= 22`
-- DSH `>= 0.1.6-alpha.2 < 0.2.0`
+- DSH `>= 0.1.6-alpha.2 < 0.3.0-0`
 - A reachable OpenViking service
-- Official `@openviking/dsh-memory-plugin` `>= 0.3.2` (no upper bound; this repository has been fully tested through `0.5.0`)
+- Official `@openviking/dsh-memory-plugin` `>= 0.3.2` (no upper bound; this repository has been fully tested through `0.5.0`, and the deployed `0.5.20` was checked method by method for every runtime interface this plugin depends on)
 
 ## Server compatibility
 

@@ -63,9 +63,9 @@ dsh plugin --profile web add github:xbzbing/dsh-openviking-manager
 ## 环境要求
 
 - Node.js `>= 22`
-- DSH `>= 0.1.6-alpha.2 < 0.2.0`
+- DSH `>= 0.1.6-alpha.2 < 0.3.0-0`
 - 一个可访问的 OpenViking 服务
-- 官方 `@openviking/dsh-memory-plugin` `>= 0.3.2`（不设上限；本仓库已完整测试至 `0.5.0`）
+- 官方 `@openviking/dsh-memory-plugin` `>= 0.3.2`（不设上限；本仓库已完整测试至 `0.5.0`，并对已部署的 `0.5.20` 逐项核对了本插件所依赖的 runtime 接口）
 
 ## 服务端兼容性
 

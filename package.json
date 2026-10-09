@@ -1,6 +1,6 @@
 {
   "name": "dsh-openviking-manager",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "DSH UI manager for OpenViking connection, user keys, and local configuration.",
   "license": "MIT",
   "repository": {
@@ -51,7 +51,7 @@
   },
   "engines": {
     "node": ">=22",
-    "dsh": ">=0.1.6-alpha.2 <0.2.0"
+    "dsh": ">=0.1.6-alpha.2 <0.3.0-0"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json && tsc -p tsconfig.client.json && node scripts/build-client.mjs",
@@ -62,11 +62,11 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": ">=4.0.2",
-    "@deepseek-ai/dsh-client-locale": ">=0.1.6-alpha.2 <0.2.0",
-    "@deepseek-ai/dsh-client-ui-plugin-manager": ">=0.1.6-alpha.2 <0.2.0",
-    "@deepseek-ai/dsh-client-ui-renderer": ">=0.1.6-alpha.2 <0.2.0",
-    "@deepseek-ai/dsh-client-ui-slots": ">=0.1.6-alpha.2 <0.2.0",
-    "@deepseek-ai/dsh-host-webserver": ">=0.1.6-alpha.2 <0.2.0",
+    "@deepseek-ai/dsh-client-locale": ">=0.1.6-alpha.2 <0.3.0-0",
+    "@deepseek-ai/dsh-client-ui-plugin-manager": ">=0.1.6-alpha.2 <0.3.0-0",
+    "@deepseek-ai/dsh-client-ui-renderer": ">=0.1.6-alpha.2 <0.3.0-0",
+    "@deepseek-ai/dsh-client-ui-slots": ">=0.1.6-alpha.2 <0.3.0-0",
+    "@deepseek-ai/dsh-host-webserver": ">=0.1.6-alpha.2 <0.3.0-0",
     "@openviking/dsh-memory-plugin": ">=0.3.2",
     "react": "18.3.1"
   },
