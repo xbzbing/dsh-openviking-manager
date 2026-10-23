@@ -65,7 +65,20 @@ async function prepareHome(home) {
     await cp(join(homedir(), ".dsh", file), join(home, file)).catch(() => {});
   }
   await mkdir(join(home, ".openviking"), { recursive: true });
-  await writeFile(join(home, ".openviking", "ovcli.conf"), `${JSON.stringify({ url: "http://127.0.0.1:1933", api_key: USER_KEY, account: "personal", user: "alice" }, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  // Product defaults are pre-seeded: the first-load pass then has nothing to
+  // pin, so no reload runs while the page is being photographed and the status
+  // line shows the ordinary "configuration loaded" state.
+  const config = {
+    url: "http://127.0.0.1:1933", api_key: USER_KEY, account: "personal", user: "alice",
+    plugin: {
+      dsh: {
+        recallPeerScope: "actor",
+        scoreThreshold: 0.5, recallQueryExpansion: "off", timeoutMs: 15000,
+        peerSource: ["{git_remote}", "{git_root}", "{cwd}"],
+      },
+    },
+  };
+  await writeFile(join(home, ".openviking", "ovcli.conf"), `${JSON.stringify(config, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
   await installLocalPlugin(join(home, "profiles", profile));
 }
 
@@ -155,10 +168,37 @@ async function startDsh(home, locale) {
   return { url, stop: () => new Promise((resolve) => { child.once("exit", resolve); child.kill("SIGTERM"); }) };
 }
 
+/** The shell may show onboarding callouts over the content; they are not part of
+ * what these images document. The affordance differs per shell build, so try
+ * each known one and ignore the ones that are absent. */
+async function dismissOverlays(page) {
+  const decline = /暂不开启|暂不需要|保留当前显示|稍后|不开启|关闭|Not now|Later|Keep current|No thanks|Dismiss|Skip|Close/;
+  // The shell can stack several callouts; each one is declined in turn.
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const button = page.getByRole("button", { name: decline });
+    if ((await button.count()) === 0) return;
+    await button.first().click().catch(() => {});
+    await page.waitForTimeout(400);
+  }
+}
+
 async function shoot(page, locale, name) {
   const directory = join(outputRoot, locale);
   await mkdir(directory, { recursive: true });
-  await page.screenshot({ path: join(directory, `${name}.png`) });
+  await dismissOverlays(page);
+  // Stop below the last card: what follows is the plugin page's own metadata
+  // (component list, source path), which is not what these images document.
+  const height = await page.evaluate(() => {
+    const cards = [...document.querySelectorAll(".ovm-card")];
+    if (cards.length === 0) return undefined;
+    const bottom = Math.max(...cards.map((card) => card.getBoundingClientRect().bottom));
+    return Math.min(window.innerHeight, Math.ceil(bottom + 24));
+  });
+  // clientWidth excludes the scrollbar gutter, so the crop does not leave a
+  // grey strip down the right edge.
+  const width = await page.evaluate(() => document.documentElement.clientWidth);
+  const clip = height === undefined || height < 200 ? undefined : { x: 0, y: 0, width, height };
+  await page.screenshot({ path: join(directory, `${name}.png`), ...(clip === undefined ? {} : { clip }) });
   console.log(`  ${locale}/${name}.png`);
 }
 
@@ -180,8 +220,7 @@ async function capture(page, locale, url) {
   const pluginTitle = meta?.meta?.title || text.plugin;
   await page.goto(url);
   await page.waitForTimeout(4000);
-  const dismiss = page.getByRole("button", { name: /稍后|Later/ });
-  if (await dismiss.count()) await dismiss.first().click().catch(() => {});
+  await dismissOverlays(page);
   await page.waitForTimeout(400);
 
   // 1. The plugin inside the DSH plugin manager, alongside the other installed plugins.
@@ -194,13 +233,21 @@ async function capture(page, locale, url) {
   }
   await page.getByRole("button", { name: text.nav }).first().click();
   await page.waitForTimeout(2000);
-  await page.getByText(text.installed, { exact: true }).first().scrollIntoViewIfNeeded();
+  // `installed` is also the tab label at the top of the list, so scrolling to
+  // that text never moves; centre the plugin's own row instead.
+  await page.getByText(pluginTitle, { exact: true }).first().evaluate((element) => element.scrollIntoView({ block: "center" }));
   await page.waitForTimeout(400);
   await shoot(page, locale, "01-plugin-list");
 
   // 2. The plugin's own page: connection form, masked key, verified status.
   await page.getByText(pluginTitle, { exact: true }).first().click();
   await page.waitForTimeout(2500);
+  await page.evaluate(() => {
+    const scroller = [...document.querySelectorAll("section")].find((element) => element.scrollHeight > element.clientHeight + 5);
+    if (scroller) scroller.scrollTop = 0;
+  });
+  await page.waitForTimeout(300);
+  await dismissOverlays(page);
   await page.getByRole("button", { name: text.verify }).click();
   await page.waitForTimeout(1200);
   await shoot(page, locale, "02-configuration");
