@@ -623,7 +623,14 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
       if (!probe.reachable) setVerifyResult(t("unreachable"));
       else if (!probe.ready) setVerifyResult(t("notReady"));
       else if (!probe.authenticated) setVerifyResult(t("keyNotAccepted"));
-      else setVerifyResult(t("connectedAs", { account: probe.identity?.account ?? "", user: probe.identity?.user ?? "" }));
+      else {
+        // The data plane may answer with the user alone (OpenViking 0.5.x does),
+        // so the account falls back to the one this request authenticated with.
+        // Joining blindly used to render "Connected as /alice".
+        const account = probe.identity?.account || config.account;
+        const user = probe.identity?.user ?? "";
+        setVerifyResult(t("connectedAs", { identity: account === "" ? user : `${account}/${user}` }));
+      }
     } catch (error) { setVerifyResult(error instanceof Error ? error.message : t("unreachable")); }
     finally { setVerifying(false); }
   };

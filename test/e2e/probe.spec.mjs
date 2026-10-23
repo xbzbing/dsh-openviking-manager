@@ -7,7 +7,7 @@ import { test, expect } from "@playwright/test";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 
-async function startOpenVikingFixture({ delayMs = 0 } = {}) {
+async function startOpenVikingFixture({ delayMs = 0, statusResult = { account: "personal", user: "alice" } } = {}) {
   const server = createServer(async (req, res) => {
     const path = new URL(req.url ?? "/", "http://127.0.0.1").pathname;
     // A slow data plane is how the in-flight state becomes observable.
@@ -15,7 +15,7 @@ async function startOpenVikingFixture({ delayMs = 0 } = {}) {
     if (path === "/health") return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ status: "ok" }));
     if (path === "/ready") return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ status: "ready" }));
     if (path === "/api/v1/system/status" && req.headers.authorization === "Bearer keep-this-secret" && req.headers["x-openviking-account"] === "personal" && req.headers["x-openviking-user"] === "alice") {
-      return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ result: { account: "personal", user: "alice" } }));
+      return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ result: statusResult }));
     }
     if (req.headers["x-api-key"] === "root-for-test" && path === "/api/v1/admin/accounts") {
       return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ result: [{ account_id: "personal" }, { account_id: "archive" }] }));
@@ -114,6 +114,21 @@ test("verifies the existing server-side user key without showing it in the brows
 });
 
 const SAVED = "Configuration saved. The stored user key remains masked.";
+
+test("falls back to the configured account when the data plane reports only a user", async ({ page }) => {
+  // OpenViking 0.5.x answers /api/v1/system/status with `result.user` alone.
+  // Joining that with an empty account rendered "Connected as /alice".
+  const openViking = await startOpenVikingFixture({ statusResult: { user: "alice" } });
+  const manager = await startManagerFixture(openViking.url);
+  try {
+    await page.goto(manager.url);
+    await page.getByRole("button", { name: "Verify connection" }).click();
+    await expect(page.locator(".ovm-verifyResult")).toHaveText("Connected as personal/alice.");
+  } finally {
+    await manager.close();
+    await openViking.close();
+  }
+});
 
 test("a background reload that finishes later does not overwrite what the user did", async ({ page }) => {
   // The restart succeeds, but only after the user has already saved — the
