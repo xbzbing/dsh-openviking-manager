@@ -135,7 +135,10 @@ test("renders the isolation section in Simplified Chinese", async ({ page }) => 
   });
   try {
     await page.goto(fixture.url);
-    await expect(page.getByRole("heading", { name: "记忆隔离" })).toBeVisible();
+    // Exact: "记忆隔离" also appears inside the rule card's title now, and a
+    // substring match made this assertion depend on whether that card had
+    // rendered yet.
+    await expect(page.getByRole("heading", { name: "项目记忆隔离", exact: true })).toBeVisible();
     const control = page.getByRole("tablist", { name: "记忆召回范围" });
     const isolated = control.getByRole("tab", { name: "按项目隔离" });
     // The two modes name what they do, not "on" and "off".
