@@ -2,6 +2,7 @@ import { readOvcliObject, writeOvcliObject } from "./ovcli-config.js";
 import { pluginSection } from "./recall-scope.js";
 import {
   asRecord,
+  EVENTS_DECAY_PROTECTION,
   EXCLUDE_URIS,
   type KnobSpec,
   QUERY_EXPANSION,
@@ -13,13 +14,23 @@ import {
 } from "./recall-tuning.js";
 
 /** Write path for the official recall tuning knobs: request-body validation
- * and the ovcli.conf `plugin`-section save. The read/compute path (knob specs,
- * layer resolution, view assembly) lives in `recall-tuning.ts`, whose exported
- * specs this module reuses so both paths share one definition. */
+ * and the ovcli.conf save. The read/compute path (knob specs, layer
+ * resolution, view assembly) lives in `recall-tuning.ts`, whose exported specs
+ * this module reuses so both paths share one definition.
+ *
+ * Values are written to `plugin.dsh` — this is the DSH panel, and the shared
+ * `plugin` section belongs to every other harness on the machine. Restoring a
+ * knob to stock retires the key from both sections instead: a leftover shared
+ * value would otherwise keep pinning the knob the UI just reset. */
 
 const MAX_EXCLUDE_ENTRIES = 100;
 const MAX_EXCLUDE_ENTRY_CHARS = 512;
 const VIKING_URI_RE = /^viking:\/\/\S+$/;
+/** The server's duration syntax for `events_time_decay_protection`
+ * (`90s`, `45m`, `12h`, `7d`, `2w`). The server owns the semantics; this only
+ * refuses input that is obviously not a duration. */
+const DURATION_RE = /^\d+(ms|s|m|h|d|w)$/;
+const MAX_DECAY_CHARS = 32;
 
 function invalid(message: string): Error {
   return new Error(message);
@@ -101,6 +112,19 @@ export function parseRecallTuningPatch(raw: unknown): RecallTuningPatch {
     const value = intOrNull(body.recallContextTimeoutMs, "recallContextTimeoutMs", 0, 600000);
     if (value !== undefined) patch.recallContextTimeoutMs = value;
   }
+  if (Object.hasOwn(body, "recallEventsDecayProtection")) {
+    const raw = body.recallEventsDecayProtection;
+    if (raw === null || raw === "") patch.recallEventsDecayProtection = null;
+    else if (typeof raw !== "string") {
+      throw invalid('recallEventsDecayProtection must be a duration string such as "7d", or null');
+    } else {
+      const value = raw.trim();
+      if (value.length > MAX_DECAY_CHARS || !DURATION_RE.test(value)) {
+        throw invalid('recallEventsDecayProtection must be a duration such as "90s", "12h", "7d" or "2w", or null');
+      }
+      patch.recallEventsDecayProtection = value;
+    }
+  }
 
   return patch;
 }
@@ -110,32 +134,27 @@ export function parseRecallTuningPatch(raw: unknown): RecallTuningPatch {
 interface SaveDraft {
   shared: Record<string, unknown>;
   harness: Record<string, unknown> | undefined;
-  harnessTouched: boolean;
 }
 
-/** Clear a key from the harness section only, so the shared section stays the
- * single source of it while a stale `plugin.dsh` override cannot win. */
+/** Clear a key from the harness section only. */
 function dropFromHarness(draft: SaveDraft, names: string[]): void {
   if (draft.harness === undefined) return;
-  for (const name of names) {
-    if (!Object.hasOwn(draft.harness, name)) continue;
-    delete draft.harness[name];
-    draft.harnessTouched = true;
-  }
+  for (const name of names) delete draft.harness[name];
 }
 
-/** Retire a key from both sections — "remove it" for a default restore. */
+/** Retire a key from both sections — "remove it" for a stock restore. */
 function dropKey(draft: SaveDraft, names: string[]): void {
   for (const name of names) delete draft.shared[name];
   dropFromHarness(draft, names);
 }
 
-/** Write a value to the shared section. Retiring the key (and its aliases)
- * from both sections first keeps one name per section, so a stale `plugin.dsh`
- * override or the legacy alias cannot mask the new value. */
+/** Write a value to the DSH-scoped section after retiring its aliases there,
+ * so a stale spelling cannot mask the new value. The shared section is left
+ * alone: it is what the other harnesses on this machine read. */
 function putKnob(draft: SaveDraft, spec: KnobSpec, value: unknown): void {
-  dropKey(draft, [spec.key, ...spec.aliases]);
-  draft.shared[spec.key] = value;
+  draft.harness ??= {};
+  dropFromHarness(draft, spec.aliases);
+  draft.harness[spec.key] = value;
 }
 
 /** Restore a knob's official default by removing the key from both sections
@@ -145,10 +164,12 @@ function restoreKnob(draft: SaveDraft, spec: KnobSpec): void {
 }
 
 /** True when a patch value means "restore the official default" for its knob:
- * `null` for every knob, plus an empty list for `recallExcludeUris`. */
+ * `null` for every knob, plus an empty list for `recallExcludeUris` and an
+ * empty string for the duration knob. */
 function isRestore(name: keyof RecallTuningPatch, value: unknown): boolean {
   if (value === null) return true;
-  return name === "recallExcludeUris" && Array.isArray(value) && value.length === 0;
+  if (name === "recallExcludeUris" && Array.isArray(value) && value.length === 0) return true;
+  return name === "recallEventsDecayProtection" && value === "";
 }
 
 const SPEC_BY_KEY: Record<keyof RecallTuningPatch, KnobSpec> = {
@@ -156,17 +177,19 @@ const SPEC_BY_KEY: Record<keyof RecallTuningPatch, KnobSpec> = {
   recallLimit: RECALL_LIMIT,
   recallQueryExpansion: QUERY_EXPANSION,
   recallExcludeUris: EXCLUDE_URIS,
+  recallEventsDecayProtection: EVENTS_DECAY_PROTECTION,
   timeoutMs: TIMEOUT_MS,
   recallContextTimeoutMs: RECALL_CONTEXT_TIMEOUT_MS,
 };
 
-/** Write the patch to ovcli.conf's `plugin` section.
+/** Write the patch to ovcli.conf's `plugin.dsh` section.
  *
- * - a supplied value is written to the shared section after clearing any
- *   `plugin.dsh` override, so one section is the single source of the key;
- * - `null` (and an empty exclude list) removes the key from both sections —
- *   an absent key *is* the official default, so that is what "back to stock"
- *   means for a knob without a product default;
+ * - a supplied value is written to the DSH-scoped section, leaving the shared
+ *   `plugin` section for the other harnesses on this machine;
+ * - `null` (an empty exclude list, an empty duration) removes the key from
+ *   both sections — an absent key *is* the official default, so that is what
+ *   "back to stock" means, and a leftover shared value must not keep pinning
+ *   a knob the UI just reset;
  * - `recallQueryExpansion: "auto"` is an explicit choice the UI offers, so it
  *   is written rather than dropped: dropping it would hand the key back to the
  *   official default and let the next load re-pin the product one. `null` still
@@ -193,7 +216,6 @@ export async function saveRecallTuning(path: string, patch: RecallTuningPatch): 
   const draft: SaveDraft = {
     shared: { ...(shared ?? {}) },
     harness: harness === undefined ? undefined : { ...harness },
-    harnessTouched: false,
   };
 
   for (const [name, value] of entries) {
@@ -202,12 +224,10 @@ export async function saveRecallTuning(path: string, patch: RecallTuningPatch): 
     else putKnob(draft, spec, value);
   }
 
-  // The harness section only disappears when this write emptied it; an
-  // untouched `plugin.dsh` keeps whatever other keys it carries.
-  if (draft.harnessTouched && draft.harness !== undefined) {
-    if (Object.keys(draft.harness).length > 0) draft.shared.dsh = draft.harness;
-    else delete draft.shared.dsh;
-  }
+  // An empty harness section is dropped rather than written as `{}`; a section
+  // that still carries other keys — the isolation scope, a peer pin — stays.
+  if (draft.harness === undefined || Object.keys(draft.harness).length === 0) delete draft.shared.dsh;
+  else draft.shared.dsh = draft.harness;
 
   const next: Record<string, unknown> = { ...existing, plugin: draft.shared };
   await writeOvcliObject(path, next);

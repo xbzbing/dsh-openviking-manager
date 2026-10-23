@@ -63,3 +63,29 @@ export async function discoverLocalOpenViking(options: LocalDiscoveryOptions): P
   const { port: _port, ...localServer } = server;
   return { ovcli, suggestedEndpoint, localServer };
 }
+
+/** The `dsh` section of ov.conf — the official loader's legacy layer, which
+ * sits below every ovcli.conf key. Only knob values are read from it. */
+export async function readOvconfDshSection(path: string): Promise<Record<string, unknown> | undefined> {
+  try {
+    const top = configRecord(JSON.parse(await readFile(path, "utf8")));
+    return configRecord(top?.dsh);
+  } catch {
+    return undefined;
+  }
+}
+
+/** True when the key saved for the OpenViking client is the local server's own
+ * root key. From server v0.5.2 on, `/mcp` refuses root keys, so such a setup
+ * authenticates on the data plane and fails every bridged memory tool. The key
+ * itself never leaves this function — only the boolean answer does. */
+export async function credentialIsLocalRootKey(ovconfPath: string, apiKey: string): Promise<boolean> {
+  if (apiKey === "") return false;
+  try {
+    const server = configRecord(configRecord(JSON.parse(await readFile(ovconfPath, "utf8")))?.server);
+    const root = server?.root_api_key;
+    return typeof root === "string" && root !== "" && root === apiKey;
+  } catch {
+    return false;
+  }
+}

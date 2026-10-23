@@ -126,7 +126,41 @@ export type TranslationKey =
   | "tuningSaved"
   | "tuningSaveFailed"
   | "tuningEnvWarning"
-  | "tuningReloadNotice";
+  | "tuningReloadNotice"
+  | "projectTitle"
+  | "projectPath"
+  | "projectResolve"
+  | "projectPathHint"
+  | "projectRoot"
+  | "projectNotInRepo"
+  | "projectPeer"
+  | "projectUserSpace"
+  | "projectScope"
+  | "scopeActor"
+  | "scopeAll"
+  | "scopeSourceEnv"
+  | "scopeSourceWorkspace"
+  | "scopeSourceDsh"
+  | "scopeSourceShared"
+  | "scopeSourceDefault"
+  | "projectDeclarations"
+  | "projectNoDeclarations"
+  | "projectRisks"
+  | "projectWarnings"
+  | "projectSharedNote"
+  | "projectResolved"
+  | "decayLabel"
+  | "decayHint"
+  | "tuningWorkspaceWarning"
+  | "peerIdHazard"
+  | "riskScopeAll"
+  | "riskRecallOff"
+  | "riskCaptureOff"
+  | "riskPinnedPeer"
+  | "riskWorkspacePeer"
+  | "riskPeerConflict"
+  | "riskNoPeer"
+  | "riskRootKey";
 
 export type Translation = (key: TranslationKey, params?: Record<string, string | number>) => string;
 
@@ -210,16 +244,16 @@ const en: Record<TranslationKey, string> = {
   updateCheckFailed: "Unable to check for updates: {error}",
   viewRelease: "View release",
   isolationTitle: "Memory isolation",
-  isolateByTopicLabel: "Disallow sharing memories across topics",
+  isolateByTopicLabel: "Disallow recalling memories from other projects",
   isolationHint: "When on, automatic recall only returns memories from the current project (peer); turning it off allows cross-topic sharing. The user-level profile injection and the shared resources directory are not affected.",
   isolationSaved: "Memory isolation setting saved.",
   isolationSaveFailed: "Unable to save the memory isolation setting.",
   envOverrideWarning: "OPENVIKING_RECALL_PEER_SCOPE is set and overrides this file setting. Remove the variable and restart the DSH process to change it.",
-  peerIdLabel: "Actor peer id (advanced)",
+  peerIdLabel: "Project peer id (advanced)",
   peerIdPlaceholder: "leave empty for automatic per-repository isolation",
   peerIdHint: "Which peer (topic) this DSH process reports. This is process-level and different from the isolation switch above, which only sets the recall range.",
-  peerIdHintEmpty: "Empty (recommended): the plugin derives a peer from each session's workspace git identity, so every repository is automatically its own topic. This is what you want when one DSH instance works across multiple repositories.",
-  peerIdHintSet: "Set: every session in this process is pinned to this one peer and the automatic per-repository derivation is overridden. Use it only when one DSH instance serves a single repository, or when you deliberately want several repositories to share one topic. It also lets the OpenViking MCP tools scope to this peer instead of falling back to broad recall.",
+  peerIdHintEmpty: "Empty (recommended): the plugin derives a peer from each session's workspace git identity, so every repository is automatically its own namespace. This is what you want when one DSH instance works across multiple repositories.",
+  peerIdHintSet: "Set: every session in this process is pinned to this one peer and the automatic per-repository derivation is overridden. Use it only when one DSH instance serves a single repository, or when you deliberately want several repositories to share one topic. Every project on this machine then shares it, so it is only for directories no git identity can describe.",
   peerIdMultiRepoNotice: "For multi-repository isolation, leave this empty. The \"OpenViking MCP: actor-scoped recall needs an explicit peer id\" log line is expected in that case and can be ignored — it only affects the manual MCP tools, not the automatically injected memories.",
   peerIdEnvWarning: "OPENVIKING_PEER_ID is set in the environment and overrides this file. Remove the variable and restart the DSH process to change it.",
   peerIdCredentialWarning: "A top-level actor_peer_id / peer_id in ovcli.conf currently pins the peer. This plugin does not edit that credential key; saving a value here adds a plugin.peerId that outranks it, and clearing this field falls back to that credential rather than to automatic derivation.",
@@ -257,6 +291,40 @@ const en: Record<TranslationKey, string> = {
   tuningSaveFailed: "Unable to save recall tuning: {error}",
   tuningEnvWarning: "{vars} is set in the environment and outranks this file. Remove the variable and restart the DSH process to change it.",
   tuningReloadNotice: "Saving these keys reloads the official memory plugin the same way the switch above does: every open session is committed and archived once, and the OpenViking MCP tools are rebuilt briefly.",
+  projectTitle: "Project memory isolation",
+  projectPath: "Project directory",
+  projectResolve: "Resolve",
+  projectPathHint: "Empty means the directory this DSH host was started in — the one the official plugin resolved at apply. An absolute path is resolved for that project on its own.",
+  projectRoot: "Repository root",
+  projectNotInRepo: "not inside a git repository",
+  projectPeer: "Project peer",
+  projectUserSpace: "user-level space (no project namespace)",
+  projectScope: "Recall scope",
+  scopeActor: "this project only",
+  scopeAll: "all projects",
+  scopeSourceEnv: "from the environment",
+  scopeSourceWorkspace: "from the repository's workspace file",
+  scopeSourceDsh: "from this manager (plugin.dsh)",
+  scopeSourceShared: "from the shared plugin section",
+  scopeSourceDefault: "official default",
+  projectDeclarations: "Repository declarations (they outrank this machine's settings)",
+  projectNoDeclarations: "No workspace declaration applies to this directory.",
+  projectRisks: "Isolation risks",
+  projectWarnings: "Workspace warnings",
+  projectSharedNote: "The shared plugin section still says {scope} for the other harnesses on this machine; this manager only writes plugin.dsh.",
+  projectResolved: "Project resolved.",
+  decayLabel: "Event decay protection",
+  decayHint: "A duration such as 7d or 12h: event memories keep their score for that long. Empty leaves the server default (no protection).",
+  tuningWorkspaceWarning: "Overridden by a workspace file: {keys}",
+  peerIdHazard: "A peer pin is process-wide: every project on this machine then shares that one peer. Leave it empty to isolate per project.",
+  riskScopeAll: "{layer} sets recall.peer_scope to all, so this project also recalls memories from other projects.",
+  riskRecallOff: "{layer} turns automatic recall off for this project.",
+  riskCaptureOff: "{layer} turns capture off for this project.",
+  riskPinnedPeer: "A peer pin ({source}) makes every project on this machine share the peer \"{peerId}\".",
+  riskWorkspacePeer: "{layer} pins the peer \"{peerId}\" for this project.",
+  riskPeerConflict: "The pinned peer (\"{pinned}\") differs from this project's derived peer (\"{peer}\").",
+  riskNoPeer: "No peer is derived for {cwd}, so this session writes to the user-level space shared by every non-project directory.",
+  riskRootKey: "The saved key is this server's root key. OpenViking 0.5.2+ refuses root keys on /mcp, so the probe passes while every memory tool fails.",
 };
 
 const zh: Record<TranslationKey, string> = {
@@ -339,16 +407,16 @@ const zh: Record<TranslationKey, string> = {
   updateCheckFailed: "无法检查更新：{error}",
   viewRelease: "查看版本",
   isolationTitle: "记忆隔离",
-  isolateByTopicLabel: "不允许跨主题共享记忆",
+  isolateByTopicLabel: "不允许召回其他项目的记忆",
   isolationHint: "开启时，自动召回仅返回当前项目（peer）的记忆；关闭则允许跨主题共享。用户级画像注入和共享资源目录不受此开关影响。",
   isolationSaved: "记忆隔离设置已保存。",
   isolationSaveFailed: "无法保存记忆隔离设置。",
   envOverrideWarning: "环境变量 OPENVIKING_RECALL_PEER_SCOPE 已设置并覆盖此文件配置。请移除该变量并重启 DSH 进程。",
-  peerIdLabel: "Actor peer id（高级）",
+  peerIdLabel: "项目 peer id（高级）",
   peerIdPlaceholder: "留空则按仓库自动隔离",
   peerIdHint: "本 DSH 进程归属哪个 peer（主题）。这是进程级设置，与上方隔离开关不同——隔离开关只决定召回范围。",
-  peerIdHintEmpty: "留空（推荐）：插件按每个会话所在 workspace 的 git 身份自动推导 peer，每个仓库自动成为独立主题。当一个 DSH 实例在多个仓库间工作时，这正是你需要的。",
-  peerIdHintSet: "填写：本进程的所有会话都被钉死到这一个 peer，自动的按仓库推导被覆盖。仅适用于「一个 DSH 实例只服务单个仓库」，或你有意让多个仓库共享同一主题的情况。填写后 OpenViking MCP 工具也能限定到该 peer，不再退化为广召回。",
+  peerIdHintEmpty: "留空（推荐）：插件按每个会话所在 workspace 的 git 身份自动推导 peer，每个仓库自动成为独立的记忆命名空间。当一个 DSH 实例在多个仓库间工作时，这正是你需要的。",
+  peerIdHintSet: "填写：本进程的所有会话都被钉死到这一个 peer，自动的按仓库推导被覆盖。仅适用于「一个 DSH 实例只服务单个仓库」，或你有意让多个仓库共享同一主题的情况。填写后本机所有项目都会共用它，只适用于 git 身份描述不了的目录。",
   peerIdMultiRepoNotice: "如需多仓库工作时的记忆隔离，请留空。此时出现的「OpenViking MCP: actor-scoped recall needs an explicit peer id」日志属正常现象，可忽略——它只影响手动调用的 MCP 工具，不影响自动注入到上下文的记忆隔离。",
   peerIdEnvWarning: "环境变量 OPENVIKING_PEER_ID 已设置并覆盖此文件配置。请移除该变量并重启 DSH 进程。",
   peerIdCredentialWarning: "ovcli.conf 顶层的 actor_peer_id / peer_id 当前钉住了 peer。本插件不编辑该凭证键；在此保存的值会写入优先级更高的 plugin.peerId，而清空此字段会回落到该凭证键，而不是回到自动推导。",
@@ -386,6 +454,40 @@ const zh: Record<TranslationKey, string> = {
   tuningSaveFailed: "无法保存召回调优设置：{error}",
   tuningEnvWarning: "环境变量 {vars} 已设置并覆盖此文件配置。请移除该变量并重启 DSH 进程。",
   tuningReloadNotice: "保存这些键同样会自动重新加载官方记忆插件，副作用与上方开关一致：会对所有打开的会话执行一次提交归档，并短暂重建 OpenViking MCP 工具。",
+  projectTitle: "项目记忆隔离",
+  projectPath: "项目目录",
+  projectResolve: "解析",
+  projectPathHint: "留空表示 DSH 宿主启动时所在的目录（也就是插件加载时解析的那个）；填绝对路径则按该项目单独解析。",
+  projectRoot: "仓库根",
+  projectNotInRepo: "不在 git 仓库内",
+  projectPeer: "项目 peer",
+  projectUserSpace: "用户级空间（无项目命名空间）",
+  projectScope: "召回范围",
+  scopeActor: "仅本项目",
+  scopeAll: "所有项目",
+  scopeSourceEnv: "来自环境变量",
+  scopeSourceWorkspace: "来自仓库的 workspace 配置",
+  scopeSourceDsh: "来自本管理面板（plugin.dsh）",
+  scopeSourceShared: "来自共享 plugin 段",
+  scopeSourceDefault: "官方默认",
+  projectDeclarations: "仓库声明（优先级高于本机设置）",
+  projectNoDeclarations: "当前目录没有生效的 workspace 声明。",
+  projectRisks: "隔离风险",
+  projectWarnings: "工作区解析警告",
+  projectSharedNote: "共享 plugin 段仍写着 {scope}，对本机其他 harness 生效；本插件只写 plugin.dsh。",
+  projectResolved: "已重新解析项目。",
+  decayLabel: "事件衰减保护",
+  decayHint: "时长，如 7d、12h：事件记忆在该时长内保持分数。留空则用服务端默认（不保护）。",
+  tuningWorkspaceWarning: "被仓库配置覆盖：{keys}",
+  peerIdHazard: "固定 peer id 是进程级的：本机所有项目会共用这一个 peer。想按项目隔离就留空。",
+  riskScopeAll: "{layer} 把 recall.peer_scope 设为 all，本项目会同时召回其他项目的记忆。",
+  riskRecallOff: "{layer} 关闭了本项目的自动召回。",
+  riskCaptureOff: "{layer} 关闭了本项目的记忆捕获。",
+  riskPinnedPeer: "peer 固定（{source}）会让本机所有项目共用 peer「{peerId}」。",
+  riskWorkspacePeer: "{layer} 为本项目钉死了 peer「{peerId}」。",
+  riskPeerConflict: "固定的 peer（「{pinned}」）与本项目推导出的 peer（「{peer}」）不一致。",
+  riskNoPeer: "{cwd} 推导不出 peer，本会话会写入所有非项目目录共用的用户级空间。",
+  riskRootKey: "保存的 key 是服务端 root key；OpenViking 0.5.2 起 /mcp 拒绝 root key，连接探测会通过但记忆工具会全部失败。",
 };
 
 export const dictionaries = { en, zh } as const;

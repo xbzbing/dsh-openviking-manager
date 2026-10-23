@@ -42,7 +42,17 @@ async function startOpenVikingFixture() {
 async function startManagerFixture(openVikingUrl) {
   const directory = await mkdtemp(join(tmpdir(), "dsh-ov-manager-e2e-probe-"));
   const configPath = join(directory, "ovcli.conf");
-  await writeFile(configPath, JSON.stringify({ url: openVikingUrl, api_key: "keep-this-secret", account: "personal", user: "alice" }), "utf8");
+  // The first-load initialisation pins the isolation switch and the product
+  // tuning defaults, then reports the reload outcome on the status line. These
+  // keys are pre-seeded so that pass is a no-op: the tests below assert their
+  // own action's status, which a background reload notice would overwrite.
+  await writeFile(configPath, JSON.stringify({
+    url: openVikingUrl,
+    api_key: "keep-this-secret",
+    account: "personal",
+    user: "alice",
+    plugin: { dsh: { recallPeerScope: "actor", scoreThreshold: 0.5, recallQueryExpansion: "off", timeoutMs: 15000 } },
+  }), "utf8");
   const script = await readFile(join(root, "lib", "standalone.js"));
   const api = await import(join(root, "lib", "manager-api.js"));
   const routes = new Map(api.makeManagerRoutes({ ovcliPath: configPath }).map((route) => [route.path, route.handler]));

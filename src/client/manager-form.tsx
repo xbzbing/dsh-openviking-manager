@@ -1,20 +1,36 @@
 import { useEffect, useState } from "react";
-import { browserLocale, createTranslation, type Translation } from "./i18n.js";
+import { browserLocale, createTranslation, type Translation, type TranslationKey } from "./i18n.js";
 
 export interface ConfigView { url: string; account: string; user: string; apiKeySet: boolean; apiKeyMasked: string; }
 interface ConfigResult { kind: "missing" | "invalid-json" | "invalid-shape" | "ready"; config: ConfigView; permissionWarning?: boolean; message?: string; }
 interface DiscoveryResult { ovcli: ConfigResult; suggestedEndpoint: string; localServer: { found: boolean; authMode?: string; rootKeyAvailable: boolean; configError?: string }; }
 interface ApiEnvelope { ok: boolean; value?: unknown; error?: string; code?: string; }
 interface VersionView { current: string; repositoryUrl?: string; latest?: string; updateAvailable: boolean; releaseUrl?: string; checkedRemote: boolean; error?: string; }
-interface RecallScopeView { scope: "all" | "actor"; source: "env" | "plugin.dsh" | "plugin" | "default"; envOverride: string; restartPending: boolean; }
-interface PeerIdView { peerId: string; source: "env" | "plugin.dsh" | "plugin" | "ovcli" | "default"; envOverride: string; ovcliOverride: string; restartPending: boolean; }
-interface DerivedPeerView { peerId: string; }
-interface RecallTuningKnobView<T> { value: T; source: "env" | "plugin.dsh" | "plugin" | "default"; configured: boolean; envOverride: string; envVar: string; default: T; pinned: boolean; }
+interface WorkspaceDeclarationView { key: string; value: unknown; layer: string; }
+interface ProjectRiskView { code: string; severity: "error" | "warning"; values?: Record<string, string>; }
+/** The project a session in `cwd` belongs to, resolved by the official loader
+ * (workspace layers included). */
+interface ProjectView {
+  available: boolean;
+  cwd: string;
+  workspaceRoot: string;
+  peer: string;
+  peerOrigin: string;
+  pinnedPeer: string;
+  pinnedPeerSource: string;
+  declarations: WorkspaceDeclarationView[];
+  warnings: string[];
+  risks: ProjectRiskView[];
+}
+interface RecallScopeView { scope: "all" | "actor"; source: "env" | "workspace" | "plugin.dsh" | "plugin" | "default"; envOverride: string; workspaceLayer: string; sharedScope: string; restartPending: boolean; project: ProjectView; }
+interface PeerIdView { peerId: string; source: "env" | "plugin.dsh" | "plugin" | "ovcli" | "default"; envOverride: string; ovcliOverride: string; sharedPeerId: string; restartPending: boolean; project: ProjectView; }
+interface RecallTuningKnobView<T> { value: T; source: "env" | "workspace" | "plugin.dsh" | "plugin" | "default"; configured: boolean; envOverride: string; workspaceLayer: string; envVar: string; default: T; pinned: boolean; }
 interface RecallTuningView {
   scoreThreshold: RecallTuningKnobView<number>;
   recallLimit: RecallTuningKnobView<number>;
   recallQueryExpansion: RecallTuningKnobView<"auto" | "off">;
   recallExcludeUris: RecallTuningKnobView<string[]>;
+  recallEventsDecayProtection: RecallTuningKnobView<string>;
   timeoutMs: RecallTuningKnobView<number>;
   recallContextTimeoutMs: RecallTuningKnobView<number>;
   restartPending: boolean;
@@ -23,9 +39,28 @@ interface RecallTuningView {
 }
 /** Field state held between loads: a string so "empty" can mean "official
  * default" — which the server turns back into an absent key. */
-interface RecallTuningDraft { scoreThreshold: string; recallLimit: string; recallQueryExpansion: "auto" | "off"; recallExcludeUris: string; timeoutMs: string; recallContextTimeoutMs: string; }
+interface RecallTuningDraft { scoreThreshold: string; recallLimit: string; recallQueryExpansion: "auto" | "off"; recallExcludeUris: string; recallEventsDecayProtection: string; timeoutMs: string; recallContextTimeoutMs: string; }
 interface RestartView { restarted: boolean; count: number; reason?: string; error?: string; }
 export interface ManagerFormProps { apiPrefix?: string; fetchFn?: typeof fetch; t?: Translation; }
+
+/** One display key per server-side isolation risk code. */
+const RISK_KEYS: Record<string, TranslationKey> = {
+  "workspace-scope-all": "riskScopeAll",
+  "workspace-disables-recall": "riskRecallOff",
+  "workspace-disables-capture": "riskCaptureOff",
+  "pinned-peer": "riskPinnedPeer",
+  "workspace-pins-peer": "riskWorkspacePeer",
+  "peer-id-conflict": "riskPeerConflict",
+  "no-peer": "riskNoPeer",
+  "root-key-credential": "riskRootKey",
+};
+const SOURCE_KEYS: Record<string, TranslationKey> = {
+  env: "scopeSourceEnv",
+  workspace: "scopeSourceWorkspace",
+  "plugin.dsh": "scopeSourceDsh",
+  plugin: "scopeSourceShared",
+  default: "scopeSourceDefault",
+};
 
 /** Mirrors ENDPOINT_NOT_CONFIGURED_CODE in src/manager-api.ts across the client boundary. */
 const ENDPOINT_NOT_CONFIGURED = "endpoint-not-configured";
@@ -105,9 +140,14 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   const [checkingVersion, setCheckingVersion] = useState(false);
   const [recallScope, setRecallScope] = useState<RecallScopeView>();
   const [recallTuning, setRecallTuning] = useState<RecallTuningView>();
-  const [tuningDraft, setTuningDraft] = useState<RecallTuningDraft>({ scoreThreshold: "", recallLimit: "", recallQueryExpansion: "auto", recallExcludeUris: "", timeoutMs: "", recallContextTimeoutMs: "" });
+  const [tuningDraft, setTuningDraft] = useState<RecallTuningDraft>({ scoreThreshold: "", recallLimit: "", recallQueryExpansion: "auto", recallExcludeUris: "", recallEventsDecayProtection: "", timeoutMs: "", recallContextTimeoutMs: "" });
   const [peerId, setPeerId] = useState<PeerIdView>();
   const [peerIdDraft, setPeerIdDraft] = useState("");
+  // "" means "the directory the DSH host runs in", which is what the official
+  // plugin resolved at apply. Any other value is a project the user wants to
+  // inspect: peer derivation is per session, so it is exact for any path.
+  const [projectCwd, setProjectCwd] = useState("");
+  const [projectDraft, setProjectDraft] = useState("");
 
   const load = async () => {
     setBusy(true);
@@ -131,27 +171,28 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   // The isolation section only renders when this endpoint answers, so hosts
   // without the route (older fixtures) keep their previous page shape. After
   // an action, a transient failure instead keeps the current view on screen.
-  const loadRecallScope = async (hideOnFailure = true): Promise<RecallScopeView | undefined> => {
+  const cwdQuery = (cwd: string): string => (cwd === "" ? "" : `?cwd=${encodeURIComponent(cwd)}`);
+  const loadRecallScope = async (hideOnFailure = true, cwd = projectCwd): Promise<RecallScopeView | undefined> => {
     try {
-      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-scope`))).value as RecallScopeView;
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-scope${cwdQuery(cwd)}`))).value as RecallScopeView;
       setRecallScope(value);
       return value;
     } catch { if (hideOnFailure) setRecallScope(undefined); return undefined; }
   };
   // Same contract as the isolation section: a host without the route keeps its
   // previous page shape, and a failure after an action keeps the current view.
-  const loadRecallTuning = async (hideOnFailure = true): Promise<RecallTuningView | undefined> => {
+  const loadRecallTuning = async (hideOnFailure = true, cwd = projectCwd): Promise<RecallTuningView | undefined> => {
     try {
-      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-tuning`))).value as RecallTuningView;
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-tuning${cwdQuery(cwd)}`))).value as RecallTuningView;
       setRecallTuning(value);
       return value;
     } catch { if (hideOnFailure) setRecallTuning(undefined); return undefined; }
   };
   // Same contract again: a host without the route keeps its previous page
   // shape, and a failure after an action keeps the current view.
-  const loadPeerId = async (hideOnFailure = true): Promise<PeerIdView | undefined> => {
+  const loadPeerId = async (hideOnFailure = true, cwd = projectCwd): Promise<PeerIdView | undefined> => {
     try {
-      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-peer`))).value as PeerIdView;
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-peer${cwdQuery(cwd)}`))).value as PeerIdView;
       setPeerId(value);
       return value;
     } catch { if (hideOnFailure) setPeerId(undefined); return undefined; }
@@ -176,6 +217,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
       recallLimit: recallTuning.recallLimit.configured ? String(recallTuning.recallLimit.value) : "",
       recallQueryExpansion: recallTuning.recallQueryExpansion.value,
       recallExcludeUris: recallTuning.recallExcludeUris.value.join("\n"),
+      recallEventsDecayProtection: recallTuning.recallEventsDecayProtection.configured ? recallTuning.recallEventsDecayProtection.value : "",
       timeoutMs: recallTuning.timeoutMs.configured ? String(recallTuning.timeoutMs.value) : "",
       recallContextTimeoutMs: recallTuning.recallContextTimeoutMs.configured ? String(recallTuning.recallContextTimeoutMs.value) : "",
     });
@@ -232,7 +274,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     setBusy(true);
     if (previous) setRecallScope({ ...previous, scope: isolate ? "actor" : "all" });
     try {
-      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-scope`, {
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-scope${cwdQuery(projectCwd)}`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ scope: isolate ? "actor" : "all" }),
@@ -270,7 +312,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     try {
       let pending = false;
       if (pinScope) {
-        const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-scope`, {
+        const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-scope${cwdQuery(projectCwd)}`, {
           method: "PUT",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ scope: "actor" }),
@@ -280,7 +322,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
       }
       step = "tuning";
       if (pinTuning) {
-        const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-tuning`, {
+        const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-tuning${cwdQuery(projectCwd)}`, {
           method: "PUT",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(tuningPatch),
@@ -308,9 +350,23 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
         recallTuning.recallLimit,
         recallTuning.recallQueryExpansion,
         recallTuning.recallExcludeUris,
+        recallTuning.recallEventsDecayProtection,
         recallTuning.timeoutMs,
         recallTuning.recallContextTimeoutMs,
       ].filter((knob) => knob.source === "env").map((knob) => knob.envVar);
+
+  /** Workspace layers currently outranking this file, for the warning line. */
+  const tuningWorkspaceLayers = recallTuning === undefined
+    ? []
+    : [...new Set([
+        recallTuning.scoreThreshold,
+        recallTuning.recallLimit,
+        recallTuning.recallQueryExpansion,
+        recallTuning.recallExcludeUris,
+        recallTuning.recallEventsDecayProtection,
+        recallTuning.timeoutMs,
+        recallTuning.recallContextTimeoutMs,
+      ].filter((knob) => knob.source === "workspace").map((knob) => knob.workspaceLayer).filter(Boolean))];
 
   const saveTuning = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -326,6 +382,9 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
       recallLimit: tuningDraft.recallLimit.trim() === "" ? null : Number(tuningDraft.recallLimit),
       recallQueryExpansion: tuningDraft.recallQueryExpansion,
       recallExcludeUris: tuningDraft.recallExcludeUris.split("\n").map((line) => line.trim()).filter(Boolean),
+      recallEventsDecayProtection: tuningDraft.recallEventsDecayProtection.trim() === ""
+        ? null
+        : tuningDraft.recallEventsDecayProtection.trim(),
       timeoutMs: tuningDraft.timeoutMs.trim() === ""
         ? (tuning.timeoutMs.pinned ? tuning.timeoutMs.default : null)
         : Number(tuningDraft.timeoutMs),
@@ -333,7 +392,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     };
     setBusy(true);
     try {
-      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-tuning`, {
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-tuning${cwdQuery(projectCwd)}`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
@@ -365,7 +424,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     if (!peerId) return;
     setBusy(true);
     try {
-      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-peer`, {
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-peer${cwdQuery(projectCwd)}`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ peerId: peerIdDraft.trim() }),
@@ -387,10 +446,26 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     }
   };
 
+  /** Re-resolve the three project-scoped views for another directory. */
+  const applyProject = async (event?: React.FormEvent) => {
+    event?.preventDefault();
+    const next = projectDraft.trim();
+    setBusy(true);
+    try {
+      setProjectCwd(next);
+      await Promise.all([
+        loadRecallScope(false, next),
+        loadRecallTuning(false, next),
+        loadPeerId(false, next),
+      ]);
+      setStatus(t("projectResolved"));
+    } finally { setBusy(false); }
+  };
+
   const fillCurrentRepo = async () => {
     setBusy(true);
     try {
-      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-peer/derive`))).value as DerivedPeerView;
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-peer/derive${cwdQuery(projectCwd)}`))).value as { peerId: string; origin?: string };
       if (value.peerId === "") setStatus(t("peerIdNotInRepo"));
       else { setPeerIdDraft(value.peerId); setStatus(t("peerIdDetected", { peerId: value.peerId })); }
     } catch (error) {
@@ -472,15 +547,29 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
       </form>
     </section>
     {recallScope === undefined ? null : (
-      <section className="ovm-card" aria-label={t("isolationTitle")}>
-        <h2>{t("isolationTitle")}</h2>
+      <section className="ovm-card" aria-label={t("projectTitle")}>
+        <h2>{t("projectTitle")}</h2>
+        {/* Project-scoped: peer derivation runs per session against the
+            session's directory, so any absolute path answers exactly. */}
+        <form className="ovm-projectPath" onSubmit={(event) => void applyProject(event)}>
+          <label>{t("projectPath")}
+            <input value={projectDraft} onChange={(event) => setProjectDraft(event.target.value)} placeholder={recallScope.project.cwd} />
+          </label>
+          <div className="ovm-actions"><button type="submit" disabled={busy}>{t("projectResolve")}</button></div>
+        </form>
+        <p className="ovm-hint">{t("projectPathHint")}</p>
+        <dl className="ovm-projectMeta">
+          <div><dt>{t("projectRoot")}</dt><dd>{recallScope.project.workspaceRoot === "" ? t("projectNotInRepo") : recallScope.project.workspaceRoot}</dd></div>
+          <div><dt>{t("projectPeer")}</dt><dd>{recallScope.project.peer === "" ? t("projectUserSpace") : recallScope.project.peer}</dd></div>
+          <div><dt>{t("projectScope")}</dt><dd>{recallScope.scope === "actor" ? t("scopeActor") : t("scopeAll")} · {t(SOURCE_KEYS[recallScope.source] ?? "scopeSourceDefault")}</dd></div>
+        </dl>
         <label className="ovm-switchRow">
           <span className="ovm-switchBox">
             <input
               type="checkbox"
               role="switch"
               className="ovm-switchInput"
-              disabled={busy || recallScope.source === "env"}
+              disabled={busy || recallScope.source === "env" || recallScope.source === "workspace"}
               checked={recallScope.scope === "actor"}
               onChange={(event) => void setScope(event.target.checked)}
             />
@@ -491,6 +580,29 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
         <p className="ovm-hint ovm-isolationHint">{t("isolationHint")}</p>
         <p className="ovm-hint ovm-isolationHint">{t("reloadNotice")}</p>
         {recallScope.source === "env" ? <p className="ovm-warning" role="alert">{t("envOverrideWarning")}</p> : null}
+        {recallScope.source === "workspace" ? <p className="ovm-warning" role="alert">{t("tuningWorkspaceWarning", { keys: "recall.peer_scope" })}</p> : null}
+        {recallScope.sharedScope !== "" ? <p className="ovm-hint">{t("projectSharedNote", { scope: recallScope.sharedScope })}</p> : null}
+        {recallScope.project.risks.length > 0 ? (
+          <div className="ovm-risks">
+            <h3>{t("projectRisks")}</h3>
+            <ul>
+              {recallScope.project.risks.map((risk) => (
+                <li key={risk.code} className={risk.severity === "error" ? "ovm-warning" : "ovm-hint"} role={risk.severity === "error" ? "alert" : undefined}>
+                  {t(RISK_KEYS[risk.code] ?? "projectRisks", risk.values ?? {})}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        {recallScope.project.declarations.length === 0
+          ? <p className="ovm-hint">{t("projectNoDeclarations")}</p>
+          : (
+            <div className="ovm-declarations">
+              <h3>{t("projectDeclarations")}</h3>
+              <ul>{recallScope.project.declarations.map((item) => <li key={item.key}><code>{item.key}</code> = <code>{String(item.value)}</code> · {item.layer}</li>)}</ul>
+            </div>
+          )}
+        {recallScope.project.warnings.length > 0 ? <ul className="ovm-warnings">{recallScope.project.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : null}
       </section>
     )}
     {peerId === undefined ? null : (
@@ -514,12 +626,14 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
               </div>
             </form>
             <p className="ovm-hint">{peerIdDraft.trim() === "" ? t("peerIdHintEmpty") : t("peerIdHintSet")}</p>
+            {peerIdDraft.trim() === "" ? null : <p className="ovm-warning" role="alert">{t("peerIdHazard")}</p>}
             <p className="ovm-hint ovm-isolationHint">{t("peerIdMultiRepoNotice")}</p>
             <p className="ovm-hint">{t("peerIdReloadNotice")}</p>
           </div>
         </details>
         {/* Overrides sit outside the fold: a closed panel must not hide that the
             file value is not the effective one. */}
+        {peerId.sharedPeerId !== "" ? <p className="ovm-warning" role="alert">{t("projectSharedNote", { scope: peerId.sharedPeerId })}</p> : null}
         {peerId.source === "env" ? <p className="ovm-warning" role="alert">{t("peerIdEnvWarning")}</p> : null}
         {peerId.source === "ovcli" ? <p className="ovm-warning" role="alert">{t("peerIdCredentialWarning")}</p> : null}
       </section>
@@ -543,7 +657,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
                       step="any"
                       value={tuningDraft.scoreThreshold}
                       placeholder={t("defaultPlaceholder", { value: String(recallTuning.scoreThreshold.default) })}
-                      disabled={busy || recallTuning.scoreThreshold.source === "env"}
+                      disabled={busy || recallTuning.scoreThreshold.source === "env" || recallTuning.scoreThreshold.source === "workspace"}
                       onChange={(event) => setTuningDraft({ ...tuningDraft, scoreThreshold: event.target.value })}
                     />
                   </label>
@@ -558,7 +672,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
                       step={1}
                       value={tuningDraft.recallLimit}
                       placeholder={t("defaultPlaceholder", { value: String(recallTuning.recallLimit.default) })}
-                      disabled={busy || recallTuning.recallLimit.source === "env"}
+                      disabled={busy || recallTuning.recallLimit.source === "env" || recallTuning.recallLimit.source === "workspace"}
                       onChange={(event) => setTuningDraft({ ...tuningDraft, recallLimit: event.target.value })}
                     />
                   </label>
@@ -568,7 +682,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
                   <label>{t("queryExpansionLabel")}
                     <select
                       value={tuningDraft.recallQueryExpansion}
-                      disabled={busy || recallTuning.recallQueryExpansion.source === "env"}
+                      disabled={busy || recallTuning.recallQueryExpansion.source === "env" || recallTuning.recallQueryExpansion.source === "workspace"}
                       onChange={(event) => setTuningDraft({ ...tuningDraft, recallQueryExpansion: event.target.value === "off" ? "off" : "auto" })}
                     >
                       <option value="auto">{t("queryExpansionAuto")}</option>
@@ -583,11 +697,22 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
                       rows={4}
                       value={tuningDraft.recallExcludeUris}
                       placeholder="viking://"
-                      disabled={busy || recallTuning.recallExcludeUris.source === "env"}
+                      disabled={busy || recallTuning.recallExcludeUris.source === "env" || recallTuning.recallExcludeUris.source === "workspace"}
                       onChange={(event) => setTuningDraft({ ...tuningDraft, recallExcludeUris: event.target.value })}
                     />
                   </label>
                   <p className="ovm-hint">{t("excludeUrisHint")}</p>
+                </div>
+                <div className="ovm-tuningField">
+                  <label>{t("decayLabel")}
+                    <input
+                      value={tuningDraft.recallEventsDecayProtection}
+                      placeholder="7d"
+                      disabled={busy || recallTuning.recallEventsDecayProtection.source === "env" || recallTuning.recallEventsDecayProtection.source === "workspace"}
+                      onChange={(event) => setTuningDraft({ ...tuningDraft, recallEventsDecayProtection: event.target.value })}
+                    />
+                  </label>
+                  <p className="ovm-hint">{t("decayHint")}</p>
                 </div>
                 <div className="ovm-tuningField">
                   <label>{t("timeoutMsLabel")}
@@ -598,7 +723,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
                       step={500}
                       value={tuningDraft.timeoutMs}
                       placeholder={t("defaultPlaceholder", { value: String(recallTuning.timeoutMs.default) })}
-                      disabled={busy || recallTuning.timeoutMs.source === "env"}
+                      disabled={busy || recallTuning.timeoutMs.source === "env" || recallTuning.timeoutMs.source === "workspace"}
                       onChange={(event) => setTuningDraft({ ...tuningDraft, timeoutMs: event.target.value })}
                     />
                   </label>
@@ -613,7 +738,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
                       step={500}
                       value={tuningDraft.recallContextTimeoutMs}
                       placeholder={t("defaultPlaceholder", { value: String(recallTuning.recallContextTimeoutMs.default) })}
-                      disabled={busy || recallTuning.recallContextTimeoutMs.source === "env"}
+                      disabled={busy || recallTuning.recallContextTimeoutMs.source === "env" || recallTuning.recallContextTimeoutMs.source === "workspace"}
                       onChange={(event) => setTuningDraft({ ...tuningDraft, recallContextTimeoutMs: event.target.value })}
                     />
                   </label>
@@ -628,6 +753,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
         {/* The env-override warning sits outside the fold: a closed panel must
             not hide that the file value is not the effective one. */}
         {tuningEnvVars.length > 0 ? <p className="ovm-warning" role="alert">{t("tuningEnvWarning", { vars: tuningEnvVars.join(", ") })}</p> : null}
+        {tuningWorkspaceLayers.length > 0 ? <p className="ovm-warning" role="alert">{t("tuningWorkspaceWarning", { keys: tuningWorkspaceLayers.join(", ") })}</p> : null}
       </section>
     )}
     <section className="ovm-card"><details className="ovm-recovery ovm-collapse"><summary><h2>{t("recoverTitle")}</h2></summary><div className="ovm-collapseContent"><p className="ovm-hint">{t("recoverHint")}</p>

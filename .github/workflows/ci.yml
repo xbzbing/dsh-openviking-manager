@@ -1,0 +1,54 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: check (node ${{ matrix.node }})
+    # Pinned rather than `ubuntu-latest`: the rolling label migrates images
+    # silently, and that would move the git/npm baseline the fixtures sit on.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # package.json engines: >=22
+        node: ['22.x', '24.x']
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: ms-playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      # The e2e suites launch chromium headless against throwaway fixtures:
+      # no display and no running DSH instance are needed.
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      # One command so a contributor cannot run a weaker local gate than CI:
+      # it rebuilds `lib/` from `src/` first, so the suites always exercise the
+      # artifacts that will ship.
+      - name: Build and test
+        run: npm run check

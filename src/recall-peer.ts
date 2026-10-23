@@ -1,37 +1,32 @@
 import { readFileSync } from "node:fs";
 import { readOvcliObject, writeOvcliObject } from "./ovcli-config.js";
 import { harnessSection, pluginSection } from "./recall-scope.js";
+import type { MemoryProject } from "./memory-project.js";
 
-/** Config-face editing for the official actor peer id.
+/** Config-face editing for the official peer pin.
  *
- * The official memory plugin declares `peerId` (string, alias `peer_id`) in
- * `shared/config-schema.mjs`. It answers "which peer (topic) does this process
- * belong to", and is deliberately different from `recallPeerScope`, which
- * answers "how wide does recall search". Left empty — its official default —
- * the plugin derives a peer per session from that session's workspace git
- * identity, so every repository automatically becomes its own topic. A pinned
- * value is an escape hatch: it is process-level and outranks the per-session
- * derivation (official `resolveEffectivePeerId` short-circuits on an explicit
- * `cfg.peerId`), so all sessions then share that one peer.
+ * `peerId` (alias `peer_id`) in `shared/config-schema.mjs` answers "which peer
+ * does this session belong to". Left empty — its official default — the plugin
+ * derives one per session from the session's workspace git identity, which is
+ * what makes one project one memory namespace across clones, worktrees, agents
+ * and machines. A pinned value is an escape hatch for directories no git
+ * identity can describe: it is process-level and outranks the per-session
+ * derivation, so *every* project on this machine then shares that one peer.
+ * The panel therefore presents the pin as an advanced override with that cost
+ * spelled out; the derived per-project peer is shown read-only.
  *
- * This module only reads and writes ovcli.conf's `plugin` section — the same
- * face the official loader reads through `resolveSettings`/`resolvePluginPeerId`
- * — where `plugin.peerId` ranks above the top-level `actor_peer_id` credential.
- * It never implements peer resolution itself and never invents a config key.
+ * Resolution order (the official loader's, minus the workspace layers, which
+ * the caller resolves through `readMemoryProject`):
  *
- * Resolution mirrors `effectiveRecallScope`: `env` first (`OPENVIKING_PEER_ID`
- * outranks any file this plugin can write, so the UI must show the override
- * rather than let a file value pretend), then `plugin.dsh`, then `plugin`,
- * then the top-level `actor_peer_id`/`peer_id` credential (read-only here —
- * this plugin does not edit credential keys), then the official default of an
- * empty string, which means "derive per session from the workspace". The
- * `.openviking/config.json` workspace layer and `ov.conf` are not read: the
- * first is managed by hand and out of scope by contract, the second sits below
- * everything written here.
+ *   env OPENVIKING_PEER_ID
+ *   → ovcli.conf plugin.dsh
+ *   → ovcli.conf plugin
+ *   → the top-level `actor_peer_id`/`peer_id` credential (read-only here)
+ *   → "" (derive per session)
  *
- * The plugin resolves configuration once, at apply, so a file change is pending
- * until it reloads. `restartPending` reports that gap the same way the
- * isolation switch does. */
+ * Workspace layers outrank all of these, so a repository that commits
+ * `.openviking/config.json` with `peer.id` decides for everyone who clones it;
+ * `readMemoryProject` reports that separately instead of merging it here. */
 
 export type PeerIdSource = "env" | "plugin.dsh" | "plugin" | "ovcli" | "default";
 
@@ -42,10 +37,15 @@ export const PEER_ID_ENV = "OPENVIKING_PEER_ID";
  * charset the official `sanitizePeerId` keeps, without the server's rewriting. */
 const PEER_ID_RE = /^[A-Za-z0-9_.@-]+$/;
 const MAX_PEER_ID_LENGTH = 100;
+/** The server's namespace for externally encoded identities (v0.5.2 uses
+ * `ext-<base64>` for lossless mixed-script peers). A user value occupying that
+ * prefix would be rewritten by the official `sanitizePeerId` to `x-ext-…`,
+ * silently landing in a different namespace than the one displayed. */
+const RESERVED_PREFIX = "ext-";
 
 export interface PeerIdView {
-  /** Effective peer id the official plugin honours right now; "" means the
-   * plugin derives one per session from the workspace (automatic isolation). */
+  /** The pin the official plugin honours right now; "" means it derives one
+   * per session from the workspace (the isolation model's normal state). */
   peerId: string;
   source: PeerIdSource;
   /** Raw env value when the environment is the effective override. */
@@ -53,8 +53,12 @@ export interface PeerIdView {
   /** A top-level `actor_peer_id`/`peer_id` credential this plugin does not
    * edit, when it is the effective source; "" otherwise. */
   ovcliOverride: string;
+  /** What the shared `plugin` section pins for the other harnesses; "" unset. */
+  sharedPeerId: string;
   /** The file asks for a value the applied plugin has not loaded yet. */
   restartPending: boolean;
+  /** The project this answer was resolved for. */
+  project: MemoryProject;
 }
 
 export interface PeerIdEnv {
@@ -96,15 +100,17 @@ export function normalizePeerId(value: unknown): string | undefined {
   if (trimmed.length > MAX_PEER_ID_LENGTH) {
     throw new Error(`peerId must be at most ${MAX_PEER_ID_LENGTH} characters`);
   }
+  if (trimmed.toLowerCase().startsWith(RESERVED_PREFIX)) {
+    throw new Error(`peerId must not start with "${RESERVED_PREFIX}": the server reserves that prefix for externally encoded identities`);
+  }
   if (!PEER_ID_RE.test(trimmed)) {
     throw new Error("peerId may only contain letters, digits, and the characters . _ @ -");
   }
   return trimmed;
 }
 
-/** Resolve the effective peer id the way the official chain does for the parts
- * this plugin can see: env → plugin.dsh → plugin → top-level credential →
- * default (""). */
+/** Resolve the pin visible below the workspace layers: env → plugin.dsh →
+ * plugin → top-level credential → default (""). */
 export function effectivePeerId(
   config: Record<string, unknown>,
   env: PeerIdEnv = {},
@@ -128,11 +134,6 @@ export function effectivePeerId(
   return { peerId: "", source: "default", envOverride: "", ovcliOverride: "" };
 }
 
-export async function currentPeerId(path: string, env: PeerIdEnv = {}): Promise<string> {
-  const config = await readOvcliObject(path);
-  return effectivePeerId(config, env).peerId;
-}
-
 /** Synchronous snapshot taken when the routes are constructed — the moment the
  * official plugin applied with this file. A missing or unparsable file means
  * the official default (auto per-session), never a thrown startup error. */
@@ -150,25 +151,24 @@ export function snapshotLoadedPeerId(path: string, env: PeerIdEnv = {}): string 
 
 export async function peerIdView(
   path: string,
-  options: { env?: PeerIdEnv; loadedPeerId: string },
+  options: { env?: PeerIdEnv; loadedPeerId: string; project: MemoryProject },
 ): Promise<PeerIdView> {
   const env = options.env ?? process.env;
   const config = await readOvcliObject(path);
   const effective = effectivePeerId(config, env);
-  return { ...effective, restartPending: effective.peerId !== options.loadedPeerId };
+  return {
+    ...effective,
+    sharedPeerId: peerIdIn(pluginSection(config)) ?? "",
+    restartPending: effective.peerId !== options.loadedPeerId,
+    project: options.project,
+  };
 }
 
-/** Write the peer id to ovcli.conf's `plugin` section, mirroring the rules the
- * official loader reads by:
- *
- * - a value sets `plugin.peerId` after clearing any `plugin.dsh` override and
- *   the legacy `peer_id` alias in both sections, so one key is the single
- *   source of it;
- * - `undefined` (an empty submission) removes `peerId`/`peer_id` from both
- *   sections — an absent key *is* the official default, which restores the
- *   automatic per-session derivation this plugin never pins otherwise. It does
- *   not touch a top-level `actor_peer_id` credential: this plugin only edits
- *   the plugin section, and the view reports when such a key still pins.
+/** Write the pin to ovcli.conf's `plugin.dsh` section. The shared `plugin`
+ * section belongs to every harness on the machine and is left alone, except
+ * for one migration case: clearing the pin also retires a shared `peerId`,
+ * because a leftover shared value would silently keep every session pinned and
+ * make "automatic per-project derivation" a promise the file breaks.
  *
  * Every other key (credentials, sections, unknown entries) is preserved. */
 export async function savePeerId(path: string, peerId: string | undefined): Promise<void> {
@@ -178,20 +178,16 @@ export async function savePeerId(path: string, peerId: string | undefined): Prom
     throw new Error('ovcli.conf "plugin" section must be an object');
   }
   const nextShared: Record<string, unknown> = { ...(shared ?? {}) };
+  const harness = asRecord(nextShared.dsh) ?? {};
+  const { peerId: _peerId, peer_id: _peerIdAlias, ...rest } = harness;
+  const nextHarness: Record<string, unknown> = peerId === undefined ? rest : { ...rest, peerId };
+  if (Object.keys(nextHarness).length > 0) nextShared.dsh = nextHarness;
+  else delete nextShared.dsh;
 
-  const harness = shared === undefined ? undefined : asRecord(shared.dsh);
-  if (harness !== undefined && (Object.hasOwn(harness, "peerId") || Object.hasOwn(harness, "peer_id"))) {
-    const { peerId: _peerId, peer_id: _peerIdAlias, ...rest } = harness;
-    if (Object.keys(rest).length > 0) nextShared.dsh = rest;
-    else delete nextShared.dsh;
+  if (peerId === undefined) {
+    delete nextShared.peerId;
+    delete nextShared.peer_id;
   }
 
-  // The legacy alias is retired whether we set or clear, so a stale spelling
-  // cannot mask the new value.
-  delete nextShared.peer_id;
-  if (peerId !== undefined) nextShared.peerId = peerId;
-  else delete nextShared.peerId;
-
-  const next: Record<string, unknown> = { ...existing, plugin: nextShared };
-  await writeOvcliObject(path, next);
+  await writeOvcliObject(path, { ...existing, plugin: nextShared });
 }

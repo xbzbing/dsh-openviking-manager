@@ -11,6 +11,21 @@ import {
   snapshotLoadedRecallScope,
 } from "../../lib/recall-scope.js";
 
+/** What a caller without the official package resolves: no workspace layers,
+ * no derived peer. The view embeds it verbatim. */
+const PROJECT = {
+  available: false,
+  cwd: "/tmp/project",
+  workspaceRoot: "",
+  peer: "",
+  peerOrigin: "",
+  pinnedPeer: "",
+  pinnedPeerSource: "",
+  declarations: [],
+  warnings: [],
+  risks: [],
+};
+
 async function tempConfig(t, value) {
   const directory = await mkdtemp(join(tmpdir(), "dsh-ovm-recall-scope-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
@@ -29,51 +44,68 @@ test("only the official enum values normalize", () => {
 });
 
 test("the effective scope follows the official layer order", () => {
-  assert.deepEqual(effectiveRecallScope({}, {}), { scope: "all", source: "default", envOverride: "" });
+  assert.deepEqual(effectiveRecallScope({}, {}), { scope: "all", source: "default", envOverride: "", workspaceLayer: "" });
   assert.deepEqual(
     effectiveRecallScope({ plugin: { recallPeerScope: "actor" } }, {}),
-    { scope: "actor", source: "plugin", envOverride: "" },
+    { scope: "actor", source: "plugin", envOverride: "", workspaceLayer: "" },
   );
   assert.deepEqual(
     effectiveRecallScope({ plugin: { recallPeerScope: "actor", dsh: { recallPeerScope: "all" } } }, {}),
-    { scope: "all", source: "plugin.dsh", envOverride: "" },
+    { scope: "all", source: "plugin.dsh", envOverride: "", workspaceLayer: "" },
+  );
+  // A workspace layer sits above ovcli.conf but below the environment.
+  assert.deepEqual(
+    effectiveRecallScope({ plugin: { recallPeerScope: "actor" } }, {}, {
+      workspaceScope: "all",
+      workspaceLayer: "config.json (workspace)",
+    }),
+    { scope: "all", source: "workspace", envOverride: "", workspaceLayer: "config.json (workspace)" },
   );
   assert.deepEqual(
-    effectiveRecallScope({ plugin: { recallPeerScope: "actor" } }, { OPENVIKING_RECALL_PEER_SCOPE: "all" }),
-    { scope: "all", source: "env", envOverride: "all" },
+    effectiveRecallScope({ plugin: { recallPeerScope: "actor" } }, { OPENVIKING_RECALL_PEER_SCOPE: "all" }, {
+      workspaceScope: "actor",
+      workspaceLayer: "config.json (workspace)",
+    }),
+    { scope: "all", source: "env", envOverride: "all", workspaceLayer: "" },
   );
   // An unparseable layer is ignored rather than overriding the layer below,
   // exactly like coerceKnobValue returning UNPARSEABLE.
   assert.deepEqual(
     effectiveRecallScope({ plugin: { recallPeerScope: "actor" } }, { OPENVIKING_RECALL_PEER_SCOPE: "sometimes" }),
-    { scope: "actor", source: "plugin", envOverride: "" },
+    { scope: "actor", source: "plugin", envOverride: "", workspaceLayer: "" },
   );
   assert.deepEqual(
     effectiveRecallScope({ plugin: { recallPeerScope: "sideways", dsh: { recallPeerScope: "actor" } } }, {}),
-    { scope: "actor", source: "plugin.dsh", envOverride: "" },
+    { scope: "actor", source: "plugin.dsh", envOverride: "", workspaceLayer: "" },
   );
-  assert.deepEqual(effectiveRecallScope({ plugin: "not-an-object" }, {}), { scope: "all", source: "default", envOverride: "" });
+  assert.deepEqual(effectiveRecallScope({ plugin: "not-an-object" }, {}), {
+    scope: "all",
+    source: "default",
+    envOverride: "",
+    workspaceLayer: "",
+  });
 });
 
-test("saving actor writes the shared plugin section and clears the harness override", async (t) => {
+test("saving a scope writes plugin.dsh and leaves the shared section alone", async (t) => {
   const path = await tempConfig(t, {
     url: "http://127.0.0.1:1933",
     api_key: "keep-this-secret",
     unknown_tool_key: { keep: true },
-    plugin: { recallQueryExpansion: "off", dsh: { recallPeerScope: "all", other: 1 } },
+    plugin: { recallPeerScope: "all", recallQueryExpansion: "off", dsh: { other: 1 } },
   });
 
   await saveRecallScope(path, "actor");
 
   const stored = JSON.parse(await readFile(path, "utf8"));
-  assert.equal(stored.plugin.recallPeerScope, "actor");
-  assert.deepEqual(stored.plugin.dsh, { other: 1 });
+  // Flipping the switch must not change what the other harnesses read.
+  assert.equal(stored.plugin.recallPeerScope, "all");
+  assert.deepEqual(stored.plugin.dsh, { other: 1, recallPeerScope: "actor" });
   assert.equal(stored.plugin.recallQueryExpansion, "off");
   assert.equal(stored.api_key, "keep-this-secret");
   assert.deepEqual(stored.unknown_tool_key, { keep: true });
 });
 
-test("saving all removes the key from both sections, restoring the official default", async (t) => {
+test("saving all is written explicitly instead of deleting the key", async (t) => {
   const path = await tempConfig(t, {
     url: "http://127.0.0.1:1933",
     plugin: { recallPeerScope: "actor", dsh: { recallPeerScope: "actor" } },
@@ -82,10 +114,10 @@ test("saving all removes the key from both sections, restoring the official defa
   await saveRecallScope(path, "all");
 
   const stored = JSON.parse(await readFile(path, "utf8"));
-  assert.ok(!("recallPeerScope" in stored.plugin));
-  // The harness section only held the knob, so it is removed rather than
-  // left behind as an empty object.
-  assert.ok(!("dsh" in stored.plugin) || !("recallPeerScope" in stored.plugin.dsh));
+  // Deleting the key would fall back to the shared `actor` and silently turn
+  // isolation back on; the switch has to mean what it says.
+  assert.equal(stored.plugin.dsh.recallPeerScope, "all");
+  assert.equal(stored.plugin.recallPeerScope, "actor");
   assert.equal(stored.url, "http://127.0.0.1:1933");
 });
 
@@ -95,7 +127,7 @@ test("saving to a missing file creates it without losing the default view", asyn
   await saveRecallScope(path, "actor");
 
   const stored = JSON.parse(await readFile(path, "utf8"));
-  assert.deepEqual(stored, { plugin: { recallPeerScope: "actor" } });
+  assert.deepEqual(stored, { plugin: { dsh: { recallPeerScope: "actor" } } });
   const info = await stat(path);
   assert.equal(info.mode & 0o777, 0o600);
 });
@@ -111,17 +143,35 @@ test("restartPending compares the file against the loaded snapshot", async (t) =
   const path = await tempConfig(t, { plugin: { recallPeerScope: "actor" } });
   const loadedScope = snapshotLoadedRecallScope(path, {});
   assert.equal(loadedScope, "actor");
-  assert.deepEqual(await recallScopeView(path, { env: {}, loadedScope }), {
+  assert.deepEqual(await recallScopeView(path, { env: {}, loadedScope, project: PROJECT }), {
     scope: "actor",
     source: "plugin",
     envOverride: "",
+    workspaceLayer: "",
+    sharedScope: "actor",
     restartPending: false,
+    project: PROJECT,
   });
 
   await saveRecallScope(path, "all");
-  const pending = await recallScopeView(path, { env: {}, loadedScope });
+  const pending = await recallScopeView(path, { env: {}, loadedScope, project: PROJECT });
   assert.equal(pending.scope, "all");
   assert.equal(pending.restartPending, true);
+});
+
+test("a workspace declaration outranks the file and is named in the view", async (t) => {
+  const path = await tempConfig(t, { plugin: { dsh: { recallPeerScope: "actor" } } });
+  const project = {
+    ...PROJECT,
+    declarations: [{ key: "recall.peer_scope", value: "all", layer: "config.json (workspace)" }],
+  };
+
+  const view = await recallScopeView(path, { env: {}, loadedScope: "actor", project });
+
+  assert.equal(view.scope, "all");
+  assert.equal(view.source, "workspace");
+  assert.equal(view.workspaceLayer, "config.json (workspace)");
+  assert.equal(view.restartPending, true);
 });
 
 test("an env override reports its source and never reads as restart-pending", async (t) => {
@@ -130,7 +180,7 @@ test("an env override reports its source and never reads as restart-pending", as
   // The plugin loaded the same env at startup, so file edits cannot drift.
   const loadedScope = snapshotLoadedRecallScope(path, env);
   assert.equal(loadedScope, "actor");
-  const view = await recallScopeView(path, { env, loadedScope });
+  const view = await recallScopeView(path, { env, loadedScope, project: PROJECT });
   assert.equal(view.source, "env");
   assert.equal(view.envOverride, "actor");
   assert.equal(view.restartPending, false);

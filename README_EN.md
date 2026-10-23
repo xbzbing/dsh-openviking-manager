@@ -14,14 +14,20 @@ See the official documentation for installing and configuring OpenViking: [DeepS
 
 ```bash
 # Install the official OpenViking plugin
-dsh plugin --profile web add @openviking/dsh-memory-plugin
+dsh plugin --profile web add @openviking/dsh-memory-plugin@latest
 # Install the configuration manager
-dsh plugin --profile web add dsh-openviking-manager
-# You can also install straight from the GitHub repository, or from a local file path
-dsh plugin --profile web add github:xbzbing/dsh-openviking-manager
+dsh plugin --profile web add dsh-openviking-manager@latest
 ```
 
-Restarting the corresponding DSH profile may be required afterwards; the `openviking-manager` configuration page is then available on the DSH plugins page.
+A fresh install (the package name is not yet a dependency of the profile) is usable immediately under the default `web` profile: HMR is on, so neither a restart nor a page refresh is needed. Only updating an already-installed package of the same name, or a profile with HMR off (headless / SDK / ACP), requires restarting `dsh web`. The `openviking-manager` configuration page then appears on the DSH plugins page.
+
+You can also install a GitHub Release asset directly — pre-releases ship only there, never to npm:
+
+```bash
+dsh plugin --profile web add https://github.com/xbzbing/dsh-openviking-manager/releases/download/<TAG>/dsh-openviking-manager-<VERSION>.tgz
+```
+
+`lib/` is not committed, so `dsh plugin --profile web add github:xbzbing/dsh-openviking-manager` is not supported: a git install hands over a source tree with no build output, and the plugin will not load.
 
 ## Features
 
@@ -97,7 +103,7 @@ npm run build       # Generates lib/; no .tgz is produced
 npm test            # Unit tests + Playwright E2E
 ```
 
-`lib/` ships through git, so after changing `src/` you must rebuild and commit it; otherwise a GitHub install loads a missing or stale entry point. `lib/standalone.js` exists only for Playwright: it is neither committed nor published. The build workflow neither creates nor retains a `.tgz` package.
+`lib/` is not committed: the release workflow generates it with `npm pack` after the gate passes, and ships the tarball both as a GitHub Release asset and to npm. `npm run build` clears `lib/` before compiling, so deleting a source file cannot leave a stale artifact behind; `lib/standalone.js` exists only for Playwright and is never published. The release process and body format live in `.github/RELEASE_TEMPLATE.md` — do not tag or publish by hand.
 
 ## Tests
 

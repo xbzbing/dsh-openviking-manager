@@ -56,8 +56,8 @@ test("peer id is empty by default and saving a value writes plugin.peerId then r
   });
   try {
     await page.goto(fixture.url);
-    await page.getByRole("heading", { name: "Actor peer id (advanced)" }).click();
-    const field = page.getByRole("textbox", { name: "Actor peer id (advanced)" });
+    await page.getByRole("heading", { name: "Project peer id (advanced)" }).click();
+    const field = page.getByRole("textbox", { name: "Project peer id (advanced)" });
     await expect(field).toBeVisible();
     await expect(field).toHaveValue("");
     // The multi-repository guidance and the "empty" explanation are shown.
@@ -69,7 +69,7 @@ test("peer id is empty by default and saving a value writes plugin.peerId then r
     // before the reload, and this cannot race an unrelated restart.
     await expect.poll(async () => {
       const next = JSON.parse(await readFile(fixture.configPath, "utf8"));
-      return next.plugin?.peerId;
+      return next.plugin?.dsh?.peerId;
     }).toBe("github.com-xbzbing-dsh-openviking-manager");
     await expect.poll(() => restarts).toBe(1);
     const stored = JSON.parse(await readFile(fixture.configPath, "utf8"));
@@ -80,7 +80,7 @@ test("peer id is empty by default and saving a value writes plugin.peerId then r
     await page.getByRole("button", { name: "Save peer id" }).click();
     await expect.poll(async () => {
       const next = JSON.parse(await readFile(fixture.configPath, "utf8"));
-      return "peerId" in (next.plugin ?? {});
+      return "peerId" in (next.plugin?.dsh ?? {});
     }).toBe(false);
   } finally {
     await fixture.close();
@@ -91,8 +91,8 @@ test("an OPENVIKING_PEER_ID env override makes the field read-only with a warnin
   const fixture = await startPeerIdFixture({ env: { OPENVIKING_PEER_ID: "env-peer" } });
   try {
     await page.goto(fixture.url);
-    await page.getByRole("heading", { name: "Actor peer id (advanced)" }).click();
-    const field = page.getByRole("textbox", { name: "Actor peer id (advanced)" });
+    await page.getByRole("heading", { name: "Project peer id (advanced)" }).click();
+    const field = page.getByRole("textbox", { name: "Project peer id (advanced)" });
     await expect(field).toHaveValue("env-peer");
     await expect(field).toBeDisabled();
     await expect(page.getByText("OPENVIKING_PEER_ID is set in the environment")).toBeVisible();
@@ -111,7 +111,7 @@ test("renders the peer id section in Simplified Chinese", async ({ page }) => {
   });
   try {
     await page.goto(fixture.url);
-    await page.getByRole("heading", { name: "Actor peer id（高级）" }).click();
+    await page.getByRole("heading", { name: "项目 peer id（高级）" }).click();
     await expect(page.getByText("如需多仓库工作时的记忆隔离，请留空")).toBeVisible();
     await expect(page.getByRole("button", { name: "填入当前仓库" })).toBeVisible();
   } finally {

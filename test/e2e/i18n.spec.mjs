@@ -36,6 +36,14 @@ test("uses Simplified Chinese when the browser language is Chinese", async ({ pa
     await page.locator("details.ovm-recovery summary").click();
     await expect(page.getByRole("alert")).toContainText("请先在上方保存 OpenViking 服务地址");
   } finally {
-    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    // The page holds a keep-alive socket, and `close()` waits for every
+    // connection to end — so tearing down without dropping it hangs until the
+    // test timeout, with the page already in its final state. Same contract as
+    // the other specs' fixtures.
+    await new Promise((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+      server.closeIdleConnections?.();
+      setTimeout(() => server.closeAllConnections?.(), 500).unref();
+    });
   }
 });

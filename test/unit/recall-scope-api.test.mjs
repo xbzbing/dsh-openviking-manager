@@ -44,10 +44,15 @@ test("the default view reports cross-topic sharing with nothing pending", async 
   const { status, json } = await request(base, SCOPE_PATH);
 
   assert.equal(status, 200);
-  assert.deepEqual(json, {
-    ok: true,
-    value: { scope: "all", source: "default", envOverride: "", restartPending: false },
-  });
+  assert.equal(json.ok, true);
+  assert.equal(json.value.scope, "all");
+  assert.equal(json.value.source, "default");
+  assert.equal(json.value.restartPending, false);
+  assert.equal(json.value.sharedScope, "");
+  // The project block is resolved by the official loader for the host
+  // directory; its exact content is covered by the memory-project tests.
+  assert.equal(typeof json.value.project.cwd, "string");
+  assert.ok(Array.isArray(json.value.project.risks));
 });
 
 test("turning sharing off writes actor and reports restart-pending until a restart", async (t) => {
@@ -66,7 +71,9 @@ test("turning sharing off writes actor and reports restart-pending until a resta
   assert.equal(saved.json.value.restartPending, true);
 
   const stored = JSON.parse(await readFile(configPath, "utf8"));
-  assert.equal(stored.plugin.recallPeerScope, "actor");
+  // DSH-scoped: the shared section belongs to the other harnesses.
+  assert.equal(stored.plugin.dsh.recallPeerScope, "actor");
+  assert.ok(!("recallPeerScope" in stored.plugin));
   assert.equal(stored.api_key, "keep-this-secret");
 
   const restarted = await request(base, RESTART_PATH, { method: "POST" });
@@ -79,7 +86,8 @@ test("turning sharing off writes actor and reports restart-pending until a resta
   const turnedBack = await request(base, SCOPE_PATH, { method: "PUT", body: { scope: "all" } });
   assert.equal(turnedBack.json.value.scope, "all");
   assert.equal(turnedBack.json.value.restartPending, true);
-  assert.ok(!("recallPeerScope" in JSON.parse(await readFile(configPath, "utf8")).plugin));
+  // Written explicitly: deleting the key would fall back to a shared value.
+  assert.equal(JSON.parse(await readFile(configPath, "utf8")).plugin.dsh.recallPeerScope, "all");
 });
 
 test("restart without an injectable plugin answers plugin-unavailable and keeps pending", async (t) => {

@@ -6,30 +6,32 @@ import { harnessSection, pluginSection } from "./recall-scope.js";
  *
  * The keys, value domains and defaults below are the ones declared in the
  * official `shared/config-schema.mjs` of `@openviking/dsh-memory-plugin`
- * (read from 0.5.x); that file stays the single source of truth and this
+ * (read from 0.5.29); that file stays the single source of truth and this
  * module never invents a knob of its own:
  *
- *   scoreThreshold          number  0..1         default 0.35   OPENVIKING_SCORE_THRESHOLD
- *   recallLimit             int     1..50        default 10     OPENVIKING_RECALL_LIMIT   (sendOnlyWhenConfigured)
- *   recallQueryExpansion    enum    auto|off     default auto   OPENVIKING_RECALL_QUERY_EXPANSION (sendOnlyWhenConfigured)
- *   recallExcludeUris       list                 default []     OPENVIKING_RECALL_EXCLUDE_URIS
- *   timeoutMs               int     1000..300000 default 10000  OPENVIKING_TIMEOUT_MS (alias requestTimeoutMs; dsh harness default 10000)
- *   recallContextTimeoutMs  int     0..600000    default 0      OPENVIKING_RECALL_CONTEXT_TIMEOUT_MS (0 = derive from the server-stage floors)
+ *   scoreThreshold              number  0..1          default 0.35  OPENVIKING_SCORE_THRESHOLD   (workspace: recall.score_threshold)
+ *   recallLimit                 int     1..50         default 10    OPENVIKING_RECALL_LIMIT      (sendOnlyWhenConfigured; workspace: recall.max_items)
+ *   recallQueryExpansion        enum    auto|off      default auto  OPENVIKING_RECALL_QUERY_EXPANSION (sendOnlyWhenConfigured)
+ *   recallExcludeUris           list                  default []    OPENVIKING_RECALL_EXCLUDE_URIS
+ *   recallEventsDecayProtection string                default ""    OPENVIKING_RECALL_EVENTS_DECAY_PROTECTION ("" = no decay protection)
+ *   timeoutMs                   int     1000..300000 default 10000 OPENVIKING_TIMEOUT_MS (alias requestTimeoutMs; dsh harness default 10000)
+ *   recallContextTimeoutMs      int     0..600000     default 0     OPENVIKING_RECALL_CONTEXT_TIMEOUT_MS (0 = derive from the server-stage floors)
  *
  * This module owns the read/compute path — the knob specs, layer resolution
  * and view assembly. The write path (request validation and the ovcli.conf
- * `plugin`-section save) lives in `recall-tuning-persistence.ts`, which imports
- * the specs exported here so both paths share one definition.
+ * save) lives in `recall-tuning-persistence.ts`, which imports the specs
+ * exported here so both paths share one definition.
  *
- * Only ovcli.conf's `plugin` section is written — the same face the official
- * loader reads — and every other key (credentials, sections, unknown entries)
- * survives untouched. Resolution mirrors `effectiveRecallScope`: `env` first
- * (it outranks any file this plugin can write and the UI must show the
- * override rather than let a file value pretend), then `plugin.dsh`, then
- * `plugin`, then the official default. The `.openviking/config.json` workspace
- * layer and the legacy `ov.conf` layer are deliberately not read: the first is
- * managed by hand and out of this plugin's scope by contract, the second sits
- * below everything written here.
+ * Resolution mirrors `effectiveRecallScope` and the official loader:
+ * `env` first (it outranks any file this plugin can write and the UI must show
+ * the override rather than let a file value pretend), then the workspace layers
+ * the caller resolved (a repository's committed `.openviking/config.json`
+ * outranks ovcli.conf), then `plugin.dsh`, then `plugin`, then the official
+ * default. The legacy `ov.conf` layer sits below everything written here and is
+ * deliberately not read. Writes go to `plugin.dsh` only: this is the DSH panel
+ * and the shared `plugin` section belongs to every other harness on the
+ * machine. A restore-to-stock retires the key from both sections, because a
+ * leftover shared value would otherwise keep pinning the knob.
  *
  * Three knobs additionally carry a *product* default (see PRODUCT_DEFAULTS):
  * the manager writes it on first load whenever no layer supplied the key, the
@@ -53,7 +55,7 @@ export type RecallTuningEnv = { [key: string]: string | undefined };
 
 export type RecallQueryExpansion = "auto" | "off";
 
-export type RecallTuningSource = "env" | "plugin.dsh" | "plugin" | "default";
+export type RecallTuningSource = "env" | "workspace" | "plugin.dsh" | "plugin" | "default";
 
 export interface RecallTuningKnob<T> {
   /** Effective value after the layers, already clamped into the official domain. */
@@ -65,6 +67,8 @@ export interface RecallTuningKnob<T> {
   configured: boolean;
   /** Raw env value when the environment is the effective layer, else "". */
   envOverride: string;
+  /** Workspace layer that supplied the value, when `source` is `workspace`. */
+  workspaceLayer: string;
   /** Env var that outranks the file, for the UI's override warning. */
   envVar: string;
   /** What "the default" means for this knob: the official default, unless the
@@ -81,6 +85,7 @@ export interface RecallTuningState {
   recallLimit: RecallTuningKnob<number>;
   recallQueryExpansion: RecallTuningKnob<RecallQueryExpansion>;
   recallExcludeUris: RecallTuningKnob<string[]>;
+  recallEventsDecayProtection: RecallTuningKnob<string>;
   timeoutMs: RecallTuningKnob<number>;
   recallContextTimeoutMs: RecallTuningKnob<number>;
 }
@@ -101,11 +106,12 @@ export interface RecallTuningPatch {
   recallLimit?: number | null;
   recallQueryExpansion?: RecallQueryExpansion | null;
   recallExcludeUris?: string[] | null;
+  recallEventsDecayProtection?: string | null;
   timeoutMs?: number | null;
   recallContextTimeoutMs?: number | null;
 }
 
-type KnobKind = "number" | "int" | "enum" | "list";
+type KnobKind = "number" | "int" | "enum" | "list" | "string";
 
 export interface KnobSpec {
   key: string;
@@ -116,6 +122,9 @@ export interface KnobSpec {
   min?: number;
   max?: number;
   values?: readonly string[];
+  /** Official dotted key this knob projects to inside a workspace file
+   * (`.openviking/config.json`), when it has one. */
+  workspaceKey?: string;
 }
 
 export const SCORE_THRESHOLD: KnobSpec = {
@@ -126,6 +135,7 @@ export const SCORE_THRESHOLD: KnobSpec = {
   fallback: 0.35,
   min: 0,
   max: 1,
+  workspaceKey: "recall.score_threshold",
 };
 
 export const RECALL_LIMIT: KnobSpec = {
@@ -136,6 +146,7 @@ export const RECALL_LIMIT: KnobSpec = {
   fallback: 10,
   min: 1,
   max: 50,
+  workspaceKey: "recall.max_items",
 };
 
 export const QUERY_EXPANSION: KnobSpec = {
@@ -153,6 +164,18 @@ export const EXCLUDE_URIS: KnobSpec = {
   envVar: "OPENVIKING_RECALL_EXCLUDE_URIS",
   kind: "list",
   fallback: [],
+};
+
+/** Event memories keep their score for this long before time decay applies
+ * (official 0.5.29+; sent as `events_time_decay_protection`). Empty means the
+ * server's own default, which is no protection at all. The accepted spelling
+ * is the server's duration syntax (`90s`, `45m`, `12h`, `7d`, `2w`). */
+export const EVENTS_DECAY_PROTECTION: KnobSpec = {
+  key: "recallEventsDecayProtection",
+  aliases: [],
+  envVar: "OPENVIKING_RECALL_EVENTS_DECAY_PROTECTION",
+  kind: "string",
+  fallback: "",
 };
 
 export const TIMEOUT_MS: KnobSpec = {
@@ -180,7 +203,15 @@ export const RECALL_CONTEXT_TIMEOUT_MS: KnobSpec = {
   max: 600000,
 };
 
-const SPECS = [SCORE_THRESHOLD, RECALL_LIMIT, QUERY_EXPANSION, EXCLUDE_URIS, TIMEOUT_MS, RECALL_CONTEXT_TIMEOUT_MS];
+const SPECS = [
+  SCORE_THRESHOLD,
+  RECALL_LIMIT,
+  QUERY_EXPANSION,
+  EXCLUDE_URIS,
+  EVENTS_DECAY_PROTECTION,
+  TIMEOUT_MS,
+  RECALL_CONTEXT_TIMEOUT_MS,
+];
 
 export const RECALL_TUNING_ENV_VARS: readonly string[] = SPECS.map((spec) => spec.envVar);
 
@@ -231,6 +262,12 @@ function coerce(spec: KnobSpec, raw: unknown): unknown {
         .map((item) => item.trim())
         .filter(Boolean);
     }
+    case "string": {
+      // Official default for this kind of knob is "unset"; the server owns the
+      // syntax, so a blank string is "no value" rather than a configured one.
+      const value = typeof raw === "string" ? raw.trim() : "";
+      return value === "" ? UNPARSEABLE : value;
+    }
   }
 }
 
@@ -248,10 +285,16 @@ function layersOf(config: Record<string, unknown>): KnobLayer[] {
   ];
 }
 
-function resolveKnob<T>(spec: KnobSpec, layers: KnobLayer[], env: RecallTuningEnv): RecallTuningKnob<T> {
+function resolveKnob<T>(
+  spec: KnobSpec,
+  layers: KnobLayer[],
+  env: RecallTuningEnv,
+  workspace?: { value: unknown; layer: string },
+): RecallTuningKnob<T> {
   let value = spec.fallback as T;
   let source: RecallTuningSource = "default";
   let configured = false;
+  let workspaceLayer = "";
 
   for (const layer of layers) {
     const data = layer.data;
@@ -269,6 +312,18 @@ function resolveKnob<T>(spec: KnobSpec, layers: KnobLayer[], env: RecallTuningEn
     }
   }
 
+  // A workspace layer outranks ovcli.conf — the official loader merges it on
+  // top — but the environment still outranks the workspace.
+  if (workspace !== undefined) {
+    const coerced = coerce(spec, workspace.value);
+    if (coerced !== UNPARSEABLE) {
+      value = coerced as T;
+      configured = true;
+      source = "workspace";
+      workspaceLayer = workspace.layer;
+    }
+  }
+
   const rawEnv = env[spec.envVar];
   if (rawEnv !== undefined && rawEnv !== null && String(rawEnv) !== "") {
     const coerced = coerce(spec, rawEnv);
@@ -276,6 +331,7 @@ function resolveKnob<T>(spec: KnobSpec, layers: KnobLayer[], env: RecallTuningEn
       value = coerced as T;
       configured = true;
       source = "env";
+      workspaceLayer = "";
     }
   }
 
@@ -285,6 +341,7 @@ function resolveKnob<T>(spec: KnobSpec, layers: KnobLayer[], env: RecallTuningEn
     source,
     configured,
     envOverride: source === "env" ? String(rawEnv ?? "") : "",
+    workspaceLayer,
     envVar: spec.envVar,
     // A product default changes what "restore the default" means for this
     // knob; it never changes the effective value of a keyless file.
@@ -293,19 +350,39 @@ function resolveKnob<T>(spec: KnobSpec, layers: KnobLayer[], env: RecallTuningEn
   };
 }
 
-/** The four knobs resolved through env → plugin.dsh → plugin → default. */
+/** Workspace declarations, keyed by the official dotted key each knob projects
+ * to (`recall.score_threshold`, `recall.max_items`, …). */
+export type WorkspaceKnobValues = {
+  [workspaceKey: string]: { value: unknown; layer: string } | undefined;
+};
+
+/** Every knob resolved through env → workspace → plugin.dsh → plugin → default. */
 export function effectiveRecallTuning(
   config: Record<string, unknown>,
   env: RecallTuningEnv = {},
+  workspace: WorkspaceKnobValues = {},
 ): RecallTuningState {
   const layers = layersOf(config);
+  const declared = (spec: KnobSpec): { value: unknown; layer: string } | undefined =>
+    spec.workspaceKey === undefined ? undefined : workspace[spec.workspaceKey];
   return {
-    scoreThreshold: resolveKnob<number>(SCORE_THRESHOLD, layers, env),
-    recallLimit: resolveKnob<number>(RECALL_LIMIT, layers, env),
-    recallQueryExpansion: resolveKnob<RecallQueryExpansion>(QUERY_EXPANSION, layers, env),
-    recallExcludeUris: resolveKnob<string[]>(EXCLUDE_URIS, layers, env),
-    timeoutMs: resolveKnob<number>(TIMEOUT_MS, layers, env),
-    recallContextTimeoutMs: resolveKnob<number>(RECALL_CONTEXT_TIMEOUT_MS, layers, env),
+    scoreThreshold: resolveKnob<number>(SCORE_THRESHOLD, layers, env, declared(SCORE_THRESHOLD)),
+    recallLimit: resolveKnob<number>(RECALL_LIMIT, layers, env, declared(RECALL_LIMIT)),
+    recallQueryExpansion: resolveKnob<RecallQueryExpansion>(QUERY_EXPANSION, layers, env, declared(QUERY_EXPANSION)),
+    recallExcludeUris: resolveKnob<string[]>(EXCLUDE_URIS, layers, env, declared(EXCLUDE_URIS)),
+    recallEventsDecayProtection: resolveKnob<string>(
+      EVENTS_DECAY_PROTECTION,
+      layers,
+      env,
+      declared(EVENTS_DECAY_PROTECTION),
+    ),
+    timeoutMs: resolveKnob<number>(TIMEOUT_MS, layers, env, declared(TIMEOUT_MS)),
+    recallContextTimeoutMs: resolveKnob<number>(
+      RECALL_CONTEXT_TIMEOUT_MS,
+      layers,
+      env,
+      declared(RECALL_CONTEXT_TIMEOUT_MS),
+    ),
   };
 }
 
@@ -321,12 +398,20 @@ function readConfigObject(path: string): Record<string, unknown> {
 /** Synchronous snapshot taken when the routes are constructed — the moment the
  * official plugin applied with this file. A missing or unparsable file means
  * the official defaults, never a thrown startup error. */
-export function snapshotLoadedRecallTuning(path: string, env: RecallTuningEnv = {}): RecallTuningState {
-  return effectiveRecallTuning(readConfigObject(path), env);
+export function snapshotLoadedRecallTuning(
+  path: string,
+  env: RecallTuningEnv = {},
+  workspace: WorkspaceKnobValues = {},
+): RecallTuningState {
+  return effectiveRecallTuning(readConfigObject(path), env, workspace);
 }
 
-export async function currentRecallTuning(path: string, env: RecallTuningEnv = {}): Promise<RecallTuningState> {
-  return effectiveRecallTuning(await readOvcliObject(path), env);
+export async function currentRecallTuning(
+  path: string,
+  env: RecallTuningEnv = {},
+  workspace: WorkspaceKnobValues = {},
+): Promise<RecallTuningState> {
+  return effectiveRecallTuning(await readOvcliObject(path), env, workspace);
 }
 
 function sameValue(left: unknown, right: unknown): boolean {
@@ -347,6 +432,7 @@ export function recallTuningPending(current: RecallTuningState, loaded: RecallTu
     || !sameKnob(current.recallLimit, loaded.recallLimit)
     || !sameKnob(current.recallQueryExpansion, loaded.recallQueryExpansion)
     || !sameKnob(current.recallExcludeUris, loaded.recallExcludeUris)
+    || !sameKnob(current.recallEventsDecayProtection, loaded.recallEventsDecayProtection)
     || !sameKnob(current.timeoutMs, loaded.timeoutMs)
     || !sameKnob(current.recallContextTimeoutMs, loaded.recallContextTimeoutMs);
 }
@@ -366,10 +452,11 @@ export function recallTuningInitPatch(state: RecallTuningState): RecallTuningPat
 
 export async function recallTuningView(
   path: string,
-  options: { env?: RecallTuningEnv; loaded: RecallTuningState },
+  options: { env?: RecallTuningEnv; loaded: RecallTuningState; workspace?: WorkspaceKnobValues },
 ): Promise<RecallTuningView> {
   const env = options.env ?? process.env;
-  const current = await currentRecallTuning(path, env);
+  const workspace = options.workspace ?? {};
+  const current = await currentRecallTuning(path, env, workspace);
   // An env-configured knob cannot drift: the plugin loaded the same variable
   // at startup and file edits never reach it, so it never reads as pending.
   return {

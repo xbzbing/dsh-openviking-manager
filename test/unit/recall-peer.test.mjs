@@ -11,6 +11,19 @@ import {
   snapshotLoadedPeerId,
 } from "../../lib/recall-peer.js";
 
+const PROJECT = {
+  available: false,
+  cwd: "/tmp/project",
+  workspaceRoot: "",
+  peer: "",
+  peerOrigin: "",
+  pinnedPeer: "",
+  pinnedPeerSource: "",
+  declarations: [],
+  warnings: [],
+  risks: [],
+};
+
 async function tempConfig(t, value) {
   const directory = await mkdtemp(join(tmpdir(), "dsh-ovm-recall-peer-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
@@ -30,6 +43,11 @@ test("normalizePeerId accepts the server charset and rejects the rest", () => {
   assert.throws(() => normalizePeerId("has spaces"), /may only contain/);
   assert.throws(() => normalizePeerId("bad/slash"), /may only contain/);
   assert.throws(() => normalizePeerId("x".repeat(101)), /at most 100/);
+  // The server reserves `ext-` for externally encoded identities (0.5.2 uses
+  // lossless ext-<base64> ids) and the official sanitizer rewrites a value
+  // occupying it, so the panel refuses it instead of storing a different key.
+  assert.throws(() => normalizePeerId("ext-ZW4t5Lit5paH"), /reserves that prefix/);
+  assert.throws(() => normalizePeerId("EXT-team"), /reserves that prefix/);
 });
 
 test("the effective peer id follows the layer order this plugin can see", () => {
@@ -65,19 +83,19 @@ test("the effective peer id follows the layer order this plugin can see", () => 
   );
 });
 
-test("saving a value writes plugin.peerId and clears harness + alias", async (t) => {
+test("saving a value writes plugin.dsh and keeps the shared pin for other harnesses", async (t) => {
   const path = await tempConfig(t, {
     url: "http://127.0.0.1:1933",
     api_key: "keep-secret",
-    plugin: { recallPeerScope: "actor", peer_id: "stale", dsh: { peerId: "old", other: 1 } },
+    plugin: { recallPeerScope: "actor", peer_id: "shared-stale", dsh: { peer_id: "old", other: 1 } },
   });
 
   await savePeerId(path, "github.com-xbzbing-dsh-openviking-manager");
 
   const stored = JSON.parse(await readFile(path, "utf8"));
-  assert.equal(stored.plugin.peerId, "github.com-xbzbing-dsh-openviking-manager");
-  assert.ok(!("peer_id" in stored.plugin));
-  assert.deepEqual(stored.plugin.dsh, { other: 1 });
+  assert.deepEqual(stored.plugin.dsh, { other: 1, peerId: "github.com-xbzbing-dsh-openviking-manager" });
+  // The shared section belongs to the other harnesses; this pin is DSH-scoped.
+  assert.equal(stored.plugin.peer_id, "shared-stale");
   assert.equal(stored.plugin.recallPeerScope, "actor");
   assert.equal(stored.api_key, "keep-secret");
 });
@@ -91,9 +109,11 @@ test("clearing removes peerId/peer_id from both sections, restoring auto derivat
   await savePeerId(path, undefined);
 
   const stored = JSON.parse(await readFile(path, "utf8"));
+  // A leftover shared pin would keep every session pinned even after the panel
+  // says "automatic", so clearing retires it as a migration.
   assert.ok(!("peerId" in stored.plugin));
   assert.ok(!("peer_id" in stored.plugin));
-  assert.ok(!("dsh" in stored.plugin) || !("peer_id" in stored.plugin.dsh));
+  assert.ok(!("dsh" in stored.plugin) || !("peerId" in stored.plugin.dsh));
   assert.equal(stored.url, "http://127.0.0.1:1933");
 });
 
@@ -116,7 +136,7 @@ test("saving to a missing file creates it at 0600", async (t) => {
   await savePeerId(path, "my-project");
 
   const stored = JSON.parse(await readFile(path, "utf8"));
-  assert.deepEqual(stored, { plugin: { peerId: "my-project" } });
+  assert.deepEqual(stored, { plugin: { dsh: { peerId: "my-project" } } });
   const info = await stat(path);
   assert.equal(info.mode & 0o777, 0o600);
 });
@@ -132,16 +152,18 @@ test("restartPending compares the file against the loaded snapshot", async (t) =
   const path = await tempConfig(t, { plugin: { peerId: "pinned" } });
   const loadedPeerId = snapshotLoadedPeerId(path, {});
   assert.equal(loadedPeerId, "pinned");
-  assert.deepEqual(await peerIdView(path, { env: {}, loadedPeerId }), {
+  assert.deepEqual(await peerIdView(path, { env: {}, loadedPeerId, project: PROJECT }), {
     peerId: "pinned",
     source: "plugin",
     envOverride: "",
     ovcliOverride: "",
+    sharedPeerId: "pinned",
     restartPending: false,
+    project: PROJECT,
   });
 
   await savePeerId(path, undefined);
-  const pending = await peerIdView(path, { env: {}, loadedPeerId });
+  const pending = await peerIdView(path, { env: {}, loadedPeerId, project: PROJECT });
   assert.equal(pending.peerId, "");
   assert.equal(pending.source, "default");
   assert.equal(pending.restartPending, true);
@@ -152,7 +174,7 @@ test("an env override reports its source and never reads as restart-pending", as
   const env = { OPENVIKING_PEER_ID: "env-peer" };
   const loadedPeerId = snapshotLoadedPeerId(path, env);
   assert.equal(loadedPeerId, "env-peer");
-  const view = await peerIdView(path, { env, loadedPeerId });
+  const view = await peerIdView(path, { env, loadedPeerId, project: PROJECT });
   assert.equal(view.source, "env");
   assert.equal(view.envOverride, "env-peer");
   assert.equal(view.restartPending, false);

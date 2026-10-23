@@ -28,6 +28,7 @@ test("an untouched config reports the official defaults with nothing configured"
     source: "default",
     configured: false,
     envOverride: "",
+    workspaceLayer: "",
     envVar: "OPENVIKING_SCORE_THRESHOLD",
     default: 0.5,
     pinned: true,
@@ -37,6 +38,7 @@ test("an untouched config reports the official defaults with nothing configured"
     source: "default",
     configured: false,
     envOverride: "",
+    workspaceLayer: "",
     envVar: "OPENVIKING_RECALL_LIMIT",
     default: 10,
     pinned: false,
@@ -53,6 +55,7 @@ test("an untouched config reports the official defaults with nothing configured"
     source: "default",
     configured: false,
     envOverride: "",
+    workspaceLayer: "",
     envVar: "OPENVIKING_TIMEOUT_MS",
     default: 15000,
     pinned: true,
@@ -62,6 +65,7 @@ test("an untouched config reports the official defaults with nothing configured"
     source: "default",
     configured: false,
     envOverride: "",
+    workspaceLayer: "",
     envVar: "OPENVIKING_RECALL_CONTEXT_TIMEOUT_MS",
     default: 0,
     pinned: false,
@@ -71,7 +75,7 @@ test("an untouched config reports the official defaults with nothing configured"
 test("the effective value follows the official layer order, alias included", () => {
   assert.deepEqual(
     effectiveRecallTuning({ plugin: { scoreThreshold: 0.6 } }, {}).scoreThreshold,
-    { value: 0.6, source: "plugin", configured: true, envOverride: "", envVar: "OPENVIKING_SCORE_THRESHOLD", default: 0.5, pinned: true },
+    { value: 0.6, source: "plugin", configured: true, envOverride: "", workspaceLayer: "", envVar: "OPENVIKING_SCORE_THRESHOLD", default: 0.5, pinned: true },
   );
   // The harness section wins over the shared one, exactly as the official
   // loader merges them, and env outranks every file.
@@ -124,7 +128,7 @@ test("a layer that does not parse is ignored, and out-of-domain values clamp", (
   );
 });
 
-test("saving writes official keys to the shared section and keeps everything else", async (t) => {
+test("saving writes official keys to the DSH section and keeps everything else", async (t) => {
   const path = await tempConfig(t, {
     url: "http://127.0.0.1:1933",
     api_key: "keep-this-secret",
@@ -146,16 +150,17 @@ test("saving writes official keys to the shared section and keeps everything els
   });
 
   const stored = JSON.parse(await readFile(path, "utf8"));
-  assert.equal(stored.plugin.scoreThreshold, 0.6);
-  assert.equal(stored.plugin.recallLimit, 6, "the shared section wins over a stale harness override");
-  assert.equal(stored.plugin.recallQueryExpansion, "off");
-  assert.deepEqual(stored.plugin.recallExcludeUris, ["viking://user/xubingzhen/skills"]);
-  assert.equal(stored.plugin.timeoutMs, 15000);
-  assert.equal(stored.plugin.recallContextTimeoutMs, 2000);
-  // Keys this module does not manage are untouched, including the isolation
-  // switch and the other keys the harness section carries.
+  assert.equal(stored.plugin.dsh.scoreThreshold, 0.6);
+  assert.equal(stored.plugin.dsh.recallLimit, 6, "the DSH override wins over a stale shared value");
+  assert.equal(stored.plugin.dsh.recallQueryExpansion, "off");
+  assert.deepEqual(stored.plugin.dsh.recallExcludeUris, ["viking://user/xubingzhen/skills"]);
+  assert.equal(stored.plugin.dsh.timeoutMs, 15000);
+  assert.equal(stored.plugin.dsh.recallContextTimeoutMs, 2000);
+  // Keys this module does not manage are untouched: the shared section (the
+  // other harnesses' values) and any unrelated harness key.
   assert.equal(stored.plugin.recallPeerScope, "actor");
-  assert.deepEqual(stored.plugin.dsh, { other: 1 });
+  assert.equal(stored.plugin.recallQueryExpansion, "off");
+  assert.equal(stored.plugin.dsh.other, 1);
   assert.equal(stored.api_key, "keep-this-secret");
   assert.deepEqual(stored.unknown_tool_key, { keep: true });
 });
@@ -212,7 +217,7 @@ test("saving to a missing file creates it with the safe mode", async (t) => {
 
   await saveRecallTuning(path, { scoreThreshold: 0.6 });
 
-  assert.deepEqual(JSON.parse(await readFile(path, "utf8")), { plugin: { scoreThreshold: 0.6 } });
+  assert.deepEqual(JSON.parse(await readFile(path, "utf8")), { plugin: { dsh: { scoreThreshold: 0.6 } } });
   const info = await stat(path);
   assert.equal(info.mode & 0o777, 0o600);
 });
@@ -312,7 +317,7 @@ test("an explicit automatic expansion is written, not dropped", async (t) => {
   await saveRecallTuning(path, { recallQueryExpansion: "auto" });
 
   const stored = JSON.parse(await readFile(path, "utf8"));
-  assert.equal(stored.plugin.recallQueryExpansion, "auto");
+  assert.equal(stored.plugin.dsh.recallQueryExpansion, "auto");
   assert.equal(stored.plugin.scoreThreshold, 0.5);
   // Configured, so the next load does not re-pin the product default.
   const state = effectiveRecallTuning(stored, {});

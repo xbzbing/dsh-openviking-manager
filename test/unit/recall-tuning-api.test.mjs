@@ -50,12 +50,13 @@ test("the default view reports the official defaults with nothing pending", asyn
   // The keyless file still behaves officially (0.35 / auto) while the view
   // already offers the product defaults and the patch that pins them.
   assert.deepEqual(json.value, {
-    scoreThreshold: { value: 0.35, source: "default", configured: false, envOverride: "", envVar: "OPENVIKING_SCORE_THRESHOLD", default: 0.5, pinned: true },
-    recallLimit: { value: 10, source: "default", configured: false, envOverride: "", envVar: "OPENVIKING_RECALL_LIMIT", default: 10, pinned: false },
-    recallQueryExpansion: { value: "auto", source: "default", configured: false, envOverride: "", envVar: "OPENVIKING_RECALL_QUERY_EXPANSION", default: "off", pinned: true },
-    recallExcludeUris: { value: [], source: "default", configured: false, envOverride: "", envVar: "OPENVIKING_RECALL_EXCLUDE_URIS", default: [], pinned: false },
-    timeoutMs: { value: 10000, source: "default", configured: false, envOverride: "", envVar: "OPENVIKING_TIMEOUT_MS", default: 15000, pinned: true },
-    recallContextTimeoutMs: { value: 0, source: "default", configured: false, envOverride: "", envVar: "OPENVIKING_RECALL_CONTEXT_TIMEOUT_MS", default: 0, pinned: false },
+    scoreThreshold: { value: 0.35, source: "default", configured: false, envOverride: "", workspaceLayer: "", envVar: "OPENVIKING_SCORE_THRESHOLD", default: 0.5, pinned: true },
+    recallLimit: { value: 10, source: "default", configured: false, envOverride: "", workspaceLayer: "", envVar: "OPENVIKING_RECALL_LIMIT", default: 10, pinned: false },
+    recallQueryExpansion: { value: "auto", source: "default", configured: false, envOverride: "", workspaceLayer: "", envVar: "OPENVIKING_RECALL_QUERY_EXPANSION", default: "off", pinned: true },
+    recallExcludeUris: { value: [], source: "default", configured: false, envOverride: "", workspaceLayer: "", envVar: "OPENVIKING_RECALL_EXCLUDE_URIS", default: [], pinned: false },
+    recallEventsDecayProtection: { value: "", source: "default", configured: false, envOverride: "", workspaceLayer: "", envVar: "OPENVIKING_RECALL_EVENTS_DECAY_PROTECTION", default: "", pinned: false },
+    timeoutMs: { value: 10000, source: "default", configured: false, envOverride: "", workspaceLayer: "", envVar: "OPENVIKING_TIMEOUT_MS", default: 15000, pinned: true },
+    recallContextTimeoutMs: { value: 0, source: "default", configured: false, envOverride: "", workspaceLayer: "", envVar: "OPENVIKING_RECALL_CONTEXT_TIMEOUT_MS", default: 0, pinned: false },
     restartPending: false,
     initPatch: { scoreThreshold: 0.5, recallQueryExpansion: "off", timeoutMs: 15000 },
   });
@@ -93,12 +94,12 @@ test("saving the tuning keys writes them, then a restart clears the pending stat
   assert.equal(saved.json.value.restartPending, true);
 
   const stored = JSON.parse(await readFile(configPath, "utf8"));
-  assert.equal(stored.plugin.scoreThreshold, 0.62);
-  assert.equal(stored.plugin.recallLimit, 6);
-  assert.equal(stored.plugin.recallQueryExpansion, "off");
-  assert.deepEqual(stored.plugin.recallExcludeUris, ["viking://user/xubingzhen/skills", "viking://resources"]);
-  assert.equal(stored.plugin.timeoutMs, 15000);
-  assert.equal(stored.plugin.recallContextTimeoutMs, 2000);
+  assert.equal(stored.plugin.dsh.scoreThreshold, 0.62);
+  assert.equal(stored.plugin.dsh.recallLimit, 6);
+  assert.equal(stored.plugin.dsh.recallQueryExpansion, "off");
+  assert.deepEqual(stored.plugin.dsh.recallExcludeUris, ["viking://user/xubingzhen/skills", "viking://resources"]);
+  assert.equal(stored.plugin.dsh.timeoutMs, 15000);
+  assert.equal(stored.plugin.dsh.recallContextTimeoutMs, 2000);
   // The isolation switch and the credentials ride along untouched.
   assert.equal(stored.plugin.recallPeerScope, "actor");
   assert.equal(stored.api_key, "keep-this-secret");
@@ -127,6 +128,7 @@ test("saving the tuning keys writes them, then a restart clears the pending stat
   assert.ok(!("recallExcludeUris" in emptied.plugin));
   assert.ok(!("timeoutMs" in emptied.plugin));
   assert.ok(!("recallContextTimeoutMs" in emptied.plugin));
+  assert.ok(!("dsh" in emptied.plugin) || !("scoreThreshold" in emptied.plugin.dsh));
   assert.equal(emptied.plugin.recallPeerScope, "actor");
 
   // An explicit "automatic" is written rather than dropped, so the choice
@@ -136,7 +138,7 @@ test("saving the tuning keys writes them, then a restart clears the pending stat
   assert.equal(automatic.json.value.recallQueryExpansion.value, "auto");
   assert.equal(automatic.json.value.recallQueryExpansion.configured, true);
   assert.equal(automatic.json.value.initPatch.recallQueryExpansion, undefined);
-  assert.equal(JSON.parse(await readFile(configPath, "utf8")).plugin.recallQueryExpansion, "auto");
+  assert.equal(JSON.parse(await readFile(configPath, "utf8")).plugin.dsh.recallQueryExpansion, "auto");
 });
 
 test("an out-of-domain value is rejected and the file stays untouched", async (t) => {
@@ -178,7 +180,8 @@ test("a partial save only touches the key it names", async (t) => {
 
   assert.equal(status, 200);
   const stored = JSON.parse(await readFile(configPath, "utf8"));
-  assert.equal(stored.plugin.recallLimit, 4);
+  assert.equal(stored.plugin.dsh.recallLimit, 4);
+  // A shared value keeps applying to DSH until the DSH section overrides it.
   assert.equal(stored.plugin.scoreThreshold, 0.6);
   assert.equal(stored.plugin.recallPeerScope, "actor");
 });

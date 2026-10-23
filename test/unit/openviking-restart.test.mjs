@@ -6,10 +6,14 @@ import {
   restartOfficialOpenViking,
 } from "../../lib/openviking-restart.js";
 
-test("restarts the official plugin through the registry identity lookup", async () => {
+test("restarts the official plugin through the display-name scan", async () => {
   let calls = 0;
   const fiber = { restart: async () => { calls += 1; } };
-  const ctx = { registry: { get: () => ({ name: OFFICIAL_PLUGIN_NAME, fibers: [fiber] }) } };
+  const ctx = {
+    registry: {
+      forEach: (visit) => visit({ name: OFFICIAL_PLUGIN_NAME, fibers: [fiber] }, 0),
+    },
+  };
 
   const result = await restartOfficialOpenViking(ctx);
 
@@ -17,7 +21,7 @@ test("restarts the official plugin through the registry identity lookup", async 
   assert.equal(calls, 1);
 });
 
-test("falls back to the display-name scan when module identity does not match", async () => {
+test("ignores other plugins in the same registry", async () => {
   const fiber = { restart: async () => {} };
   const runtimes = [
     { name: "other-plugin", fibers: [fiber] },
@@ -25,7 +29,6 @@ test("falls back to the display-name scan when module identity does not match", 
   ];
   const ctx = {
     registry: {
-      get: () => undefined,
       forEach: (visit) => runtimes.forEach((runtime, index) => visit(runtime, index)),
     },
   };
@@ -50,7 +53,7 @@ test("reports plugin-unavailable without a registry, without live fibers, or wit
 
 test("a rejected restart reports restart-failed with the error message", async () => {
   const fiber = { restart: async () => { throw new Error("fiber is inactive"); } };
-  const ctx = { registry: { get: () => ({ fibers: [fiber] }) } };
+  const ctx = { registry: { forEach: (visit) => visit({ name: OFFICIAL_PLUGIN_NAME, fibers: [fiber] }, 0) } };
 
   const result = await restartOfficialOpenViking(ctx);
 
@@ -62,7 +65,7 @@ test("a rejected restart reports restart-failed with the error message", async (
 test("one failing fiber among many still counts as a restart", async () => {
   const good = { restart: async () => {} };
   const bad = { restart: async () => { throw new Error("nope"); } };
-  const ctx = { registry: { get: () => ({ fibers: [bad, good] }) } };
+  const ctx = { registry: { forEach: (visit) => visit({ name: OFFICIAL_PLUGIN_NAME, fibers: [bad, good] }, 0) } };
 
   const result = await restartOfficialOpenViking(ctx);
 

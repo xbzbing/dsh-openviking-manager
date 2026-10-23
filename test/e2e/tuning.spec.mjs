@@ -96,12 +96,12 @@ test("recall tuning writes the official keys and reloads the plugin", async ({ p
     await expect.poll(() => restarts).toBe(1);
 
     const stored = JSON.parse(await readFile(fixture.configPath, "utf8"));
-    expect(stored.plugin.scoreThreshold).toBe(0.62);
-    expect(stored.plugin.recallLimit).toBe(6);
-    expect(stored.plugin.recallQueryExpansion).toBe("off");
-    expect(stored.plugin.recallExcludeUris).toEqual(["viking://user/xubingzhen/skills", "viking://resources"]);
-    expect(stored.plugin.timeoutMs).toBe(12000);
-    expect(stored.plugin.recallContextTimeoutMs).toBe(2000);
+    expect(stored.plugin.dsh.scoreThreshold).toBe(0.62);
+    expect(stored.plugin.dsh.recallLimit).toBe(6);
+    expect(stored.plugin.dsh.recallQueryExpansion).toBe("off");
+    expect(stored.plugin.dsh.recallExcludeUris).toEqual(["viking://user/xubingzhen/skills", "viking://resources"]);
+    expect(stored.plugin.dsh.timeoutMs).toBe(12000);
+    expect(stored.plugin.dsh.recallContextTimeoutMs).toBe(2000);
     // The isolation switch and the credentials ride along untouched.
     expect(stored.plugin.recallPeerScope).toBe("actor");
     expect(stored.api_key).toBe("keep-this-secret");
@@ -130,13 +130,13 @@ test("a fresh config is initialised to the plugin defaults on one reload", async
     await expect(page.getByRole("status")).toContainText("The official memory plugin reloaded. The new setting is active.");
 
     const stored = JSON.parse(await readFile(fixture.configPath, "utf8"));
-    expect(stored.plugin.scoreThreshold).toBe(0.5);
-    expect(stored.plugin.recallQueryExpansion).toBe("off");
-    expect(stored.plugin.timeoutMs).toBe(15000);
+    expect(stored.plugin.dsh.scoreThreshold).toBe(0.5);
+    expect(stored.plugin.dsh.recallQueryExpansion).toBe("off");
+    expect(stored.plugin.dsh.timeoutMs).toBe(15000);
     // Knobs without a product default stay untouched.
-    expect(stored.plugin.recallLimit).toBe(undefined);
-    expect(stored.plugin.recallExcludeUris).toBe(undefined);
-    expect(stored.plugin.recallContextTimeoutMs).toBe(undefined);
+    expect(stored.plugin.dsh.recallLimit).toBe(undefined);
+    expect(stored.plugin.dsh.recallExcludeUris).toBe(undefined);
+    expect(stored.plugin.dsh.recallContextTimeoutMs).toBe(undefined);
     expect(stored.api_key).toBe("keep-this-secret");
 
     // The file now carries the keys, so the next load has nothing to write
@@ -169,7 +169,7 @@ test("warnings stay reachable while the panel is collapsed", async ({ page }) =>
 
     // The first-load initialisation still ran with the panel closed.
     const stored = JSON.parse(await readFile(fixture.configPath, "utf8"));
-    expect(stored.plugin.recallQueryExpansion).toBe("off");
+    expect(stored.plugin.dsh.recallQueryExpansion).toBe("off");
     expect(stored.plugin.recallPeerScope).toBe("actor");
   } finally {
     await fixture.close();
@@ -217,15 +217,15 @@ test("clearing a field restores that knob's default: the product one, or the off
     const stored = JSON.parse(await readFile(fixture.configPath, "utf8"));
     // The pinned knob comes back as the product default rather than absent —
     // otherwise the next load would write it right back.
-    expect(stored.plugin.scoreThreshold).toBe(0.5);
+    expect(stored.plugin.dsh.scoreThreshold).toBe(0.5);
     // "Automatic" is an explicit choice and is written, so it survives a reload.
-    expect(stored.plugin.recallQueryExpansion).toBe("auto");
+    expect(stored.plugin.dsh.recallQueryExpansion).toBe("auto");
     // The request timeout is pinned too: clearing it restores 15000, not absent.
-    expect(stored.plugin.timeoutMs).toBe(15000);
+    expect(stored.plugin.dsh.timeoutMs).toBe(15000);
     // Knobs without a product default fall back to the official one: no key.
-    expect(stored.plugin.recallLimit).toBe(undefined);
-    expect(stored.plugin.recallExcludeUris).toBe(undefined);
-    expect(stored.plugin.recallContextTimeoutMs).toBe(undefined);
+    expect(stored.plugin.dsh.recallLimit).toBe(undefined);
+    expect(stored.plugin.dsh.recallExcludeUris).toBe(undefined);
+    expect(stored.plugin.dsh.recallContextTimeoutMs).toBe(undefined);
     expect(stored.plugin.recallPeerScope).toBe("actor");
     await expect(page.getByLabel("Recall score threshold")).toHaveValue("0.5");
     await expect(page.getByLabel("Request timeout (ms)")).toHaveValue("15000");

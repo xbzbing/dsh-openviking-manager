@@ -1,0 +1,161 @@
+name: release
+
+# Main-driven release. Pushing a version bump to main runs the full gate, tags
+# the release commit, then — depending on whether the version carries a
+# prerelease identifier — either opens a GitHub prerelease with the tarball
+# attached (npm is skipped) or publishes to npm and opens a stable Release with
+# the same tarball. A stable body comes from docs/releases/v<version>.md. A
+# prerelease page starts from the fixed notice in .github/PRERELEASE_BODY.md and
+# its change log is authored afterwards with `gh release edit` — docs/releases/
+# archives stable versions only, so a rerun leaves a prerelease body alone.
+#
+# The tarball is the artifact every channel receives: `lib/` is not committed,
+# so `dsh plugin add github:<owner>/<repo>` would install a tree without a
+# build output and the plugin would not load. Installation is either the npm
+# package or the Release asset URL, and both are the same `npm pack` bytes.
+#
+# Every step checks state first, so a partially completed release can be
+# re-run: an already-published npm version is skipped, an existing tag or
+# Release is not recreated (the Release body is edited in place). npm publish
+# sits after the tag and before the stable Release — it is the only
+# irreversible step, and the version bar's "update available" prompt reads
+# releases/latest, which GitHub already excludes prereleases from server-side.
+on:
+  push:
+    branches: [main]
+    paths: [package.json]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # push the release tag, create / edit the Release
+  id-token: write   # npm provenance / Trusted Publishing
+
+# One release at a time; never cancel one halfway (npm publish is not
+# transactional with the tag or Release that follows it).
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.x'
+          cache: npm
+          registry-url: 'https://registry.npmjs.org'
+
+      # Read what has already happened for this version, before spending a
+      # minute on a gate that may not be needed. A version carrying a hyphen
+      # (0.5.0-rc.1) is a prerelease: GitHub only, npm never.
+      - id: state
+        name: Release state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          V=$(node -p "require('./package.json').version")
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          case "$V" in
+            *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;
+            *)   echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+          git ls-remote --exit-code --tags origin "refs/tags/v$V" >/dev/null 2>&1 && echo "tag=done" >> "$GITHUB_OUTPUT" || true
+          gh release view "v$V" >/dev/null 2>&1 && echo "gh=done" >> "$GITHUB_OUTPUT" || true
+          # npm only participates in formal releases; prereleases never
+          # publish, so a stray npm hit would only confuse the skip logic.
+          if [ "${V#*-}" = "$V" ]; then
+            npm view "dsh-openviking-manager@$V" version >/dev/null 2>&1 && echo "npm=done" >> "$GITHUB_OUTPUT" || true
+          else
+            echo "npm=skipped" >> "$GITHUB_OUTPUT"
+          fi
+
+      # A stable release ships its body in docs/releases/v<v>.md. A pre-release
+      # page starts from the fixed notice here, which keeps the page valid even
+      # before the hand-written body lands; docs/releases/ archives stable
+      # versions only, and the stable body that follows compares against the
+      # previous stable tag, so the rc period is covered exactly once.
+      - id: notes
+        name: Release notes
+        run: |
+          set -euo pipefail
+          V="${{ steps.state.outputs.version }}"
+          if [ "${{ steps.state.outputs.prerelease }}" = "true" ]; then
+            FILE="$RUNNER_TEMP/prerelease-notes.md"
+            # Drop the authoring comments: the body is published verbatim.
+            sed -e '/^<!--/,/-->/d' -e "s|<TAG>|v$V|g" -e "s|<VERSION>|$V|g" .github/PRERELEASE_BODY.md > "$FILE"
+          else
+            FILE="docs/releases/v$V.md"
+            # The body ships with the release commit; a missing file must fail
+            # before the irreversible npm step, not after it.
+            if [ ! -f "$FILE" ]; then
+              echo "::error::$FILE is missing — write it from .github/RELEASE_TEMPLATE.md and commit it with the version bump"
+              exit 1
+            fi
+          fi
+          echo "file=$FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Gate
+        if: steps.state.outputs.npm != 'done' || steps.state.outputs.tag != 'done' || steps.state.outputs.gh != 'done'
+        run: |
+          set -euo pipefail
+          V="${{ steps.state.outputs.version }}"
+          npm ci
+          npx playwright install --with-deps chromium
+          npm run check
+          npm pack
+          mkdir -p pkg && tar -xzf "dsh-openviking-manager-$V.tgz" -C pkg
+          node scripts/assert-pack.mjs pkg/package
+
+      - name: Tag
+        if: steps.state.outputs.tag != 'done'
+        run: |
+          set -euo pipefail
+          V="${{ steps.state.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "v$V" -m "v$V"
+          git push origin "refs/tags/v$V"
+
+      # Trusted Publishing (OIDC) is preferred; drop the secret and register
+      # this workflow as a trusted publisher on npmjs.com. With the secret
+      # present, npm authenticates with it instead. Prereleases never reach
+      # this step.
+      - name: Publish to npm
+        if: steps.state.outputs.prerelease != 'true' && steps.state.outputs.npm != 'done'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          V="${{ steps.state.outputs.version }}"
+          npm publish "dsh-openviking-manager-$V.tgz" --provenance --access public
+
+      - name: GitHub Release
+        if: steps.state.outputs.gh != 'done'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          V="${{ steps.state.outputs.version }}"
+          if [ "${{ steps.state.outputs.prerelease }}" = "true" ]; then
+            CHANNEL=(--prerelease)
+          else
+            CHANNEL=(--latest)
+          fi
+          if gh release view "v$V" >/dev/null 2>&1; then
+            if [ "${{ steps.state.outputs.prerelease }}" = "true" ]; then
+              # A pre-release body is authored by hand once the page exists
+              # (docs/releases/ archives stable versions only), so a rerun must
+              # not clobber it with the placeholder.
+              gh release edit "v$V" --title "v$V" --prerelease
+            else
+              gh release edit "v$V" --title "v$V" --notes-file "${{ steps.notes.outputs.file }}" --latest
+            fi
+          else
+            gh release create "v$V" "dsh-openviking-manager-$V.tgz" \
+              --title "v$V" --notes-file "${{ steps.notes.outputs.file }}" --verify-tag "${CHANNEL[@]}"
+          fi

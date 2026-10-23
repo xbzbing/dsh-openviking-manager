@@ -1,7 +1,7 @@
-# lib/ is committed on purpose: `dsh plugin add github:xbzbing/dsh-openviking-manager`
-# installs the committed tree without running a build. Only the Playwright browser
-# fixture stays untracked, because `npm run test:e2e` rebuilds it before running.
-lib/standalone.js
+# Build output (not committed; the release tarball carries it via `npm pack`).
+# `npm run build` regenerates it from `src/` before every test run.
+lib/
+*.tsbuildinfo
 .env
 .env.*
 *.log

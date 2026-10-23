@@ -1,10 +1,10 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { isAbsolute, resolve as resolvePath } from "node:path";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import { resolveOpenVikingPaths } from "./openviking-paths.js";
-import { discoverLocalOpenViking } from "./local-discovery.js";
-import { loadOvcliConfig, loadOvcliUserKey, repairOvcliPermissions, saveOvcliConfig } from "./ovcli-config.js";
+import { credentialIsLocalRootKey, discoverLocalOpenViking, readOvconfDshSection } from "./local-discovery.js";
+import { loadOvcliConfig, loadOvcliUserKey, readOvcliObject, repairOvcliPermissions, saveOvcliConfig } from "./ovcli-config.js";
 import {
-  currentRecallScope,
   normalizeRecallScope,
   recallScopeView,
   saveRecallScope,
@@ -12,17 +12,18 @@ import {
   type RecallScopeEnv,
 } from "./recall-scope.js";
 import {
-  currentPeerId,
+  effectivePeerId,
   normalizePeerId,
   peerIdView,
   savePeerId,
   snapshotLoadedPeerId,
 } from "./recall-peer.js";
-import { derivePeerId } from "./derive-peer.js";
+import { readMemoryProject, type MemoryProject } from "./memory-project.js";
 import {
   currentRecallTuning,
   recallTuningView,
   snapshotLoadedRecallTuning,
+  type WorkspaceKnobValues,
 } from "./recall-tuning.js";
 import { parseRecallTuningPatch, saveRecallTuning } from "./recall-tuning-persistence.js";
 import type { RestartResult } from "./openviking-restart.js";
@@ -36,6 +37,10 @@ export const MANAGER_API_PREFIX = "/plugins/dsh-openviking-manager/api";
 export const ENDPOINT_NOT_CONFIGURED_CODE = "endpoint-not-configured";
 const MAX_BODY_BYTES = 32 * 1024;
 const MAX_SESSION_ID_CHARS = 512;
+const MAX_CWD_CHARS = 4096;
+/** The directory the plugin process resolved its config for, i.e. the project
+ * whose workspace layers the applied plugin actually loaded. */
+const HOST_CWD = process.cwd();
 
 export interface ManagerApiOptions {
   ovcliPath?: string;
@@ -121,16 +126,62 @@ function rejectCrossOrigin(req: IncomingMessage, res: ServerResponse): boolean {
 export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
   const env = options.env ?? process.env;
   const { ovcliPath, ovconfPath } = resolvePaths(options, env);
-  // The official plugin resolves its config once at apply; constructing these
-  // routes happens at apply too, so this snapshot is the value it loaded. It
-  // only advances after a successful plugin restart.
+  const scopeOptionsFor = (project: MemoryProject): { workspaceScope?: unknown; workspaceLayer?: string } => {
+    const declaration = project.declarations.find((item) => item.key === "recall.peer_scope");
+    return { workspaceScope: declaration?.value, workspaceLayer: declaration?.layer };
+  };
+  const workspaceValuesFor = (project: MemoryProject): WorkspaceKnobValues => {
+    const values: WorkspaceKnobValues = {};
+    for (const declaration of project.declarations) values[declaration.key] = { value: declaration.value, layer: declaration.layer };
+    return values;
+  };
+
+  /** Resolve the project `cwd` belongs to. Everything the official loader reads
+   * is passed in explicitly — ovcli.conf, ov.conf's legacy `dsh` section, the
+   * env — so a test with injected paths never resolves the real user files. */
+  const readProject = async (cwd: string): Promise<MemoryProject> => {
+    const [ovcli, ovconfDsh, userKey] = await Promise.all([
+      readOvcliObject(ovcliPath),
+      readOvconfDshSection(ovconfPath),
+      loadOvcliUserKey(ovcliPath),
+    ]);
+    const pinned = effectivePeerId(ovcli, env);
+    return readMemoryProject({
+      cwd,
+      env,
+      ovcli,
+      ovconfDsh,
+      rootKeyCredential: await credentialIsLocalRootKey(ovconfPath, userKey),
+      pinnedPeer: { peerId: pinned.peerId, source: pinned.source },
+    });
+  };
+
+  const cwdOf = (req: IncomingMessage): string => {
+    const url = new URL(req.url ?? "/", "http://localhost");
+    const raw = url.searchParams.get("cwd");
+    const candidate = raw === null || raw.trim() === "" ? HOST_CWD : raw.trim();
+    if (!isAbsolute(candidate) || candidate.length > MAX_CWD_CHARS) throw new Error("cwd must be an absolute path");
+    return resolvePath(candidate);
+  };
+
+  // The official plugin resolves its config once at apply, and constructing
+  // these routes happens at apply too, so this snapshot is what it loaded. It
+  // advances only after a successful plugin restart. The workspace layers for
+  // the host directory are not part of it (they need the async official
+  // loader); a repository file that outranks the file therefore reads as
+  // pending once and settles after the reload it prompts.
   let loadedScope = snapshotLoadedRecallScope(ovcliPath, env);
   let loadedTuning = snapshotLoadedRecallTuning(ovcliPath, env);
   let loadedPeerId = snapshotLoadedPeerId(ovcliPath, env);
   let restarting = false;
-  const scopeView = () => recallScopeView(ovcliPath, { env, loadedScope });
-  const tuningView = () => recallTuningView(ovcliPath, { env, loaded: loadedTuning });
-  const peerView = () => peerIdView(ovcliPath, { env, loadedPeerId });
+  const scopeView = async (cwd: string) =>
+    recallScopeView(ovcliPath, { env, loadedScope, project: await readProject(cwd) });
+  const tuningView = async (cwd: string) => {
+    const project = await readProject(cwd);
+    return recallTuningView(ovcliPath, { env, loaded: loadedTuning, workspace: workspaceValuesFor(project) });
+  };
+  const peerView = async (cwd: string) =>
+    peerIdView(ovcliPath, { env, loadedPeerId, project: await readProject(cwd) });
   return [
     {
       kind: "exact",
@@ -344,7 +395,7 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
         if (rejectCrossOrigin(req, res)) return;
         if (req.method === "GET") {
           try {
-            writeJson(res, 200, { ok: true, value: await scopeView() });
+            writeJson(res, 200, { ok: true, value: await scopeView(cwdOf(req)) });
           } catch (error) {
             writeJson(res, 500, { ok: false, error: error instanceof Error ? error.message : "Unable to read the memory isolation setting" });
           }
@@ -362,7 +413,7 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
             return;
           }
           await saveRecallScope(ovcliPath, scope);
-          writeJson(res, 200, { ok: true, value: await scopeView() });
+          writeJson(res, 200, { ok: true, value: await scopeView(cwdOf(req)) });
         } catch (error) {
           writeJson(res, 400, { ok: false, error: error instanceof Error ? error.message : "Unable to save the memory isolation setting" });
         }
@@ -375,7 +426,7 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
         if (rejectCrossOrigin(req, res)) return;
         if (req.method === "GET") {
           try {
-            writeJson(res, 200, { ok: true, value: await tuningView() });
+            writeJson(res, 200, { ok: true, value: await tuningView(cwdOf(req)) });
           } catch (error) {
             writeJson(res, 500, { ok: false, error: error instanceof Error ? error.message : "Unable to read the recall tuning settings" });
           }
@@ -390,7 +441,7 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
           // after the value domain of config-schema has been checked.
           const patch = parseRecallTuningPatch(await readJson(req));
           await saveRecallTuning(ovcliPath, patch);
-          writeJson(res, 200, { ok: true, value: await tuningView() });
+          writeJson(res, 200, { ok: true, value: await tuningView(cwdOf(req)) });
         } catch (error) {
           writeJson(res, 400, { ok: false, error: error instanceof Error ? error.message : "Unable to save the recall tuning settings" });
         }
@@ -403,7 +454,7 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
         if (rejectCrossOrigin(req, res)) return;
         if (req.method === "GET") {
           try {
-            writeJson(res, 200, { ok: true, value: await peerView() });
+            writeJson(res, 200, { ok: true, value: await peerView(cwdOf(req)) });
           } catch (error) {
             writeJson(res, 500, { ok: false, error: error instanceof Error ? error.message : "Unable to read the actor peer id" });
           }
@@ -419,7 +470,7 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
           const body = await readJson(req);
           const peerId = normalizePeerId(stringAt(body, "peerId"));
           await savePeerId(ovcliPath, peerId);
-          writeJson(res, 200, { ok: true, value: await peerView() });
+          writeJson(res, 200, { ok: true, value: await peerView(cwdOf(req)) });
         } catch (error) {
           writeJson(res, 400, { ok: false, error: error instanceof Error ? error.message : "Unable to save the actor peer id" });
         }
@@ -435,7 +486,11 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
           return;
         }
         try {
-          writeJson(res, 200, { ok: true, value: await derivePeerId() });
+          const project = await readProject(cwdOf(req));
+          writeJson(res, 200, {
+            ok: true,
+            value: { peerId: project.peer, origin: project.peerOrigin, project },
+          });
         } catch (error) {
           writeJson(res, 500, { ok: false, error: error instanceof Error ? error.message : "Unable to derive the peer id" });
         }
@@ -465,9 +520,13 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
           // says now is the value it loaded — for the isolation scope and the
           // recall tuning knobs alike: one reload picks up every key.
           if (result.restarted) {
-            loadedScope = await currentRecallScope(ovcliPath, env);
-            loadedTuning = await currentRecallTuning(ovcliPath, env);
-            loadedPeerId = await currentPeerId(ovcliPath, env);
+            // The plugin re-applied with the host directory, so the baseline
+            // becomes what that directory resolves to now — workspace layers
+            // included.
+            const hostProject = await readProject(HOST_CWD);
+            loadedScope = snapshotLoadedRecallScope(ovcliPath, env, scopeOptionsFor(hostProject));
+            loadedTuning = snapshotLoadedRecallTuning(ovcliPath, env, workspaceValuesFor(hostProject));
+            loadedPeerId = snapshotLoadedPeerId(ovcliPath, env);
           }
           writeJson(res, 200, { ok: true, value: result });
         } catch (error) {

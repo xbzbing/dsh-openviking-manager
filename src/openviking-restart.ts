@@ -68,27 +68,42 @@ async function officialModule(): Promise<unknown | undefined> {
   }
 }
 
-/** Locate the official plugin's live fibers: preferred path is exact registry
- * identity via the module's exported `apply`; the display name is the
- * fallback when module identity does not line up (duplicate installs). */
+/** Locate the official plugin's live fibers.
+ *
+ * The display-name scan comes first: it needs no import, and importing the
+ * official entry pulls the host packages it declares as peers
+ * (`@deepseek-ai/dsh-mcp-client` and friends) into this module graph — a load
+ * that can fail when they are absent and that would resolve a second copy of
+ * the plugin when they are not. Exact registry identity stays as the fallback
+ * for duplicate installs, where two copies share a display name. */
 export async function findOfficialRuntimes(registry: RegistryLike | undefined): Promise<PluginRuntimeLike[]> {
   if (!registry) return [];
-  const mod = await officialModule();
-  if (mod !== undefined && typeof registry.get === "function") {
-    try {
-      const runtime = registry.get(mod);
-      if (runtime) return [runtime];
-    } catch { /* fall through to the name scan */ }
-  }
+  const matches = scanByName(registry);
+  if (matches.length > 0) return matches;
+  return lookupByIdentity(registry);
+}
+
+function scanByName(registry: RegistryLike): PluginRuntimeLike[] {
   const matches: PluginRuntimeLike[] = [];
-  if (typeof registry.forEach === "function") {
-    try {
-      registry.forEach((runtime) => {
-        if (runtime?.name === OFFICIAL_PLUGIN_NAME) matches.push(runtime);
-      });
-    } catch { /* a registry we cannot scan is a plugin we cannot find */ }
-  }
+  if (typeof registry.forEach !== "function") return matches;
+  try {
+    registry.forEach((runtime) => {
+      if (runtime?.name === OFFICIAL_PLUGIN_NAME) matches.push(runtime);
+    });
+  } catch { /* a registry we cannot scan is a plugin we cannot find */ }
   return matches;
+}
+
+async function lookupByIdentity(registry: RegistryLike): Promise<PluginRuntimeLike[]> {
+  if (typeof registry.get !== "function") return [];
+  const mod = await officialModule();
+  if (mod === undefined) return [];
+  try {
+    const runtime = registry.get(mod);
+    return runtime ? [runtime] : [];
+  } catch {
+    return [];
+  }
 }
 
 /** Restart every live fiber of the official plugin. Returns a result value
