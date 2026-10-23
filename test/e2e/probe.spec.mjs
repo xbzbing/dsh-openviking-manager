@@ -96,7 +96,16 @@ test("verifies the existing server-side user key without showing it in the brows
   try {
     await page.goto(manager.url);
     await page.getByRole("button", { name: "Verify connection" }).click();
-    await expect(page.getByRole("status")).toHaveText("Connected as personal/alice.");
+    // The answer lands beside the button that asked, not on the status line,
+    // which the reload notices own.
+    const result = page.locator(".ovm-verifyResult");
+    await expect(result).toHaveText("Connected as personal/alice.");
+    await expect(page.getByRole("status")).not.toContainText("Connected as");
+
+    // Editing the key clears that answer: a stale "connected" next to a new key
+    // would read as if the new key had been checked.
+    await page.getByRole("textbox", { name: /New user key/ }).fill("another-key");
+    await expect(result).toBeEmpty();
     await expect(page.locator("body")).not.toContainText("keep-this-secret");
   } finally {
     await manager.close();
@@ -157,6 +166,7 @@ test("verifying answers even while the first-load reload is still running", asyn
 
     // The button renames itself while in flight, so match either label.
     const verify = page.getByRole("button", { name: /Verify|Verifying/ });
+    const result = page.locator(".ovm-verifyResult");
     await expect(verify).toBeEnabled();
     await verify.click();
 
@@ -164,8 +174,12 @@ test("verifying answers even while the first-load reload is still running", asyn
     // the page, even before the probe answers.
     await expect(verify).toHaveText("Verifying…");
     await expect(verify).toHaveAttribute("aria-busy", "true");
-    await expect(page.getByRole("status")).toHaveText("Verifying…");
-    await expect(page.getByRole("status")).toHaveText("Connected as personal/alice.");
+    await expect(result).toBeEmpty();
+    // The status line is not the answer's home: it still shows the reload that
+    // is in flight, which the probe must not displace.
+    await expect(page.getByRole("status")).toHaveText("Reloading the official memory plugin…");
+    await expect(result).toHaveText("Connected as personal/alice.");
+    await expect(page.getByRole("status")).toHaveText("Reloading the official memory plugin…");
     await expect(verify).toHaveText("Verify connection");
     await expect(verify).toHaveAttribute("aria-busy", "false");
     await expect(page.locator("body")).not.toContainText("keep-this-secret");

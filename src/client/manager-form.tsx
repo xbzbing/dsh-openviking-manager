@@ -183,6 +183,9 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   // Verifying owns its own flag so the button reports work immediately instead
   // of looking dead while the request is in flight.
   const [verifying, setVerifying] = useState(false);
+  /** Where "Verify connection" answers: beside its own button, not on the card's
+   * status line, which the reload notices also write to. */
+  const [verifyResult, setVerifyResult] = useState("");
   /** The rule dropdown is the platform Menu, which is controlled. */
   const [ruleMenuOpen, setRuleMenuOpen] = useState(false);
   // The status line has two kinds of writer: what the user just did, and the
@@ -610,15 +613,16 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   const verify = async () => {
     setVerifying(true);
     // A click must always change the page: the request below can take as long
-    // as the server's own timeout.
-    reportForeground(t("verifying"));
+    // as the server's own timeout, and the button renames itself meanwhile.
+    // The previous answer is cleared so a stale one never sits beside "Verifying…".
+    setVerifyResult("");
     try {
       const probe = (await responseJson(await fetchFn(`${apiPrefix}/probe`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ apiKey }) }))).value as unknown as { reachable: boolean; ready: boolean; authenticated: boolean; identity?: { account: string; user: string } };
-      if (!probe.reachable) reportForeground(t("unreachable"));
-      else if (!probe.ready) reportForeground(t("notReady"));
-      else if (!probe.authenticated) reportForeground(t("keyNotAccepted"));
-      else reportForeground(t("connectedAs", { account: probe.identity?.account ?? "", user: probe.identity?.user ?? "" }));
-    } catch (error) { reportForeground(error instanceof Error ? error.message : t("unreachable")); }
+      if (!probe.reachable) setVerifyResult(t("unreachable"));
+      else if (!probe.ready) setVerifyResult(t("notReady"));
+      else if (!probe.authenticated) setVerifyResult(t("keyNotAccepted"));
+      else setVerifyResult(t("connectedAs", { account: probe.identity?.account ?? "", user: probe.identity?.user ?? "" }));
+    } catch (error) { setVerifyResult(error instanceof Error ? error.message : t("unreachable")); }
     finally { setVerifying(false); }
   };
 
@@ -649,8 +653,17 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
         <label>{t("endpoint")}<input required value={config.url} onChange={(event) => setConfig({ ...config, url: event.target.value })} placeholder="http://127.0.0.1:1933" /></label>
         <label>{t("account")}<input value={config.account} onChange={(event) => setConfig({ ...config, account: event.target.value })} /></label>
         <label>{t("user")}<input value={config.user} onChange={(event) => setConfig({ ...config, user: event.target.value })} /></label>
-        <label>{t("newUserKey")} <span className="ovm-optional">({t("optional")})</span><input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={config.apiKeySet ? t("existingKey", { key: config.apiKeyMasked }) : t("pasteUserKey")} /></label>
-        <p className="ovm-hint">{t("keyHint")}</p><div className="ovm-actions"><button type="submit" disabled={busy}>{t("save")}</button><button type="button" className="ovm-secondary" onClick={() => void verify()} disabled={verifying} aria-busy={verifying}>{verifying ? t("verifying") : t("verify")}</button><a href={studioUrl} target="_blank" rel="noreferrer">{t("openStudio")}</a></div>
+        <label>{t("newUserKey")} <span className="ovm-optional">({t("optional")})</span><input type="password" value={apiKey} onChange={(event) => { setApiKey(event.target.value); setVerifyResult(""); }} placeholder={config.apiKeySet ? t("existingKey", { key: config.apiKeyMasked }) : t("pasteUserKey")} /></label>
+        <p className="ovm-hint">{t("keyHint")}</p>
+        <div className="ovm-actions">
+          <button type="submit" disabled={busy}>{t("save")}</button>
+          <button type="button" className="ovm-secondary" onClick={() => void verify()} disabled={verifying} aria-busy={verifying}>{verifying ? t("verifying") : t("verify")}</button>
+          {/* The answer stays beside the button that asked: on the card's status
+              line it competes with the reload notices above. `aria-live`
+              announces it as it lands. */}
+          <span className="ovm-verifyResult" aria-live="polite">{verifyResult}</span>
+          <a href={studioUrl} target="_blank" rel="noreferrer">{t("openStudio")}</a>
+        </div>
       </form>
     </section>
     {recallScope === undefined ? null : (
