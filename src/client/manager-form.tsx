@@ -763,32 +763,37 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     )}
     {workspaces === undefined || workspaces.available === false ? null : (
       <section className="ovm-card" aria-label={t("workspacesTitle")}>
-        <h2>{t("workspacesTitle")}</h2>
-        {/* Read-only: this is the answer to "which of my workspaces share
-            memories", derived per directory exactly as a session would get it. */}
-        <p className="ovm-hint">{t("workspacesHint")}</p>
-        {workspaces.workspaces.length === 0
-          ? <p className="ovm-hint">{t("workspacesEmpty")}</p>
-          : (
-            <ul className="ovm-workspaces">
-              {workspaces.workspaces.map((workspace) => (
-                <li key={workspace.path}>
-                  <div className="ovm-workspaceHead">
-                    <code>{workspace.path}</code>
-                    <span className={workspace.userLevelSpace ? "ovm-warning" : "ovm-hint"}>
-                      {workspace.peer === "" ? t("projectUserSpace") : workspace.peer}
-                    </span>
-                  </div>
-                  {workspace.sharedWith.length > 0
-                    ? <p className="ovm-warning">{t("workspaceShares", { peers: workspace.sharedWith.join(", ") })}</p>
-                    : <p className="ovm-hint">{t("workspaceIsolated")}</p>}
-                  {workspace.overrides.length > 0
-                    ? <p className="ovm-hint">{t("workspaceOverrides", { keys: workspace.overrides.join(", ") })}</p>
-                    : null}
-                </li>
-              ))}
-            </ul>
-          )}
+        {/* Folded by default: this is an inspection, not a setting, and the rows
+            are long. Read-only either way — it answers "which of my workspaces
+            share memories" as a session in each one would be resolved. */}
+        <details className="ovm-collapse">
+          <summary><h2>{t("workspacesTitle")}</h2></summary>
+          <div className="ovm-collapseContent">
+            <p className="ovm-hint">{t("workspacesHint")}</p>
+            {workspaces.workspaces.length === 0
+              ? <p className="ovm-hint">{t("workspacesEmpty")}</p>
+              : (
+                <ul className="ovm-workspaces">
+                  {workspaces.workspaces.map((workspace) => (
+                    <li key={workspace.path}>
+                      <div className="ovm-workspaceHead">
+                        <code>{workspace.path}</code>
+                        <span className={workspace.userLevelSpace ? "ovm-warning" : "ovm-hint"}>
+                          {workspace.peer === "" ? t("projectUserSpace") : workspace.peer}
+                        </span>
+                      </div>
+                      {workspace.sharedWith.length > 0
+                        ? <p className="ovm-warning">{t("workspaceShares", { peers: workspace.sharedWith.join(", ") })}</p>
+                        : <p className="ovm-hint">{t("workspaceIsolated")}</p>}
+                      {workspace.overrides.length > 0
+                        ? <p className="ovm-hint">{t("workspaceOverrides", { keys: workspace.overrides.join(", ") })}</p>
+                        : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+          </div>
+        </details>
       </section>
     )}
     {peerId === undefined ? null : (

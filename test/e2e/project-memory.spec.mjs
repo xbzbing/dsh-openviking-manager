@@ -148,8 +148,13 @@ test("the workspace list says which directories share one namespace", async ({ p
     });
     try {
       await page.goto(listed.url);
-      const card = page.getByRole("region", { name: "Your workspaces" });
+      const card = page.getByRole("region", { name: "Workspace status" });
       await expect(card).toBeVisible();
+
+      // Folded by default: the rows only appear after the summary is opened.
+      await expect(card.locator("li").first()).not.toBeVisible();
+      await card.locator("summary").click();
+      await expect(card.locator("li").first()).toBeVisible();
 
       // Each row's own path is its <code>; a sibling's name also appears in the
       // "shares with" line, so match on the path element, not the row text.
@@ -177,7 +182,7 @@ test("a host that cannot enumerate workspaces hides the list instead of guessing
     await page.goto(fixture.url);
     // The rule card still renders; only the inspection needs the registry.
     await expect(page.getByRole("region", { name: "Which directories share memories" })).toBeVisible();
-    await expect(page.getByRole("region", { name: "Your workspaces" })).toHaveCount(0);
+    await expect(page.getByRole("region", { name: "Workspace status" })).toHaveCount(0);
   } finally {
     await fixture.close();
     await fixture.cleanup();
