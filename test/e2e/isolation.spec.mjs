@@ -57,9 +57,9 @@ test("isolation is on by default, written on first load, and reloaded automatica
   });
   try {
     await page.goto(fixture.url);
-    const control = page.getByRole("tablist", { name: "Disallow recalling memories from other projects" });
-    const isolated = control.getByRole("tab", { name: "this project only" });
-    const shared = control.getByRole("tab", { name: "all projects" });
+    const control = page.getByRole("tablist", { name: "Memory recall scope" });
+    const isolated = control.getByRole("tab", { name: "isolated by project" });
+    const shared = control.getByRole("tab", { name: "shared across projects" });
     await expect(control).toBeVisible();
     // The card warns up front that saving triggers an automatic reload.
     await expect(page.getByText("Saving reloads the official memory plugin automatically")).toBeVisible();
@@ -90,9 +90,9 @@ test("a failed automatic reload is reported on the status line; disabling then n
   const fixture = await startIsolationFixture();
   try {
     await page.goto(fixture.url);
-    const control = page.getByRole("tablist", { name: "Disallow recalling memories from other projects" });
-    const isolated = control.getByRole("tab", { name: "this project only" });
-    const shared = control.getByRole("tab", { name: "all projects" });
+    const control = page.getByRole("tablist", { name: "Memory recall scope" });
+    const isolated = control.getByRole("tab", { name: "isolated by project" });
+    const shared = control.getByRole("tab", { name: "shared across projects" });
     // First-load initialization wrote `actor`, but no plugin can reload here:
     // the outcome is a status line — no banner, no manual reload button.
     await expect(isolated).toHaveAttribute("aria-selected", "true");
@@ -126,8 +126,10 @@ test("renders the isolation section in Simplified Chinese", async ({ page }) => 
   try {
     await page.goto(fixture.url);
     await expect(page.getByRole("heading", { name: "记忆隔离" })).toBeVisible();
-    const control = page.getByRole("tablist", { name: "不允许召回其他项目的记忆" });
-    const isolated = control.getByRole("tab", { name: "仅本项目" });
+    const control = page.getByRole("tablist", { name: "记忆召回范围" });
+    const isolated = control.getByRole("tab", { name: "按项目隔离" });
+    // The two modes name what they do, not "on" and "off".
+    await expect(control.getByRole("tab", { name: "所有项目共享" })).toBeVisible();
     await expect(page.getByText("保存后会自动重新加载官方记忆插件")).toBeVisible();
     await expect(isolated).toHaveAttribute("aria-selected", "true");
     await expect(page.getByRole("status")).toContainText("官方记忆插件已重新加载，新设置已生效。");
