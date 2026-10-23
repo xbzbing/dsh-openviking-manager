@@ -61,9 +61,15 @@ test("recall tuning writes the official keys and reloads the plugin", async ({ p
   let restarts = 0;
   const fixture = await startTuningFixture({
     restartMemoryPlugin: async () => { restarts += 1; return { restarted: true, count: 1 }; },
-    // Isolation and all three product defaults are already pinned, so the only
-    // reload here comes from the save itself.
-    initialConfig: { plugin: { recallPeerScope: "actor", scoreThreshold: 0.5, recallQueryExpansion: "off", timeoutMs: 15000 } },
+    // Isolation, all three tuning defaults and the peer rule are already
+    // pinned, so the only reload here comes from the save itself. The rule is
+    // easy to forget and its first-load pin would make the count 2.
+    initialConfig: {
+      plugin: {
+        recallPeerScope: "actor", scoreThreshold: 0.5, recallQueryExpansion: "off", timeoutMs: 15000,
+        peerSource: ["{git_remote}", "{git_root}", "{cwd}"],
+      },
+    },
   });
   try {
     await page.goto(fixture.url);
@@ -94,6 +100,11 @@ test("recall tuning writes the official keys and reloads the plugin", async ({ p
 
     await expect(page.getByRole("status")).toContainText("The official memory plugin reloaded. The new setting is active.");
     await expect.poll(() => restarts).toBe(1);
+    // A count that is still climbing would pass the poll above by landing on 1
+    // first; the fixture's restart resolves immediately, so a late second
+    // reload has landed by now.
+    await page.waitForTimeout(600);
+    expect(restarts).toBe(1);
 
     const stored = JSON.parse(await readFile(fixture.configPath, "utf8"));
     expect(stored.plugin.dsh.scoreThreshold).toBe(0.62);
