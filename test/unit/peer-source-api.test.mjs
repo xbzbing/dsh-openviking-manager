@@ -1,12 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { createServer } from "node:http";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeManagerRoutes } from "../../lib/manager-api.js";
 
 const SOURCE_PATH = "/plugins/dsh-openviking-manager/api/peer-source";
+const WORKSPACES_PATH = "/plugins/dsh-openviking-manager/api/workspaces";
 
 async function withRoutes(t, ovcliPath, options = {}) {
   const routes = new Map(
@@ -50,6 +52,10 @@ async function tempMachine(t) {
   };
 }
 
+function git(cwd, ...args) {
+  execFileSync("git", args, { cwd, stdio: "ignore" });
+}
+
 test("saving the rule writes the DSH section and leaves the shared one alone", async (t) => {
   const { configPath, env } = await tempMachine(t);
   await writeFile(configPath, JSON.stringify({
@@ -89,4 +95,51 @@ test("a custom template list is stored as a list, and a bad one is refused", asy
   assert.equal(refused.status, 400);
   assert.match(refused.json.error, /unknown peer\.source placeholder/);
   assert.equal(await readFile(configPath, "utf8"), before, "a rejected rule never reaches the file");
+});
+
+test("the workspace list reports which directories share one namespace", async (t) => {
+  const { directory, configPath, env } = await tempMachine(t);
+  await writeFile(configPath, JSON.stringify({ url: "http://127.0.0.1:8008", api_key: "k" }), "utf8");
+
+  // Two clones of one repository, one plain directory, and one repository
+  // without a remote: the first two share, the rest stand alone.
+  const cloneA = join(directory, "checkout-a");
+  const cloneB = join(directory, "checkout-b");
+  for (const cwd of [cloneA, cloneB]) {
+    await mkdir(cwd, { recursive: true });
+    git(cwd, "init", "-q");
+    git(cwd, "remote", "add", "origin", "git@github.com:example/shared.git");
+  }
+  const localOnly = join(directory, "local-only");
+  await mkdir(localOnly, { recursive: true });
+  git(localOnly, "init", "-q");
+  const plain = join(directory, "playground");
+  await mkdir(plain, { recursive: true });
+
+  // Without the directory fallback the plain folder has no namespace at all.
+  const bare = await withRoutes(t, configPath, { env, workspacePaths: () => [cloneA, cloneB, plain] });
+  const before = await call(bare, WORKSPACES_PATH);
+  assert.equal(before.json.value.available, true);
+  const plainBefore = before.json.value.workspaces.find((item) => item.path === plain);
+  assert.equal(plainBefore.peer, "");
+  assert.equal(plainBefore.userLevelSpace, true);
+
+  // With it, each directory resolves its own peer and the clones still share.
+  await call(bare, SOURCE_PATH, { method: "PUT", body: { peerSource: "git-directory" } });
+  const after = await call(bare, WORKSPACES_PATH);
+  const byPath = new Map(after.json.value.workspaces.map((item) => [item.path, item]));
+  assert.equal(byPath.get(cloneA).peer, "github.com-example-shared");
+  // Two clones of one repository are the same namespace, and the list says so.
+  assert.deepEqual(byPath.get(cloneA).sharedWith, [cloneB]);
+  assert.equal(byPath.get(plain).userLevelSpace, false, "a plain directory now has a namespace of its own");
+  assert.notEqual(byPath.get(plain).peer, byPath.get(cloneA).peer);
+});
+
+test("a host that cannot enumerate workspaces says so instead of pretending", async (t) => {
+  const { configPath, env } = await tempMachine(t);
+  const base = await withRoutes(t, configPath, { env });
+  const list = await call(base, WORKSPACES_PATH);
+  assert.equal(list.status, 200);
+  assert.equal(list.json.value.available, false);
+  assert.deepEqual(list.json.value.workspaces, []);
 });

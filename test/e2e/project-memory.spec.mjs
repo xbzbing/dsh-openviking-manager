@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,7 +11,7 @@ const root = fileURLToPath(new URL("../..", import.meta.url));
 /** A manager API server over a throwaway ovcli.conf, with the official
  * loader's machine state (git-identity cache, workspace registry) redirected
  * into the same temp directory so the user's real one is never touched. */
-async function startFixture({ initialConfig, env: extraEnv = {} } = {}) {
+async function startFixture({ workspacePaths, initialConfig, env: extraEnv = {} } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "dsh-ovm-project-e2e-"));
   const configPath = join(directory, "ovcli.conf");
   const base = { url: "http://127.0.0.1:8008", api_key: "keep-this-secret", account: "personal", user: "alice" };
@@ -25,6 +26,7 @@ async function startFixture({ initialConfig, env: extraEnv = {} } = {}) {
     ...extraEnv,
   };
   const options = { ovcliPath: configPath, env };
+  if (workspacePaths) options.workspacePaths = workspacePaths;
   const routes = new Map(api.makeManagerRoutes(options).map((route) => [route.path, route.handler]));
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
@@ -54,6 +56,24 @@ async function startFixture({ initialConfig, env: extraEnv = {} } = {}) {
       setTimeout(() => server.closeAllConnections?.(), 500).unref();
     }),
   };
+}
+
+function git(cwd, ...args) {
+  execFileSync("git", args, { cwd, stdio: "ignore" });
+}
+
+async function repo(directory, name, remote) {
+  const cwd = join(directory, name);
+  await mkdir(cwd, { recursive: true });
+  git(cwd, "init", "-q");
+  if (remote) git(cwd, "remote", "add", "origin", remote);
+  return cwd;
+}
+
+async function plain(directory, name) {
+  const cwd = join(directory, name);
+  await mkdir(cwd, { recursive: true });
+  return cwd;
 }
 
 /** The recommended rule, as it is stored: the official loader has no preset
@@ -104,6 +124,79 @@ test("the card warns when the rule leaves non-repository directories sharing spa
     await expect(select).toHaveValue("git-directory");
     await expect(card.getByRole("alert").filter({ hasText: "shares the user-level space" })).toHaveCount(0);
     expect(JSON.parse(await readFile(fixture.configPath, "utf8")).plugin.dsh.peerSource).toEqual(RULE);
+  } finally {
+    await fixture.close();
+    await fixture.cleanup();
+  }
+});
+
+test("the workspace list says which directories share one namespace", async ({ page }) => {
+  const fixture = await startFixture();
+  try {
+    // Two clones of one repository, plus a plain directory outside git.
+    const cloneA = await repo(fixture.directory, "checkout-a", "git@github.com:example/shared.git");
+    const cloneB = await repo(fixture.directory, "checkout-b", "git@github.com:example/shared.git");
+    const playground = await plain(fixture.directory, "playground");
+    const workspaces = [cloneA, cloneB, playground];
+
+    // The list comes from the host's registry, so the fixture supplies it.
+    await fixture.close();
+    const listed = await startFixture({
+      workspacePaths: () => workspaces,
+      initialConfig: { plugin: { peerSource: RULE } },
+    });
+    try {
+      await page.goto(listed.url);
+      const card = page.getByRole("region", { name: "Your workspaces" });
+      await expect(card).toBeVisible();
+
+      // Each row's own path is its <code>; a sibling's name also appears in the
+      // "shares with" line, so match on the path element, not the row text.
+      const shared = card.locator("li").filter({ has: page.locator("code", { hasText: cloneA }) });
+      await expect(shared).toContainText("github.com-example-shared");
+      await expect(shared).toContainText("Shares memories with");
+      await expect(shared).toContainText("checkout-b");
+
+      // A plain directory gets a namespace of its own, so it is isolated.
+      const isolated = card.locator("li").filter({ has: page.locator("code", { hasText: playground }) });
+      await expect(isolated).toContainText("Isolated");
+      await expect(isolated).not.toContainText("user-level space");
+    } finally {
+      await listed.close();
+      await listed.cleanup();
+    }
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test("a host that cannot enumerate workspaces hides the list instead of guessing", async ({ page }) => {
+  const fixture = await startFixture();
+  try {
+    await page.goto(fixture.url);
+    // The rule card still renders; only the inspection needs the registry.
+    await expect(page.getByRole("region", { name: "Which directories share memories" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Your workspaces" })).toHaveCount(0);
+  } finally {
+    await fixture.close();
+    await fixture.cleanup();
+  }
+});
+
+test("an environment override makes the rule card read-only", async ({ page }) => {
+  const fixture = await startFixture({
+    initialConfig: { plugin: { peerSource: RULE } },
+    env: { OPENVIKING_PEER_SOURCE: "none" },
+  });
+  try {
+    await page.goto(fixture.url);
+    const card = page.getByRole("region", { name: "Which directories share memories" });
+    const select = card.getByRole("combobox", { name: "Peer source" });
+    // The environment outranks any file this plugin can write, so the control
+    // is read-only and the page says why.
+    await expect(select).toBeDisabled();
+    await expect(select).toHaveValue("none");
+    await expect(card.getByRole("alert").filter({ hasText: "OPENVIKING_PEER_SOURCE" })).toBeVisible();
   } finally {
     await fixture.close();
     await fixture.cleanup();

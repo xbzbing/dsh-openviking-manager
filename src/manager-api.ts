@@ -48,6 +48,9 @@ const MAX_CWD_CHARS = 4096;
  * fiber restart that neither resolves nor rejects would leave the panel on
  * "reloading" with every control disabled, so the request has to end. */
 const RESTART_TIMEOUT_MS = 30_000;
+/** Each workspace costs one git identity resolution plus a workspace-layer
+ * read, so the list is bounded rather than unbounded work per request. */
+const MAX_WORKSPACES = 64;
 /** The directory the plugin process resolved its config for, i.e. the project
  * whose workspace layers the applied plugin actually loaded. */
 const HOST_CWD = process.cwd();
@@ -61,6 +64,10 @@ export interface ManagerApiOptions {
   restartMemoryPlugin?: () => Promise<RestartResult>;
   /** Override the restart budget; tests use a value in the millisecond range. */
   restartTimeoutMs?: number;
+  /** The sidebar workspaces, as absolute paths. Supplied by the host from
+   * `ctx.workspaceRegistry.list()`; absent means "this host cannot enumerate
+   * them", and the panel then offers the manual path field only. */
+  workspacePaths?: () => string[];
   /** Env layer for the recall-scope view and for resolving which ovcli.conf /
    * ov.conf the official plugin reads; defaults to process.env. Tests pass an
    * explicit object so a machine-level OPENVIKING_* variable cannot leak into
@@ -116,6 +123,44 @@ function requiredString(value: unknown, key: string): string {
   const item = stringAt(value, key)?.trim();
   if (item === undefined || item === "") throw new Error(`${key} must be a non-empty string`);
   return item;
+}
+
+/** One sidebar workspace, resolved: the peer its sessions will use, and
+ * whether that namespace is shared with another workspace in the list. */
+export interface WorkspaceSummary {
+  path: string;
+  workspaceRoot: string;
+  peer: string;
+  peerOrigin: string;
+  /** Other workspaces that resolve to the same peer (their paths). */
+  sharedWith: string[];
+  /** The peer is empty, so this workspace lands in the user-level space that
+   * every directory without a peer shares. */
+  userLevelSpace: boolean;
+  /** Workspace-layer keys this directory declares, e.g. ["peer.id"]. */
+  overrides: string[];
+  risks: string[];
+}
+
+/** Attach the cross-workspace answer to each resolved project. Two distinct
+ * directories under one peer share memories; an empty peer means they share
+ * the user-level space with every other empty one. */
+export function summarizeWorkspaces(projects: MemoryProject[]): WorkspaceSummary[] {
+  return projects.map((project) => {
+    const sharedWith = project.peer === ""
+      ? projects.filter((other) => other !== project && other.peer === "").map((other) => other.cwd)
+      : projects.filter((other) => other !== project && other.peer === project.peer).map((other) => other.cwd);
+    return {
+      path: project.cwd,
+      workspaceRoot: project.workspaceRoot,
+      peer: project.peer,
+      peerOrigin: project.peerOrigin,
+      sharedWith,
+      userLevelSpace: project.peer === "",
+      overrides: project.declarations.map((item) => item.key),
+      risks: project.risks.map((risk) => risk.code),
+    };
+  });
 }
 
 /** Resolve with the operation's own result, or with a `restart-timeout`
@@ -551,6 +596,27 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
           writeJson(res, 200, { ok: true, value: await peerSourceView(ovcliPath, { env }) });
         } catch (error) {
           writeJson(res, 400, { ok: false, error: error instanceof Error ? error.message : "Unable to save the peer source rule" });
+        }
+      },
+    },
+    {
+      kind: "exact",
+      path: `${MANAGER_API_PREFIX}/workspaces`,
+      handler: async (req, res) => {
+        if (rejectCrossOrigin(req, res)) return;
+        if (req.method !== "GET") {
+          writeJson(res, 405, { error: "method not allowed" });
+          return;
+        }
+        try {
+          const paths = options.workspacePaths?.() ?? [];
+          const projects = await Promise.all(paths.slice(0, MAX_WORKSPACES).map((path) => readProject(path)));
+          writeJson(res, 200, {
+            ok: true,
+            value: { available: options.workspacePaths !== undefined, workspaces: summarizeWorkspaces(projects) },
+          });
+        } catch (error) {
+          writeJson(res, 500, { ok: false, error: error instanceof Error ? error.message : "Unable to list the workspaces" });
         }
       },
     },

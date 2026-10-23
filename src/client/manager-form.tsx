@@ -51,6 +51,18 @@ interface PeerSourceView {
   recommended: "git" | "git-directory" | "cwd" | "none";
   needsAttention: boolean;
 }
+/** One sidebar workspace, as the host resolved it. */
+interface WorkspaceSummary {
+  path: string;
+  workspaceRoot: string;
+  peer: string;
+  peerOrigin: string;
+  sharedWith: string[];
+  userLevelSpace: boolean;
+  overrides: string[];
+  risks: string[];
+}
+interface WorkspacesView { available: boolean; workspaces: WorkspaceSummary[]; }
 export interface ManagerFormProps { apiPrefix?: string; fetchFn?: typeof fetch; t?: Translation; }
 
 /** One display key per server-side isolation risk code. */
@@ -157,6 +169,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   // plugin resolved at apply. Any other value is a project the user wants to
   // inspect: peer derivation is per session, so it is exact for any path.
   const [peerSource, setPeerSource] = useState<PeerSourceView>();
+  const [workspaces, setWorkspaces] = useState<WorkspacesView>();
   // The first-load pass pins product defaults and may reload the official
   // plugin. It runs on its own state: a slow or stuck reload must not leave the
   // connection form disabled, which is what a single shared `busy` did.
@@ -221,6 +234,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     // late read could overwrite the value a save just wrote.
     void initializeRecallSettings();
     void loadPeerId();
+    void loadWorkspaces();
   }, []);
 
   // The peer id draft follows the loaded view: an empty box means "no
@@ -373,6 +387,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
       if (pending) {
         setStatus(t("reloading"));
         await runRestart();
+        await loadWorkspaces();
       }
     } catch (error) {
       setStatus(step === "scope"
@@ -497,6 +512,13 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
       return value;
     } catch { if (hideOnFailure) setPeerSource(undefined); return undefined; }
   };
+  const loadWorkspaces = async (): Promise<WorkspacesView | undefined> => {
+    try {
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/workspaces`))).value as WorkspacesView;
+      setWorkspaces(value);
+      return value;
+    } catch { setWorkspaces(undefined); return undefined; }
+  };
   const savePeerSource = async (choice: PeerSourceView["recommended"]) => {
     setBusy(true);
     try {
@@ -509,6 +531,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
       // A rule change only reaches the running plugin through a reload.
       setStatus(t("reloading"));
       await runRestart();
+      await loadWorkspaces();
     } catch (error) {
       setStatus(t("peerSourceSaveFailed", { error: error instanceof Error ? error.message : "unknown" }));
     } finally { setBusy(false); }
@@ -665,6 +688,36 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
         {peerSource.origin === "env" ? <p className="ovm-warning" role="alert">{t("envOverrideWarning", { variable: "OPENVIKING_PEER_SOURCE" })}</p> : null}
         {peerSource.sharedValue !== "" ? <p className="ovm-hint">{t("peerSourceSharedNote", { value: peerSource.sharedValue })}</p> : null}
         {peerSource.needsAttention ? <p className="ovm-warning" role="alert">{t("peerSourceAttention")}</p> : null}
+      </section>
+    )}
+    {workspaces === undefined || workspaces.available === false ? null : (
+      <section className="ovm-card" aria-label={t("workspacesTitle")}>
+        <h2>{t("workspacesTitle")}</h2>
+        {/* Read-only: this is the answer to "which of my workspaces share
+            memories", derived per directory exactly as a session would get it. */}
+        <p className="ovm-hint">{t("workspacesHint")}</p>
+        {workspaces.workspaces.length === 0
+          ? <p className="ovm-hint">{t("workspacesEmpty")}</p>
+          : (
+            <ul className="ovm-workspaces">
+              {workspaces.workspaces.map((workspace) => (
+                <li key={workspace.path}>
+                  <div className="ovm-workspaceHead">
+                    <code>{workspace.path}</code>
+                    <span className={workspace.userLevelSpace ? "ovm-warning" : "ovm-hint"}>
+                      {workspace.peer === "" ? t("projectUserSpace") : workspace.peer}
+                    </span>
+                  </div>
+                  {workspace.sharedWith.length > 0
+                    ? <p className="ovm-warning">{t("workspaceShares", { peers: workspace.sharedWith.join(", ") })}</p>
+                    : <p className="ovm-hint">{t("workspaceIsolated")}</p>}
+                  {workspace.overrides.length > 0
+                    ? <p className="ovm-hint">{t("workspaceOverrides", { keys: workspace.overrides.join(", ") })}</p>
+                    : null}
+                </li>
+              ))}
+            </ul>
+          )}
       </section>
     )}
     {peerId === undefined ? null : (

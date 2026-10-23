@@ -42,6 +42,12 @@ export type TranslationKey =
   | "peerSourceSharedNote"
   | "peerSourceAttention"
   | "peerSourceSaveFailed"
+  | "workspacesTitle"
+  | "workspacesHint"
+  | "workspacesEmpty"
+  | "workspaceShares"
+  | "workspaceIsolated"
+  | "workspaceOverrides"
   | "openStudio"
   | "unreachable"
   | "notReady"
@@ -219,6 +225,12 @@ const en: Record<TranslationKey, string> = {
   peerSourceSharedNote: "The shared plugin section still says {value} for the other harnesses on this machine; this manager only writes plugin.dsh.",
   peerSourceAttention: "With this rule a workspace that is not a git repository shares the user-level space with every other directory that has no peer. Repository first with a directory fallback keeps clones together and plain folders separate.",
   peerSourceSaveFailed: "Unable to save the peer source rule: {error}",
+  workspacesTitle: "Your workspaces",
+  workspacesHint: "Each workspace as a session in it would be resolved. Two workspaces on one peer share memories; an empty peer means the shared user-level space.",
+  workspacesEmpty: "No workspaces are registered on this host.",
+  workspaceShares: "Shares memories with: {peers}",
+  workspaceIsolated: "Isolated: no other workspace resolves to this peer.",
+  workspaceOverrides: "This workspace declares its own overrides: {keys}",
   openStudio: "Open Studio",
   unreachable: "OpenViking is unreachable at this endpoint.",
   notReady: "OpenViking is reachable but not ready.",
@@ -395,6 +407,12 @@ const zh: Record<TranslationKey, string> = {
   peerSourceSharedNote: "共享 plugin 段仍写着 {value}，对本机其他 harness 生效；本插件只写 plugin.dsh。",
   peerSourceAttention: "按当前规则，不是 git 仓库的工作区会和其它推导不出 peer 的目录共用用户级空间。「仓库优先 + 目录兜底」能让克隆共享、普通目录各自独立。",
   peerSourceSaveFailed: "无法保存 peer 来源规则：{error}",
+  workspacesTitle: "你的工作区",
+  workspacesHint: "按「如果会话在这个目录里」逐个解析的结果。落在同一个 peer 的工作区共享记忆；peer 为空表示共用用户级空间。",
+  workspacesEmpty: "该宿主上没有注册的工作区。",
+  workspaceShares: "与这些工作区共享记忆：{peers}",
+  workspaceIsolated: "已隔离：没有其它工作区落到同一个 peer。",
+  workspaceOverrides: "该工作区自己声明了覆盖：{keys}",
   openStudio: "打开 Studio",
   unreachable: "该服务地址无法访问 OpenViking。",
   notReady: "OpenViking 可访问，但尚未就绪。",

@@ -32,8 +32,26 @@ type HostContext = {
     listener: (session: { id?: string }, event: { type?: string }) => void,
   ): () => void;
   webServer: { register(route: WebRoute): () => void };
+  /** Present on hosts that own workspaces. Optional on purpose: it is not in
+   * `inject`, so a host without this service still loads this plugin and the
+   * panel simply offers the manual path field. */
+  workspaceRegistry?: { list?: () => Array<{ path?: string }> };
   tools: { guard(guard: (exec: { name: string; agent?: AgentLike }) => string | undefined): () => void };
 };
+
+/** Absolute workspace directories the sidebar shows. A missing or broken
+ * registry yields none: the panel then falls back to the manual path field
+ * instead of failing the whole page. */
+function workspacePathsOf(host: HostContext): string[] {
+  try {
+    const workspaces = host.workspaceRegistry?.list?.() ?? [];
+    return workspaces
+      .map((workspace) => (typeof workspace?.path === "string" ? workspace.path : ""))
+      .filter((path) => path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path));
+  } catch {
+    return [];
+  }
+}
 
 function agentSessionId(agent: AgentLike): string | undefined {
   return agent.id ?? agent.session?.id;
@@ -50,6 +68,7 @@ export function apply(ctx: Context): void {
     // the DSH instance. The official code and behaviour stay untouched.
     const disposers = makeManagerRoutes({
       restartMemoryPlugin: () => restartOfficialOpenViking(ctx),
+      workspacePaths: () => workspacePathsOf(host),
     }).map((route) => host.webServer.register(route));
     return () => {
       for (const dispose of disposers) dispose();
