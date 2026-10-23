@@ -755,7 +755,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
             );
           })()}
         </div>
-        <p className="ovm-hint"><code>{peerSource.templates.length === 0 ? "[]" : peerSource.templates.join(" → ")}</code> · {t(SOURCE_KEYS[peerSource.origin] ?? "scopeSourceDefault")}</p>
+        <p className="ovm-hint ovm-ruleNote"><code>{peerSource.templates.length === 0 ? "[]" : peerSource.templates.join(" → ")}</code> · {t(SOURCE_KEYS[peerSource.origin] ?? "scopeSourceDefault")}</p>
         {peerSource.origin === "env" ? <p className="ovm-warning" role="alert">{t("envOverrideWarning", { variable: "OPENVIKING_PEER_SOURCE" })}</p> : null}
         {peerSource.sharedValue !== "" ? <p className="ovm-hint">{t("peerSourceSharedNote", { value: peerSource.sharedValue })}</p> : null}
         {peerSource.needsAttention ? <p className="ovm-warning" role="alert">{t("peerSourceAttention")}</p> : null}

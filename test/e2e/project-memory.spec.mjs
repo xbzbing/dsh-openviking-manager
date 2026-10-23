@@ -85,7 +85,7 @@ test("the first load pins the recommended rule, and the card explains it", async
   try {
     await page.goto(fixture.url);
 
-    const card = page.getByRole("region", { name: "Which directories share memories" });
+    const card = page.getByRole("region", { name: "Memory isolation rule" });
     await expect(card).toBeVisible();
     // It must not read like a per-project setting.
     await expect(card).toContainText("the official plugin derives one peer per session");
@@ -114,7 +114,7 @@ test("the card warns when the rule leaves non-repository directories sharing spa
   const fixture = await startFixture({ initialConfig: { plugin: { dsh: { peerSource: "git" } } } });
   try {
     await page.goto(fixture.url);
-    const card = page.getByRole("region", { name: "Which directories share memories" });
+    const card = page.getByRole("region", { name: "Memory isolation rule" });
     const trigger = card.getByRole("button", { name: "Peer source" });
     await expect(trigger).toContainText("Repository only");
     await expect(card.getByRole("alert").filter({ hasText: "shares the user-level space" })).toBeVisible();
@@ -181,7 +181,7 @@ test("a host that cannot enumerate workspaces hides the list instead of guessing
   try {
     await page.goto(fixture.url);
     // The rule card still renders; only the inspection needs the registry.
-    await expect(page.getByRole("region", { name: "Which directories share memories" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Memory isolation rule" })).toBeVisible();
     await expect(page.getByRole("region", { name: "Workspace status" })).toHaveCount(0);
   } finally {
     await fixture.close();
@@ -196,7 +196,7 @@ test("an environment override makes the rule card read-only", async ({ page }) =
   });
   try {
     await page.goto(fixture.url);
-    const card = page.getByRole("region", { name: "Which directories share memories" });
+    const card = page.getByRole("region", { name: "Memory isolation rule" });
     const trigger = card.getByRole("button", { name: "Peer source" });
     // The environment outranks any file this plugin can write, so the control
     // is read-only and the page says why.
