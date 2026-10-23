@@ -1,4 +1,10 @@
 import { useEffect, useState } from "react";
+import {
+  IconChevronDownOutlineRegular,
+  Menu,
+  SegmentedControl,
+  type MenuItem,
+} from "@deepseek-ai/dsh-client-ui-primitives";
 import { browserLocale, createTranslation, type Translation, type TranslationKey } from "./i18n.js";
 
 export interface ConfigView { url: string; account: string; user: string; apiKeySet: boolean; apiKeyMasked: string; }
@@ -177,6 +183,8 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   // Verifying owns its own flag so the button reports work immediately instead
   // of looking dead while the request is in flight.
   const [verifying, setVerifying] = useState(false);
+  /** The rule dropdown is the platform Menu, which is controlled. */
+  const [ruleMenuOpen, setRuleMenuOpen] = useState(false);
 
   const load = async () => {
     setBusy(true);
@@ -627,20 +635,19 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     {recallScope === undefined ? null : (
       <section className="ovm-card" aria-label={t("projectTitle")}>
         <h2>{t("projectTitle")}</h2>
-        <label className="ovm-switchRow">
-          <span className="ovm-switchBox">
-            <input
-              type="checkbox"
-              role="switch"
-              className="ovm-switchInput"
-              disabled={busy || initializing || recallScope.source === "env" || recallScope.source === "workspace"}
-              checked={recallScope.scope === "actor"}
-              onChange={(event) => void setScope(event.target.checked)}
-            />
-            <span className="ovm-switchTrack" aria-hidden="true" />
-          </span>
-          <span>{t("isolateByTopicLabel")}</span>
-        </label>
+        {/* The platform has no switch: its cards express a two-choice mode with
+            the segmented control, so this does the same. */}
+        <SegmentedControl
+          id="ovm-isolation"
+          label={t("isolateByTopicLabel")}
+          value={recallScope.scope}
+          disabled={busy || initializing || recallScope.source === "env" || recallScope.source === "workspace"}
+          options={[
+            { value: "all", label: t("scopeAll") },
+            { value: "actor", label: t("scopeActor") },
+          ]}
+          onChange={(next: string) => void setScope(next === "actor")}
+        />
         <p className="ovm-hint ovm-isolationHint">{t("isolationHint")}</p>
         <p className="ovm-hint ovm-isolationHint">{t("reloadNotice")}</p>
         {recallScope.source === "env" ? <p className="ovm-warning" role="alert">{t("envOverrideWarning", { variable: "OPENVIKING_RECALL_PEER_SCOPE" })}</p> : null}
@@ -667,23 +674,53 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
             per session from that session's directory, so this decides the shape
             of every derivation rather than naming one project. */}
         <p className="ovm-hint">{t("peerSourceHint")}</p>
-        <label>{t("peerSourceLabel")}
-          <select
-            value={peerSource.choice}
-            disabled={busy || peerSource.origin === "env"}
-            onChange={(event) => {
-              const next = event.target.value;
-              if (next === "custom") return;
-              void savePeerSource(next as PeerSourceView["recommended"]);
-            }}
-          >
-            {peerSource.choice === "custom" ? <option value="custom">{t("peerSourceCustom")}</option> : null}
-            <option value="git-directory">{t("peerSourceGitDirectory")}</option>
-            <option value="git">{t("peerSourceGit")}</option>
-            <option value="cwd">{t("peerSourceCwd")}</option>
-            <option value="none">{t("peerSourceNone")}</option>
-          </select>
-        </label>
+        <div className="ovm-field">
+          <span className="ovm-fieldLabel" id="ovm-peer-source-label">{t("peerSourceLabel")}</span>
+          {(() => {
+            const choices: Array<{ value: PeerSourceView["recommended"]; label: string }> = [
+              { value: "git-directory", label: t("peerSourceGitDirectory") },
+              { value: "git", label: t("peerSourceGit") },
+              { value: "cwd", label: t("peerSourceCwd") },
+              { value: "none", label: t("peerSourceNone") },
+            ];
+            const current = choices.find((item) => item.value === peerSource.choice)
+              ?? { value: "git" as const, label: t("peerSourceCustom") };
+            const items: MenuItem[] = choices.map((item) => ({
+              id: item.value,
+              label: item.label,
+              disabled: busy || peerSource.origin === "env",
+            }));
+            return (
+              <Menu
+                open={ruleMenuOpen}
+                align="start"
+                selection="check"
+                selectedId={peerSource.choice}
+                items={items}
+                onClose={() => setRuleMenuOpen(false)}
+                onSelect={(id: string) => {
+                  setRuleMenuOpen(false);
+                  if (id === peerSource.choice) return;
+                  void savePeerSource(id as PeerSourceView["recommended"]);
+                }}
+                anchor={(
+                  <button
+                    type="button"
+                    className="ovm-select"
+                    aria-haspopup="menu"
+                    aria-expanded={ruleMenuOpen}
+                    aria-labelledby="ovm-peer-source-label"
+                    disabled={busy || peerSource.origin === "env"}
+                    onClick={() => setRuleMenuOpen((open) => !open)}
+                  >
+                    <span>{current.label}</span>
+                    <IconChevronDownOutlineRegular size={14} />
+                  </button>
+                )}
+              />
+            );
+          })()}
+        </div>
         <p className="ovm-hint"><code>{peerSource.templates.length === 0 ? "[]" : peerSource.templates.join(" → ")}</code> · {t(SOURCE_KEYS[peerSource.origin] ?? "scopeSourceDefault")}</p>
         {peerSource.origin === "env" ? <p className="ovm-warning" role="alert">{t("envOverrideWarning", { variable: "OPENVIKING_PEER_SOURCE" })}</p> : null}
         {peerSource.sharedValue !== "" ? <p className="ovm-hint">{t("peerSourceSharedNote", { value: peerSource.sharedValue })}</p> : null}

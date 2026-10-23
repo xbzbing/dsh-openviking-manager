@@ -57,14 +57,16 @@ test("isolation is on by default, written on first load, and reloaded automatica
   });
   try {
     await page.goto(fixture.url);
-    const toggle = page.getByLabel("Disallow recalling memories from other projects");
-    await expect(toggle).toBeVisible();
+    const control = page.getByRole("tablist", { name: "Disallow recalling memories from other projects" });
+    const isolated = control.getByRole("tab", { name: "this project only" });
+    const shared = control.getByRole("tab", { name: "all projects" });
+    await expect(control).toBeVisible();
     // The card warns up front that saving triggers an automatic reload.
     await expect(page.getByText("Saving reloads the official memory plugin automatically")).toBeVisible();
 
     // First load finds no key (official default `all`), so the product default
     // pins `actor` once and reloads — the switch ends up on.
-    await expect(toggle).toBeChecked();
+    await expect(isolated).toHaveAttribute("aria-selected", "true");
     await expect.poll(() => restarts).toBe(1);
     await expect(page.getByRole("status")).toContainText("The official memory plugin reloaded. The new setting is active.");
     const storedAfterInit = JSON.parse(await readFile(fixture.configPath, "utf8"));
@@ -73,7 +75,7 @@ test("isolation is on by default, written on first load, and reloaded automatica
     await expect(page.getByRole("button", { name: "Restart official memory plugin" })).toHaveCount(0);
 
     // Turning isolation off writes the key away and reloads again.
-    await toggle.uncheck();
+    await shared.click();
     await expect.poll(() => restarts).toBe(2);
     await expect(page.getByRole("status")).toContainText("The official memory plugin reloaded. The new setting is active.");
     const storedAfterDisable = JSON.parse(await readFile(fixture.configPath, "utf8"));
@@ -88,10 +90,12 @@ test("a failed automatic reload is reported on the status line; disabling then n
   const fixture = await startIsolationFixture();
   try {
     await page.goto(fixture.url);
-    const toggle = page.getByLabel("Disallow recalling memories from other projects");
+    const control = page.getByRole("tablist", { name: "Disallow recalling memories from other projects" });
+    const isolated = control.getByRole("tab", { name: "this project only" });
+    const shared = control.getByRole("tab", { name: "all projects" });
     // First-load initialization wrote `actor`, but no plugin can reload here:
     // the outcome is a status line — no banner, no manual reload button.
-    await expect(toggle).toBeChecked();
+    await expect(isolated).toHaveAttribute("aria-selected", "true");
     await expect(page.getByRole("status")).toContainText("Restart the DSH instance manually");
     await expect(page.getByRole("alert")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Restart official memory plugin" })).toHaveCount(0);
@@ -101,7 +105,7 @@ test("a failed automatic reload is reported on the status line; disabling then n
 
     // The running snapshot is still the official `all`, so writing `all` back
     // matches it: saved with no reload and the status line settles.
-    await toggle.uncheck();
+    await shared.click();
     await expect(page.getByRole("status")).toContainText("Memory isolation setting saved.");
     await expect(page.getByRole("alert")).toHaveCount(0);
     const storedAfterDisable = JSON.parse(await readFile(fixture.configPath, "utf8"));
@@ -122,9 +126,10 @@ test("renders the isolation section in Simplified Chinese", async ({ page }) => 
   try {
     await page.goto(fixture.url);
     await expect(page.getByRole("heading", { name: "记忆隔离" })).toBeVisible();
-    const toggle = page.getByLabel("不允许召回其他项目的记忆");
+    const control = page.getByRole("tablist", { name: "不允许召回其他项目的记忆" });
+    const isolated = control.getByRole("tab", { name: "仅本项目" });
     await expect(page.getByText("保存后会自动重新加载官方记忆插件")).toBeVisible();
-    await expect(toggle).toBeChecked();
+    await expect(isolated).toHaveAttribute("aria-selected", "true");
     await expect(page.getByRole("status")).toContainText("官方记忆插件已重新加载，新设置已生效。");
     await expect(page.getByRole("alert")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "重启官方记忆插件" })).toHaveCount(0);

@@ -13,7 +13,9 @@ const result = await build({
   format: "cjs",
   platform: "browser",
   target: ["es2022"],
-  external: ["react", "react/jsx-runtime"],
+  // Platform seeds stay external: the shell provides them, and bundling a
+  // second copy would drift from the host's own version.
+  external: ["react", "react/jsx-runtime", "@deepseek-ai/dsh-client-ui-primitives"],
   jsx: "automatic",
   write: false,
   logLevel: "info",
@@ -39,6 +41,10 @@ await build({
   format: "iife",
   platform: "browser",
   target: ["es2022"],
+  // The fixture has no module loader and no shell, so the platform seeds the
+  // shipped bundle keeps external cannot resolve there. It is aliased to a shim
+  // that renders the same accessible controls, for this build only.
+  alias: { "@deepseek-ai/dsh-client-ui-primitives": join(root, "src", "client", "primitives.shim.tsx") },
   jsx: "automatic",
   outfile: join(root, "lib", "standalone.js"),
   logLevel: "info",

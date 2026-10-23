@@ -115,7 +115,7 @@ test("opens the recovery section on the list-accounts tab", async ({ page }) => 
     await page.goto(manager.url);
     await page.locator("details.ovm-recovery summary").click();
 
-    const tabs = page.getByRole("tab");
+    const tabs = page.getByRole("tablist", { name: "Recover or initialize access" }).getByRole("tab");
     await expect(tabs).toHaveCount(4);
     await expect(tabs.first()).toHaveText("List accounts");
     await expect(page.getByRole("tab", { name: "List accounts" })).toHaveAttribute("aria-selected", "true");
@@ -181,7 +181,7 @@ test("lists existing accounts and users using one temporary root key", async ({ 
   try {
     await page.goto(manager.url);
     await page.locator("details.ovm-recovery summary").click();
-    await expect(page.getByRole("tablist")).toBeVisible();
+    await expect(page.getByRole("tablist", { name: "Recover or initialize access" })).toBeVisible();
     await expect(page.getByRole("tab", { name: "List accounts" })).toHaveAttribute("aria-selected", "true");
     await expect(page.getByRole("heading", { name: "Create account and first user" })).not.toBeVisible();
 

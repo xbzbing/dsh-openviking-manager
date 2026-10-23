@@ -189,6 +189,9 @@ test("clearing a field restores that knob's default: the product one, or the off
         recallExcludeUris: ["viking://user/xubingzhen/skills"],
         timeoutMs: 12000,
         recallContextTimeoutMs: 2000,
+        // Pinned so the first-load pass does not reload before the action under
+        // test; the peer rule is a product default like the knobs above.
+        peerSource: ["{git_remote}", "{git_root}", "{cwd}"],
       },
     },
   });

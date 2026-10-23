@@ -93,8 +93,8 @@ test("the first load pins the recommended rule, and the card explains it", async
     // A bare file is a product default like the isolation switch: the first
     // load writes the recommended rule, so a workspace outside git is isolated
     // without anyone visiting this page and choosing it.
-    const select = card.getByRole("combobox", { name: "Peer source" });
-    await expect(select).toHaveValue("git-directory");
+    const trigger = card.getByRole("button", { name: "Peer source" });
+    await expect(trigger).toContainText("Repository first");
     await expect.poll(async () => JSON.parse(await readFile(fixture.configPath, "utf8")).plugin?.dsh?.peerSource)
       .toEqual(RULE);
 
@@ -115,13 +115,14 @@ test("the card warns when the rule leaves non-repository directories sharing spa
   try {
     await page.goto(fixture.url);
     const card = page.getByRole("region", { name: "Which directories share memories" });
-    const select = card.getByRole("combobox", { name: "Peer source" });
-    await expect(select).toHaveValue("git");
+    const trigger = card.getByRole("button", { name: "Peer source" });
+    await expect(trigger).toContainText("Repository only");
     await expect(card.getByRole("alert").filter({ hasText: "shares the user-level space" })).toBeVisible();
 
     // Choosing the recommendation writes its templates and clears the warning.
-    await select.selectOption("git-directory");
-    await expect(select).toHaveValue("git-directory");
+    await trigger.click();
+    await card.getByRole("menuitem", { name: /Repository first/ }).click();
+    await expect(trigger).toContainText("Repository first");
     await expect(card.getByRole("alert").filter({ hasText: "shares the user-level space" })).toHaveCount(0);
     expect(JSON.parse(await readFile(fixture.configPath, "utf8")).plugin.dsh.peerSource).toEqual(RULE);
   } finally {
@@ -191,11 +192,11 @@ test("an environment override makes the rule card read-only", async ({ page }) =
   try {
     await page.goto(fixture.url);
     const card = page.getByRole("region", { name: "Which directories share memories" });
-    const select = card.getByRole("combobox", { name: "Peer source" });
+    const trigger = card.getByRole("button", { name: "Peer source" });
     // The environment outranks any file this plugin can write, so the control
     // is read-only and the page says why.
-    await expect(select).toBeDisabled();
-    await expect(select).toHaveValue("none");
+    await expect(trigger).toBeDisabled();
+    await expect(trigger).toContainText("Off");
     await expect(card.getByRole("alert").filter({ hasText: "OPENVIKING_PEER_SOURCE" })).toBeVisible();
   } finally {
     await fixture.close();

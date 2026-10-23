@@ -16,5 +16,5 @@
     "forceConsistentCasingInFileNames": true,
     "emitDeclarationOnly": true
   },
-  "include": ["src/client/**/*.tsx"]
+  "include": ["src/client/**/*.tsx", "src/client/**/*.d.ts"]
 }
