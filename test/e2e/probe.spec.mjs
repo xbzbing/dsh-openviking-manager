@@ -104,6 +104,41 @@ test("verifies the existing server-side user key without showing it in the brows
   }
 });
 
+const SAVED = "Configuration saved. The stored user key remains masked.";
+
+test("a background reload that finishes later does not overwrite what the user did", async ({ page }) => {
+  // The restart succeeds, but only after the user has already saved — the
+  // ordering that used to leave "reloaded" on screen instead of the outcome of
+  // the click that actually happened.
+  let releaseRestart;
+  const restarted = new Promise((resolve) => { releaseRestart = resolve; });
+  const openViking = await startOpenVikingFixture();
+  const manager = await startManagerFixture(openViking.url, {
+    restartMemoryPlugin: async () => {
+      await restarted;
+      return { restarted: true, count: 1 };
+    },
+    restartTimeoutMs: 60_000,
+    seedPluginDefaults: false,
+  });
+  try {
+    await page.goto(manager.url);
+    await expect(page.getByRole("status")).toHaveText("Reloading the official memory plugin…");
+
+    // Saving is a foreground action: its message takes the status line over.
+    await page.getByRole("button", { name: "Save configuration" }).click();
+    await expect(page.getByRole("status")).toHaveText(SAVED);
+
+    // Now let the background reload finish: the user's message must stay.
+    releaseRestart();
+    await page.waitForTimeout(500);
+    await expect(page.getByRole("status")).toHaveText(SAVED);
+  } finally {
+    await manager.close();
+    await openViking.close();
+  }
+});
+
 test("verifying answers even while the first-load reload is still running", async ({ page }) => {
   // Slow enough that the in-flight acknowledgement is observable.
   const openViking = await startOpenVikingFixture({ delayMs: 400 });

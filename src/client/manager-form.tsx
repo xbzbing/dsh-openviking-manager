@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   IconChevronDownOutlineRegular,
   Menu,
@@ -185,6 +185,11 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   const [verifying, setVerifying] = useState(false);
   /** The rule dropdown is the platform Menu, which is controlled. */
   const [ruleMenuOpen, setRuleMenuOpen] = useState(false);
+  // The status line has two kinds of writer: what the user just did, and the
+  // first-load pass reloading the plugin behind their back. The background one
+  // records the generation it started at and stays quiet if a foreground report
+  // has landed since, so a slow reload cannot replace "Connected as …".
+  const statusGeneration = useRef(0);
 
   const load = async () => {
     setBusy(true);
@@ -287,24 +292,37 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     event.preventDefault(); setBusy(true);
     try {
       const next = (await responseJson(await fetchFn(`${apiPrefix}/config`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...config, ...(apiKey === "" ? {} : { apiKey }) }) }))).value as ConfigResult;
-      setConfig(next.config); setApiKey(""); setKind(next.kind); setPermissionWarning(false); setStatus(t("configurationSaved"));
-    } catch (error) { setStatus(error instanceof Error ? error.message : t("unableSave")); }
+      setConfig(next.config); setApiKey(""); setKind(next.kind); setPermissionWarning(false); reportForeground(t("configurationSaved"));
+    } catch (error) { reportForeground(error instanceof Error ? error.message : t("unableSave")); }
     finally { setBusy(false); }
+  };
+
+  /** A report the user asked for: it takes the status line over, and any
+   * background notice still in flight stays quiet instead of replacing it. */
+  const reportForeground = (text: string) => {
+    statusGeneration.current += 1;
+    setStatus(text);
   };
 
   /** POST the reload and settle the status line. Busy is owned by the caller:
    * this runs from every path that changed a key: the save handlers and the
    * first-load initialisation; a reload that does not complete is reported on
-   * the status line. */
-  const runRestart = async () => {
+   * the status line. A background run reports only while nothing the user did
+   * has taken the line over since it started. */
+  const runRestart = async (background = false) => {
+    const startedAt = statusGeneration.current;
+    const report = (text: string) => {
+      if (background && statusGeneration.current !== startedAt) return;
+      if (background) setStatus(text); else reportForeground(text);
+    };
     try {
       const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-scope/restart`, { method: "POST" }))).value as RestartView;
-      if (value.restarted) setStatus(t("restartSucceeded"));
-      else if (value.reason === "plugin-unavailable") setStatus(t("restartUnavailable"));
-      else if (value.reason === "restart-timeout") setStatus(t("restartTimeout"));
-      else setStatus(t("restartFailed", { error: value.error ?? value.reason ?? "unknown" }));
+      if (value.restarted) report(t("restartSucceeded"));
+      else if (value.reason === "plugin-unavailable") report(t("restartUnavailable"));
+      else if (value.reason === "restart-timeout") report(t("restartTimeout"));
+      else report(t("restartFailed", { error: value.error ?? value.reason ?? "unknown" }));
     } catch (error) {
-      setStatus(t("restartFailed", { error: error instanceof Error ? error.message : "unknown" }));
+      report(t("restartFailed", { error: error instanceof Error ? error.message : "unknown" }));
     } finally {
       await loadRecallScope(false);
       await loadRecallTuning(false);
@@ -330,14 +348,14 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
       // changed file triggers one right away; a reload that does not complete
       // is reported on the status line.
       if (value.restartPending) {
-        setStatus(t("reloading"));
+        reportForeground(t("reloading"));
         await runRestart();
       } else {
-        setStatus(t("isolationSaved"));
+        reportForeground(t("isolationSaved"));
       }
     } catch {
       if (previous) setRecallScope(previous);
-      setStatus(t("isolationSaveFailed"));
+      reportForeground(t("isolationSaveFailed"));
     } finally { setBusy(false); }
   };
 
@@ -394,11 +412,11 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
       }
       if (pending) {
         setStatus(t("reloading"));
-        await runRestart();
+        await runRestart(true);
         await loadWorkspaces();
       }
     } catch (error) {
-      setStatus(step === "scope"
+      reportForeground(step === "scope"
         ? t("isolationSaveFailed")
         : step === "peer-source"
           ? t("peerSourceSaveFailed", { error: error instanceof Error ? error.message : "unknown" })
@@ -467,13 +485,13 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
       // file triggers one right away; a reload that does not complete is
       // reported on the status line.
       if (value.restartPending) {
-        setStatus(t("reloading"));
+        reportForeground(t("reloading"));
         await runRestart();
       } else {
-        setStatus(t("tuningSaved"));
+        reportForeground(t("tuningSaved"));
       }
     } catch (error) {
-      setStatus(t("tuningSaveFailed", { error: error instanceof Error ? error.message : "unknown" }));
+      reportForeground(t("tuningSaveFailed", { error: error instanceof Error ? error.message : "unknown" }));
     } finally {
       setBusy(false);
     }
@@ -499,13 +517,13 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
       // file triggers one right away; an incomplete reload is reported on the
       // status line.
       if (value.restartPending) {
-        setStatus(t("reloading"));
+        reportForeground(t("reloading"));
         await runRestart();
       } else {
-        setStatus(t("peerIdSaved"));
+        reportForeground(t("peerIdSaved"));
       }
     } catch (error) {
-      setStatus(t("peerIdSaveFailed", { error: error instanceof Error ? error.message : "unknown" }));
+      reportForeground(t("peerIdSaveFailed", { error: error instanceof Error ? error.message : "unknown" }));
     } finally {
       setBusy(false);
     }
@@ -537,11 +555,11 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
       }))).value as PeerSourceView;
       setPeerSource(value);
       // A rule change only reaches the running plugin through a reload.
-      setStatus(t("reloading"));
+      reportForeground(t("reloading"));
       await runRestart();
       await loadWorkspaces();
     } catch (error) {
-      setStatus(t("peerSourceSaveFailed", { error: error instanceof Error ? error.message : "unknown" }));
+      reportForeground(t("peerSourceSaveFailed", { error: error instanceof Error ? error.message : "unknown" }));
     } finally { setBusy(false); }
   };
 
@@ -549,10 +567,10 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     setBusy(true);
     try {
       const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-peer/derive`))).value as { peerId: string; origin?: string };
-      if (value.peerId === "") setStatus(t("peerIdNotInRepo"));
-      else { setPeerIdDraft(value.peerId); setStatus(t("peerIdDetected", { peerId: value.peerId })); }
+      if (value.peerId === "") reportForeground(t("peerIdNotInRepo"));
+      else { setPeerIdDraft(value.peerId); reportForeground(t("peerIdDetected", { peerId: value.peerId })); }
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : t("peerIdNotInRepo"));
+      reportForeground(error instanceof Error ? error.message : t("peerIdNotInRepo"));
     } finally { setBusy(false); }
   };
 
@@ -560,8 +578,8 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     setBusy(true);
     try {
       const next = (await responseJson(await fetchFn(`${apiPrefix}/repair-permissions`, { method: "POST" }))).value as ConfigResult;
-      setConfig(next.config); setPermissionWarning(next.permissionWarning === true); setStatus(t("permissionsRepaired"));
-    } catch (error) { setStatus(error instanceof Error ? error.message : t("unableRepair")); }
+      setConfig(next.config); setPermissionWarning(next.permissionWarning === true); reportForeground(t("permissionsRepaired"));
+    } catch (error) { reportForeground(error instanceof Error ? error.message : t("unableRepair")); }
     finally { setBusy(false); }
   };
 
@@ -593,11 +611,14 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     setVerifying(true);
     // A click must always change the page: the request below can take as long
     // as the server's own timeout.
-    setStatus(t("verifying"));
+    reportForeground(t("verifying"));
     try {
       const probe = (await responseJson(await fetchFn(`${apiPrefix}/probe`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ apiKey }) }))).value as unknown as { reachable: boolean; ready: boolean; authenticated: boolean; identity?: { account: string; user: string } };
-      if (!probe.reachable) setStatus(t("unreachable")); else if (!probe.ready) setStatus(t("notReady")); else if (!probe.authenticated) setStatus(t("keyNotAccepted")); else setStatus(t("connectedAs", { account: probe.identity?.account ?? "", user: probe.identity?.user ?? "" }));
-    } catch (error) { setStatus(error instanceof Error ? error.message : t("unreachable")); }
+      if (!probe.reachable) reportForeground(t("unreachable"));
+      else if (!probe.ready) reportForeground(t("notReady"));
+      else if (!probe.authenticated) reportForeground(t("keyNotAccepted"));
+      else reportForeground(t("connectedAs", { account: probe.identity?.account ?? "", user: probe.identity?.user ?? "" }));
+    } catch (error) { reportForeground(error instanceof Error ? error.message : t("unreachable")); }
     finally { setVerifying(false); }
   };
 
