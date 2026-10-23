@@ -32,19 +32,30 @@ type HostContext = {
     listener: (session: { id?: string }, event: { type?: string }) => void,
   ): () => void;
   webServer: { register(route: WebRoute): () => void };
-  /** Present on hosts that own workspaces. Optional on purpose: it is not in
-   * `inject`, so a host without this service still loads this plugin and the
-   * panel simply offers the manual path field. */
-  workspaceRegistry?: { list?: () => Array<{ path?: string }> };
+  /** The reflection layer, used to *read* a service without declaring it a hard
+   * dependency. `inject` has no optional form, so a plugin that needs the
+   * workspace registry to load would disappear entirely on a host that does
+   * not provide one. */
+  reflect?: { get?: (name: string, strict?: boolean) => unknown };
   tools: { guard(guard: (exec: { name: string; agent?: AgentLike }) => string | undefined): () => void };
 };
 
-/** Absolute workspace directories the sidebar shows. A missing or broken
- * registry yields none: the panel then falls back to the manual path field
- * instead of failing the whole page. */
+/** Absolute workspace directories the sidebar shows.
+ *
+ * Read through the reflection layer rather than `inject`: a service reached as
+ * `ctx.workspaceRegistry` without being injected is not guaranteed to be
+ * present, and `inject` has no optional form, so declaring it would make this
+ * plugin refuse to load where it is absent. A missing registry yields an empty
+ * list, and the panel then hides the section instead of guessing. */
 function workspacePathsOf(host: HostContext): string[] {
   try {
-    const workspaces = host.workspaceRegistry?.list?.() ?? [];
+    // `strict: false` also reads a service whose providing fiber is not active
+    // in this context. The plain `ctx.workspaceRegistry` property throws
+    // without `inject`, which is what made the list look empty.
+    const registry = host.reflect?.get?.("workspaceRegistry", false) as
+      | { list?: () => Array<{ path?: string }> }
+      | undefined;
+    const workspaces = registry?.list?.() ?? [];
     return workspaces
       .map((workspace) => (typeof workspace?.path === "string" ? workspace.path : ""))
       .filter((path) => path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path));
