@@ -82,6 +82,8 @@ const RISK_KEYS: Record<string, TranslationKey> = {
   "no-peer": "riskNoPeer",
   "root-key-credential": "riskRootKey",
 };
+/** The isolation control's two modes, in render order: each owns a panel id. */
+const ISOLATION_MODES = ["all", "actor"] as const;
 const SOURCE_KEYS: Record<string, TranslationKey> = {
   env: "scopeSourceEnv",
   workspace: "scopeSourceWorkspace",
@@ -682,7 +684,20 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
           ]}
           onChange={(next: string) => void setScope(next === "actor")}
         />
-        <p className="ovm-hint ovm-isolationHint">{t("isolationHint")}</p>
+        {/* The platform control marks each tab with `aria-controls="<id>-<value>-panel"`
+            and leaves the panel to its owner, so both exist here and the inactive
+            one stays hidden; otherwise every tab carries a dangling reference. */}
+        {ISOLATION_MODES.map((mode) => (
+          <div
+            key={mode}
+            id={`ovm-isolation-${mode}-panel`}
+            role="tabpanel"
+            aria-labelledby={`ovm-isolation-${mode}`}
+            hidden={recallScope.scope !== mode}
+          >
+            <p className="ovm-hint ovm-isolationHint">{t(mode === "actor" ? "isolationHintActor" : "isolationHintAll")}</p>
+          </div>
+        ))}
         <p className="ovm-hint ovm-isolationHint">{t("reloadNotice")}</p>
         {recallScope.source === "env" ? <p className="ovm-warning" role="alert">{t("envOverrideWarning", { variable: "OPENVIKING_RECALL_PEER_SCOPE" })}</p> : null}
         {recallScope.source === "workspace" ? <p className="ovm-warning" role="alert">{t("tuningWorkspaceWarning", { keys: "recall.peer_scope" })}</p> : null}

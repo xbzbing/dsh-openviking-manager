@@ -67,6 +67,13 @@ test("isolation is on by default, written on first load, and reloaded automatica
     // First load finds no key (official default `all`), so the product default
     // pins `actor` once and reloads — the switch ends up on.
     await expect(isolated).toHaveAttribute("aria-selected", "true");
+
+    // The platform control wires each tab to `<id>-<value>-panel`; both panels
+    // must exist and only the selected one may be exposed.
+    const panelFor = async (tab) => page.locator(`#${await tab.getAttribute("aria-controls") ?? "missing"}`);
+    await expect(await panelFor(isolated)).toBeVisible();
+    await expect(await panelFor(shared)).toBeHidden();
+    await expect(await panelFor(isolated)).toHaveText(/only returns memories from the current project/);
     await expect.poll(() => restarts).toBe(1);
     await expect(page.getByRole("status")).toContainText("The official memory plugin reloaded. The new setting is active.");
     const storedAfterInit = JSON.parse(await readFile(fixture.configPath, "utf8"));
@@ -74,8 +81,11 @@ test("isolation is on by default, written on first load, and reloaded automatica
     expect(storedAfterInit.api_key).toBe("keep-this-secret");
     await expect(page.getByRole("button", { name: "Restart official memory plugin" })).toHaveCount(0);
 
-    // Turning isolation off writes the key away and reloads again.
+    // Turning isolation off writes the key away and reloads again; the panels
+    // swap with it.
     await shared.click();
+    await expect(await panelFor(shared)).toBeVisible();
+    await expect(await panelFor(isolated)).toBeHidden();
     await expect.poll(() => restarts).toBe(2);
     await expect(page.getByRole("status")).toContainText("The official memory plugin reloaded. The new setting is active.");
     const storedAfterDisable = JSON.parse(await readFile(fixture.configPath, "utf8"));

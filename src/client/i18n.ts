@@ -99,7 +99,8 @@ export type TranslationKey =
   | "viewRelease"
   | "isolationTitle"
   | "isolateByTopicLabel"
-  | "isolationHint"
+  | "isolationHintAll"
+  | "isolationHintActor"
   | "isolationSaved"
   | "isolationSaveFailed"
   | "envOverrideWarning"
@@ -282,7 +283,8 @@ const en: Record<TranslationKey, string> = {
   viewRelease: "View release",
   isolationTitle: "Memory isolation",
   isolateByTopicLabel: "Memory recall scope",
-  isolationHint: "Isolated by project: automatic recall only returns memories from the current project (peer). Shared across projects: recall may cross topics. The user-level profile injection and the shared resources directory are not affected by this setting.",
+  isolationHintAll: "Shared across projects: automatic recall may return memories from other projects and topics. The user-level profile injection and the shared resources directory are not affected by this setting.",
+  isolationHintActor: "Isolated by project: automatic recall only returns memories from the current project (peer). The user-level profile injection and the shared resources directory are not affected by this setting.",
   isolationSaved: "Memory isolation setting saved.",
   isolationSaveFailed: "Unable to save the memory isolation setting.",
   envOverrideWarning: "{variable} is set and overrides this file setting. Remove the variable and restart the DSH process to change it.",
@@ -464,7 +466,8 @@ const zh: Record<TranslationKey, string> = {
   viewRelease: "查看版本",
   isolationTitle: "记忆隔离",
   isolateByTopicLabel: "记忆召回范围",
-  isolationHint: "按项目隔离时，自动召回仅返回当前项目（peer）的记忆；所有项目共享时则允许跨主题召回。用户级画像注入和共享资源目录不受此设置影响。",
+  isolationHintAll: "所有项目共享：自动召回可以跨项目、跨主题返回记忆。用户级画像注入和共享资源目录不受此设置影响。",
+  isolationHintActor: "按项目隔离：自动召回只返回当前项目（peer）的记忆。用户级画像注入和共享资源目录不受此设置影响。",
   isolationSaved: "记忆隔离设置已保存。",
   isolationSaveFailed: "无法保存记忆隔离设置。",
   envOverrideWarning: "环境变量 {variable} 已设置并覆盖此文件配置。请移除该变量并重启 DSH 进程。",
