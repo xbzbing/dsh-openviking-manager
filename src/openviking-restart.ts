@@ -30,7 +30,10 @@ export interface RegistryLike {
   forEach?(visit: (runtime: PluginRuntimeLike, key: unknown) => void): void;
 }
 
-export type RestartReason = "plugin-unavailable" | "restart-failed";
+/** `restart-timeout` comes from the route, not from `restartOfficialOpenViking`:
+ * a fiber restart that neither resolves nor rejects would otherwise leave the
+ * panel waiting forever, with every control disabled. */
+export type RestartReason = "plugin-unavailable" | "restart-failed" | "restart-timeout";
 
 export interface RestartResult {
   restarted: boolean;

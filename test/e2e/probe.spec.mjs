@@ -7,9 +7,11 @@ import { test, expect } from "@playwright/test";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 
-async function startOpenVikingFixture() {
-  const server = createServer((req, res) => {
+async function startOpenVikingFixture({ delayMs = 0 } = {}) {
+  const server = createServer(async (req, res) => {
     const path = new URL(req.url ?? "/", "http://127.0.0.1").pathname;
+    // A slow data plane is how the in-flight state becomes observable.
+    if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
     if (path === "/health") return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ status: "ok" }));
     if (path === "/ready") return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ status: "ready" }));
     if (path === "/api/v1/system/status" && req.headers.authorization === "Bearer keep-this-secret" && req.headers["x-openviking-account"] === "personal" && req.headers["x-openviking-user"] === "alice") {
@@ -39,23 +41,31 @@ async function startOpenVikingFixture() {
   };
 }
 
-async function startManagerFixture(openVikingUrl) {
+async function startManagerFixture(openVikingUrl, { restartMemoryPlugin, restartTimeoutMs, seedPluginDefaults = true } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "dsh-ov-manager-e2e-probe-"));
   const configPath = join(directory, "ovcli.conf");
   // The first-load initialisation pins the isolation switch and the product
   // tuning defaults, then reports the reload outcome on the status line. These
   // keys are pre-seeded so that pass is a no-op: the tests below assert their
   // own action's status, which a background reload notice would overwrite.
-  await writeFile(configPath, JSON.stringify({
+  // `seedPluginDefaults: false` keeps the file bare, which is what triggers
+  // that pass — the case where a slow reload used to disable every control.
+  const document = {
     url: openVikingUrl,
     api_key: "keep-this-secret",
     account: "personal",
     user: "alice",
-    plugin: { dsh: { recallPeerScope: "actor", scoreThreshold: 0.5, recallQueryExpansion: "off", timeoutMs: 15000 } },
-  }), "utf8");
+    ...(seedPluginDefaults
+      ? { plugin: { dsh: { recallPeerScope: "actor", scoreThreshold: 0.5, recallQueryExpansion: "off", timeoutMs: 15000 } } }
+      : {}),
+  };
+  await writeFile(configPath, JSON.stringify(document), "utf8");
   const script = await readFile(join(root, "lib", "standalone.js"));
   const api = await import(join(root, "lib", "manager-api.js"));
-  const routes = new Map(api.makeManagerRoutes({ ovcliPath: configPath }).map((route) => [route.path, route.handler]));
+  const options = { ovcliPath: configPath };
+  if (restartMemoryPlugin) options.restartMemoryPlugin = restartMemoryPlugin;
+  if (restartTimeoutMs !== undefined) options.restartTimeoutMs = restartTimeoutMs;
+  const routes = new Map(api.makeManagerRoutes(options).map((route) => [route.path, route.handler]));
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
     if (url.pathname === "/") return res.writeHead(200, { "content-type": "text/html" }).end('<!doctype html><html><body><div id="root"></div><script src="/app.js"></script></body></html>');
@@ -87,6 +97,42 @@ test("verifies the existing server-side user key without showing it in the brows
     await page.goto(manager.url);
     await page.getByRole("button", { name: "Verify connection" }).click();
     await expect(page.getByRole("status")).toHaveText("Connected as personal/alice.");
+    await expect(page.locator("body")).not.toContainText("keep-this-secret");
+  } finally {
+    await manager.close();
+    await openViking.close();
+  }
+});
+
+test("verifying answers even while the first-load reload is still running", async ({ page }) => {
+  // Slow enough that the in-flight acknowledgement is observable.
+  const openViking = await startOpenVikingFixture({ delayMs: 400 });
+  // The first-load pass pins the product defaults and reloads the plugin. Here
+  // that reload never finishes — it used to leave every control disabled, so
+  // clicking Verify did nothing at all.
+  const manager = await startManagerFixture(openViking.url, {
+    restartMemoryPlugin: () => new Promise(() => {}),
+    restartTimeoutMs: 60_000,
+    seedPluginDefaults: false,
+  });
+  try {
+    await page.goto(manager.url);
+    // The reload is in flight, not finished: this is the window that was dead.
+    await expect(page.getByRole("status")).toHaveText("Reloading the official memory plugin…");
+
+    // The button renames itself while in flight, so match either label.
+    const verify = page.getByRole("button", { name: /Verify|Verifying/ });
+    await expect(verify).toBeEnabled();
+    await verify.click();
+
+    // An immediate acknowledgement, then the result — a click always changes
+    // the page, even before the probe answers.
+    await expect(verify).toHaveText("Verifying…");
+    await expect(verify).toHaveAttribute("aria-busy", "true");
+    await expect(page.getByRole("status")).toHaveText("Verifying…");
+    await expect(page.getByRole("status")).toHaveText("Connected as personal/alice.");
+    await expect(verify).toHaveText("Verify connection");
+    await expect(verify).toHaveAttribute("aria-busy", "false");
     await expect(page.locator("body")).not.toContainText("keep-this-secret");
   } finally {
     await manager.close();

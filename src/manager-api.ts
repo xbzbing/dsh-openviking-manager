@@ -38,6 +38,10 @@ export const ENDPOINT_NOT_CONFIGURED_CODE = "endpoint-not-configured";
 const MAX_BODY_BYTES = 32 * 1024;
 const MAX_SESSION_ID_CHARS = 512;
 const MAX_CWD_CHARS = 4096;
+/** How long a plugin restart may take before the route answers anyway. A
+ * fiber restart that neither resolves nor rejects would leave the panel on
+ * "reloading" with every control disabled, so the request has to end. */
+const RESTART_TIMEOUT_MS = 30_000;
 /** The directory the plugin process resolved its config for, i.e. the project
  * whose workspace layers the applied plugin actually loaded. */
 const HOST_CWD = process.cwd();
@@ -49,6 +53,8 @@ export interface ManagerApiOptions {
    * official plugin cannot be restarted in this process (optional peer); the
    * restart route then reports `plugin-unavailable` instead of failing. */
   restartMemoryPlugin?: () => Promise<RestartResult>;
+  /** Override the restart budget; tests use a value in the millisecond range. */
+  restartTimeoutMs?: number;
   /** Env layer for the recall-scope view and for resolving which ovcli.conf /
    * ov.conf the official plugin reads; defaults to process.env. Tests pass an
    * explicit object so a machine-level OPENVIKING_* variable cannot leak into
@@ -104,6 +110,23 @@ function requiredString(value: unknown, key: string): string {
   const item = stringAt(value, key)?.trim();
   if (item === undefined || item === "") throw new Error(`${key} must be a non-empty string`);
   return item;
+}
+
+/** Resolve with the operation's own result, or with a `restart-timeout`
+ * outcome once `budget` elapses. The abandoned restart is not cancelled — it
+ * may still finish — so the caller must treat a timeout as "unknown state",
+ * not as "nothing happened". */
+async function withTimeout(operation: Promise<RestartResult>, budget: number): Promise<RestartResult> {
+  let timer: NodeJS.Timeout | undefined;
+  const expiry = new Promise<RestartResult>((resolve) => {
+    timer = setTimeout(() => resolve({ restarted: false, count: 0, reason: "restart-timeout" }), budget);
+    timer.unref?.();
+  });
+  try {
+    return await Promise.race([operation, expiry]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }
 
 function isSameOrigin(req: IncomingMessage): boolean {
@@ -514,8 +537,9 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
           return;
         }
         restarting = true;
+        const budget = options.restartTimeoutMs ?? RESTART_TIMEOUT_MS;
         try {
-          const result = await options.restartMemoryPlugin();
+          const result = await withTimeout(options.restartMemoryPlugin(), budget);
           // A successful restart re-applied the plugin, so whatever the file
           // says now is the value it loaded — for the isolation scope and the
           // recall tuning knobs alike: one reload picks up every key.

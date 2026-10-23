@@ -151,3 +151,24 @@ test("cross-origin requests are refused and other methods get 405", async (t) =>
   const wrongRestartMethod = await request(base, RESTART_PATH, { method: "GET" });
   assert.equal(wrongRestartMethod.status, 405);
 });
+
+test("a restart that never settles answers restart-timeout instead of hanging", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "dsh-ovm-scope-api-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const base = await withRoutes(t, join(directory, "ovcli.conf"), {
+    // A fiber restart can await a commit that never resolves; the route must
+    // still answer, or the panel stays on "reloading" with every control shut.
+    restartMemoryPlugin: () => new Promise(() => {}),
+    restartTimeoutMs: 25,
+  });
+
+  await request(base, SCOPE_PATH, { method: "PUT", body: { scope: "actor" } });
+  const restarted = await request(base, RESTART_PATH, { method: "POST" });
+  assert.equal(restarted.status, 200);
+  assert.deepEqual(restarted.json.value, { restarted: false, count: 0, reason: "restart-timeout" });
+
+  // Unknown state is reported as still pending, so the panel keeps offering a
+  // reload rather than claiming the new value is live.
+  const view = await request(base, SCOPE_PATH);
+  assert.equal(view.json.value.restartPending, true);
+});

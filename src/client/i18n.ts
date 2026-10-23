@@ -30,6 +30,7 @@ export type TranslationKey =
   | "keyHint"
   | "save"
   | "verify"
+  | "verifying"
   | "openStudio"
   | "unreachable"
   | "notReady"
@@ -105,6 +106,7 @@ export type TranslationKey =
   | "restartSucceeded"
   | "restartUnavailable"
   | "restartFailed"
+  | "restartTimeout"
   | "tuningTitle"
   | "tuningIntro"
   | "scoreThresholdLabel"
@@ -194,6 +196,7 @@ const en: Record<TranslationKey, string> = {
   keyHint: "Leave the key blank to preserve the existing key. This field accepts a user key, never a root API key.",
   save: "Save configuration",
   verify: "Verify connection",
+  verifying: "Verifying…",
   openStudio: "Open Studio",
   unreachable: "OpenViking is unreachable at this endpoint.",
   notReady: "OpenViking is reachable but not ready.",
@@ -269,6 +272,7 @@ const en: Record<TranslationKey, string> = {
   restartSucceeded: "The official memory plugin reloaded. The new setting is active.",
   restartUnavailable: "The official memory plugin is not loaded in this process. Restart the DSH instance manually to apply the change.",
   restartFailed: "Unable to restart the official memory plugin: {error}",
+  restartTimeout: "The official memory plugin did not finish reloading in time. The new setting may not be active yet — reload it again, or restart the DSH instance.",
   tuningTitle: "Recall tuning",
   tuningIntro: "Fine-tune what the official memory plugin injects into each step. Values are written to ovcli.conf's plugin section; the threshold, query expansion and request timeout are initialised to this plugin's defaults (0.5, off, 15000ms), while the item limit, excluded URIs and recall search timeout keep the official defaults when left empty.",
   scoreThresholdLabel: "Recall score threshold",
@@ -357,6 +361,7 @@ const zh: Record<TranslationKey, string> = {
   keyHint: "留空可保留已有 Key。此字段只接受 user key，不能填写 root API key。",
   save: "保存配置",
   verify: "验证连接",
+  verifying: "正在验证…",
   openStudio: "打开 Studio",
   unreachable: "该服务地址无法访问 OpenViking。",
   notReady: "OpenViking 可访问，但尚未就绪。",
@@ -432,6 +437,7 @@ const zh: Record<TranslationKey, string> = {
   restartSucceeded: "官方记忆插件已重新加载，新设置已生效。",
   restartUnavailable: "当前进程中未加载官方记忆插件。请手动重启 DSH 实例使更改生效。",
   restartFailed: "无法重启官方记忆插件：{error}",
+  restartTimeout: "官方记忆插件未在预期时间内完成重载，新设置可能还没生效。请再次重载，或重启 DSH 实例。",
   tuningTitle: "召回调优",
   tuningIntro: "调整官方记忆插件每次注入的内容。取值写入 ovcli.conf 的 plugin 段；分数阈值、查询扩写与请求超时首次打开时按本插件默认写入（0.5、关闭、15000 毫秒），条数上限、排除 URI 与召回搜索超时留空则保持官方默认。",
   scoreThresholdLabel: "召回分数阈值",

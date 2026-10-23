@@ -148,6 +148,13 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   // inspect: peer derivation is per session, so it is exact for any path.
   const [projectCwd, setProjectCwd] = useState("");
   const [projectDraft, setProjectDraft] = useState("");
+  // The first-load pass pins product defaults and may reload the official
+  // plugin. It runs on its own state: a slow or stuck reload must not leave the
+  // connection form disabled, which is what a single shared `busy` did.
+  const [initializing, setInitializing] = useState(false);
+  // Verifying owns its own flag so the button reports work immediately instead
+  // of looking dead while the request is in flight.
+  const [verifying, setVerifying] = useState(false);
 
   const load = async () => {
     setBusy(true);
@@ -256,6 +263,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
       const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-scope/restart`, { method: "POST" }))).value as RestartView;
       if (value.restarted) setStatus(t("restartSucceeded"));
       else if (value.reason === "plugin-unavailable") setStatus(t("restartUnavailable"));
+      else if (value.reason === "restart-timeout") setStatus(t("restartTimeout"));
       else setStatus(t("restartFailed", { error: value.error ?? value.reason ?? "unknown" }));
     } catch (error) {
       setStatus(t("restartFailed", { error: error instanceof Error ? error.message : "unknown" }));
@@ -307,7 +315,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     const tuningPatch = tuning?.initPatch ?? {};
     const pinTuning = Object.keys(tuningPatch).length > 0;
     if (!pinScope && !pinTuning) return;
-    setBusy(true);
+    setInitializing(true);
     let step: "scope" | "tuning" = "scope";
     try {
       let pending = false;
@@ -338,7 +346,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
       setStatus(step === "scope"
         ? t("isolationSaveFailed")
         : t("tuningSaveFailed", { error: error instanceof Error ? error.message : "unknown" }));
-    } finally { setBusy(false); }
+    } finally { setInitializing(false); }
   };
 
   /** Env vars currently outranking the file: those fields are read-only with
@@ -507,12 +515,15 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   };
 
   const verify = async () => {
-    setBusy(true);
+    setVerifying(true);
+    // A click must always change the page: the request below can take as long
+    // as the server's own timeout.
+    setStatus(t("verifying"));
     try {
       const probe = (await responseJson(await fetchFn(`${apiPrefix}/probe`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ apiKey }) }))).value as unknown as { reachable: boolean; ready: boolean; authenticated: boolean; identity?: { account: string; user: string } };
       if (!probe.reachable) setStatus(t("unreachable")); else if (!probe.ready) setStatus(t("notReady")); else if (!probe.authenticated) setStatus(t("keyNotAccepted")); else setStatus(t("connectedAs", { account: probe.identity?.account ?? "", user: probe.identity?.user ?? "" }));
     } catch (error) { setStatus(error instanceof Error ? error.message : t("unreachable")); }
-    finally { setBusy(false); }
+    finally { setVerifying(false); }
   };
 
   const studioUrl = `${config.url.replace(/\/$/, "")}/studio`;
@@ -543,7 +554,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
         <label>{t("account")}<input value={config.account} onChange={(event) => setConfig({ ...config, account: event.target.value })} /></label>
         <label>{t("user")}<input value={config.user} onChange={(event) => setConfig({ ...config, user: event.target.value })} /></label>
         <label>{t("newUserKey")} <span className="ovm-optional">({t("optional")})</span><input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={config.apiKeySet ? t("existingKey", { key: config.apiKeyMasked }) : t("pasteUserKey")} /></label>
-        <p className="ovm-hint">{t("keyHint")}</p><div className="ovm-actions"><button type="submit" disabled={busy}>{t("save")}</button><button type="button" className="ovm-secondary" onClick={() => void verify()} disabled={busy}>{t("verify")}</button><a href={studioUrl} target="_blank" rel="noreferrer">{t("openStudio")}</a></div>
+        <p className="ovm-hint">{t("keyHint")}</p><div className="ovm-actions"><button type="submit" disabled={busy}>{t("save")}</button><button type="button" className="ovm-secondary" onClick={() => void verify()} disabled={verifying} aria-busy={verifying}>{verifying ? t("verifying") : t("verify")}</button><a href={studioUrl} target="_blank" rel="noreferrer">{t("openStudio")}</a></div>
       </form>
     </section>
     {recallScope === undefined ? null : (
@@ -569,7 +580,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
               type="checkbox"
               role="switch"
               className="ovm-switchInput"
-              disabled={busy || recallScope.source === "env" || recallScope.source === "workspace"}
+              disabled={busy || initializing || recallScope.source === "env" || recallScope.source === "workspace"}
               checked={recallScope.scope === "actor"}
               onChange={(event) => void setScope(event.target.checked)}
             />
@@ -657,7 +668,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
                       step="any"
                       value={tuningDraft.scoreThreshold}
                       placeholder={t("defaultPlaceholder", { value: String(recallTuning.scoreThreshold.default) })}
-                      disabled={busy || recallTuning.scoreThreshold.source === "env" || recallTuning.scoreThreshold.source === "workspace"}
+                      disabled={busy || initializing || recallTuning.scoreThreshold.source === "env" || recallTuning.scoreThreshold.source === "workspace"}
                       onChange={(event) => setTuningDraft({ ...tuningDraft, scoreThreshold: event.target.value })}
                     />
                   </label>
@@ -672,7 +683,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
                       step={1}
                       value={tuningDraft.recallLimit}
                       placeholder={t("defaultPlaceholder", { value: String(recallTuning.recallLimit.default) })}
-                      disabled={busy || recallTuning.recallLimit.source === "env" || recallTuning.recallLimit.source === "workspace"}
+                      disabled={busy || initializing || recallTuning.recallLimit.source === "env" || recallTuning.recallLimit.source === "workspace"}
                       onChange={(event) => setTuningDraft({ ...tuningDraft, recallLimit: event.target.value })}
                     />
                   </label>
@@ -682,7 +693,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
                   <label>{t("queryExpansionLabel")}
                     <select
                       value={tuningDraft.recallQueryExpansion}
-                      disabled={busy || recallTuning.recallQueryExpansion.source === "env" || recallTuning.recallQueryExpansion.source === "workspace"}
+                      disabled={busy || initializing || recallTuning.recallQueryExpansion.source === "env" || recallTuning.recallQueryExpansion.source === "workspace"}
                       onChange={(event) => setTuningDraft({ ...tuningDraft, recallQueryExpansion: event.target.value === "off" ? "off" : "auto" })}
                     >
                       <option value="auto">{t("queryExpansionAuto")}</option>
@@ -697,7 +708,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
                       rows={4}
                       value={tuningDraft.recallExcludeUris}
                       placeholder="viking://"
-                      disabled={busy || recallTuning.recallExcludeUris.source === "env" || recallTuning.recallExcludeUris.source === "workspace"}
+                      disabled={busy || initializing || recallTuning.recallExcludeUris.source === "env" || recallTuning.recallExcludeUris.source === "workspace"}
                       onChange={(event) => setTuningDraft({ ...tuningDraft, recallExcludeUris: event.target.value })}
                     />
                   </label>
@@ -708,7 +719,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
                     <input
                       value={tuningDraft.recallEventsDecayProtection}
                       placeholder="7d"
-                      disabled={busy || recallTuning.recallEventsDecayProtection.source === "env" || recallTuning.recallEventsDecayProtection.source === "workspace"}
+                      disabled={busy || initializing || recallTuning.recallEventsDecayProtection.source === "env" || recallTuning.recallEventsDecayProtection.source === "workspace"}
                       onChange={(event) => setTuningDraft({ ...tuningDraft, recallEventsDecayProtection: event.target.value })}
                     />
                   </label>
@@ -723,7 +734,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
                       step={500}
                       value={tuningDraft.timeoutMs}
                       placeholder={t("defaultPlaceholder", { value: String(recallTuning.timeoutMs.default) })}
-                      disabled={busy || recallTuning.timeoutMs.source === "env" || recallTuning.timeoutMs.source === "workspace"}
+                      disabled={busy || initializing || recallTuning.timeoutMs.source === "env" || recallTuning.timeoutMs.source === "workspace"}
                       onChange={(event) => setTuningDraft({ ...tuningDraft, timeoutMs: event.target.value })}
                     />
                   </label>
@@ -738,7 +749,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
                       step={500}
                       value={tuningDraft.recallContextTimeoutMs}
                       placeholder={t("defaultPlaceholder", { value: String(recallTuning.recallContextTimeoutMs.default) })}
-                      disabled={busy || recallTuning.recallContextTimeoutMs.source === "env" || recallTuning.recallContextTimeoutMs.source === "workspace"}
+                      disabled={busy || initializing || recallTuning.recallContextTimeoutMs.source === "env" || recallTuning.recallContextTimeoutMs.source === "workspace"}
                       onChange={(event) => setTuningDraft({ ...tuningDraft, recallContextTimeoutMs: event.target.value })}
                     />
                   </label>
