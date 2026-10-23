@@ -590,7 +590,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
         </label>
         <p className="ovm-hint ovm-isolationHint">{t("isolationHint")}</p>
         <p className="ovm-hint ovm-isolationHint">{t("reloadNotice")}</p>
-        {recallScope.source === "env" ? <p className="ovm-warning" role="alert">{t("envOverrideWarning")}</p> : null}
+        {recallScope.source === "env" ? <p className="ovm-warning" role="alert">{t("envOverrideWarning", { variable: "OPENVIKING_RECALL_PEER_SCOPE" })}</p> : null}
         {recallScope.source === "workspace" ? <p className="ovm-warning" role="alert">{t("tuningWorkspaceWarning", { keys: "recall.peer_scope" })}</p> : null}
         {recallScope.sharedScope !== "" ? <p className="ovm-hint">{t("projectSharedNote", { scope: recallScope.sharedScope })}</p> : null}
         {recallScope.project.risks.length > 0 ? (
