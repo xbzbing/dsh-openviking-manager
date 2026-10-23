@@ -31,6 +31,17 @@ export type TranslationKey =
   | "save"
   | "verify"
   | "verifying"
+  | "peerSourceTitle"
+  | "peerSourceHint"
+  | "peerSourceLabel"
+  | "peerSourceCustom"
+  | "peerSourceGitDirectory"
+  | "peerSourceGit"
+  | "peerSourceCwd"
+  | "peerSourceNone"
+  | "peerSourceSharedNote"
+  | "peerSourceAttention"
+  | "peerSourceSaveFailed"
   | "openStudio"
   | "unreachable"
   | "notReady"
@@ -197,6 +208,17 @@ const en: Record<TranslationKey, string> = {
   save: "Save configuration",
   verify: "Verify connection",
   verifying: "Verifying…",
+  peerSourceTitle: "Which directories share memories",
+  peerSourceHint: "This is the rule, not a per-project setting: the official plugin derives one peer per session from that session's own directory, so every conversation follows this automatically.",
+  peerSourceLabel: "Peer source",
+  peerSourceCustom: "Custom templates",
+  peerSourceGitDirectory: "Repository first, then the directory (recommended)",
+  peerSourceGit: "Repository only (official default)",
+  peerSourceCwd: "Directory only",
+  peerSourceNone: "Off (user-level space)",
+  peerSourceSharedNote: "The shared plugin section still says {value} for the other harnesses on this machine; this manager only writes plugin.dsh.",
+  peerSourceAttention: "With this rule a workspace that is not a git repository shares the user-level space with every other directory that has no peer. Repository first with a directory fallback keeps clones together and plain folders separate.",
+  peerSourceSaveFailed: "Unable to save the peer source rule: {error}",
   openStudio: "Open Studio",
   unreachable: "OpenViking is unreachable at this endpoint.",
   notReady: "OpenViking is reachable but not ready.",
@@ -362,6 +384,17 @@ const zh: Record<TranslationKey, string> = {
   save: "保存配置",
   verify: "验证连接",
   verifying: "正在验证…",
+  peerSourceTitle: "哪些目录共享记忆",
+  peerSourceHint: "这是规则，不是「当前项目」设置：官方插件按每个会话自己所在的目录推导 peer，所以每个对话都会自动遵循这条规则。",
+  peerSourceLabel: "peer 来源",
+  peerSourceCustom: "自定义模板",
+  peerSourceGitDirectory: "仓库优先，其次目录（推荐）",
+  peerSourceGit: "仅仓库（官方默认）",
+  peerSourceCwd: "仅目录",
+  peerSourceNone: "关闭（用户级空间）",
+  peerSourceSharedNote: "共享 plugin 段仍写着 {value}，对本机其他 harness 生效；本插件只写 plugin.dsh。",
+  peerSourceAttention: "按当前规则，不是 git 仓库的工作区会和其它推导不出 peer 的目录共用用户级空间。「仓库优先 + 目录兜底」能让克隆共享、普通目录各自独立。",
+  peerSourceSaveFailed: "无法保存 peer 来源规则：{error}",
   openStudio: "打开 Studio",
   unreachable: "该服务地址无法访问 OpenViking。",
   notReady: "OpenViking 可访问，但尚未就绪。",

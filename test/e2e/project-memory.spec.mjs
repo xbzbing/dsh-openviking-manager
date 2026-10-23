@@ -1,6 +1,5 @@
 import { createServer } from "node:http";
-import { execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,21 +10,22 @@ const root = fileURLToPath(new URL("../..", import.meta.url));
 /** A manager API server over a throwaway ovcli.conf, with the official
  * loader's machine state (git-identity cache, workspace registry) redirected
  * into the same temp directory so the user's real one is never touched. */
-async function startFixture() {
+async function startFixture({ initialConfig, env: extraEnv = {} } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "dsh-ovm-project-e2e-"));
   const configPath = join(directory, "ovcli.conf");
-  await writeFile(
-    configPath,
-    JSON.stringify({ url: "http://127.0.0.1:8008", api_key: "keep-this-secret", account: "personal", user: "alice" }),
-    { encoding: "utf8", mode: 0o600 },
-  );
+  const base = { url: "http://127.0.0.1:8008", api_key: "keep-this-secret", account: "personal", user: "alice" };
+  await writeFile(configPath, JSON.stringify({ ...base, ...initialConfig }), { encoding: "utf8", mode: 0o600 });
   const script = await readFile(join(root, "lib", "standalone.js"));
   const api = await import(join(root, "lib", "manager-api.js"));
+  // The git-identity cache and the workspace registry live under these, so a
+  // test never reads the machine's real ones.
   const env = {
     OPENVIKING_HOME: join(directory, "home"),
     OPENVIKING_STATE_DIR: join(directory, "state"),
+    ...extraEnv,
   };
-  const routes = new Map(api.makeManagerRoutes({ ovcliPath: configPath, env }).map((route) => [route.path, route.handler]));
+  const options = { ovcliPath: configPath, env };
+  const routes = new Map(api.makeManagerRoutes(options).map((route) => [route.path, route.handler]));
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
     if (url.pathname === "/") {
@@ -46,6 +46,7 @@ async function startFixture() {
   return {
     url: `http://127.0.0.1:${server.address().port}`,
     directory,
+    configPath,
     cleanup: () => rm(directory, { recursive: true, force: true }),
     close: () => new Promise((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
@@ -55,72 +56,54 @@ async function startFixture() {
   };
 }
 
-async function gitRepo(directory, workspaceConfig) {
-  const cwd = join(directory, "checkout");
-  await mkdir(cwd, { recursive: true });
-  execFileSync("git", ["init", "-q"], { cwd, stdio: "ignore" });
-  execFileSync("git", ["remote", "add", "origin", "git@github.com:example/project.git"], { cwd, stdio: "ignore" });
-  await mkdir(join(cwd, ".openviking"), { recursive: true });
-  await writeFile(join(cwd, ".openviking", "config.json"), JSON.stringify(workspaceConfig), "utf8");
-  return cwd;
-}
+/** The recommended rule, as it is stored: the official loader has no preset
+ * name for it, so the file carries the templates themselves. */
+const RULE = ["{git_remote}", "{git_root}", "{cwd}"];
 
-test("a repository that widens recall is reported as an isolation risk", async ({ page }) => {
+test("the first load pins the recommended rule, and the card explains it", async ({ page }) => {
   const fixture = await startFixture();
   try {
-    const cwd = await gitRepo(fixture.directory, { version: 1, recall: { peer_scope: "all" } });
     await page.goto(fixture.url);
 
-    // The card renders for the host directory first; point it at the repository.
-    const input = page.getByLabel("Project directory");
-    await expect(input).toBeVisible();
-    await input.fill(cwd);
-    await page.getByRole("button", { name: "Resolve" }).click();
+    const card = page.getByRole("region", { name: "Which directories share memories" });
+    await expect(card).toBeVisible();
+    // It must not read like a per-project setting.
+    await expect(card).toContainText("the official plugin derives one peer per session");
 
-    // The declaration is named, with the layer that won.
-    await expect(page.getByText("Repository declarations (they outrank this machine's settings)")).toBeVisible();
-    await expect(page.getByText("config.json (workspace)").first()).toBeVisible();
-    // …and the switch tells the truth about the effective value.
-    await expect(page.getByRole("switch", { name: "Disallow recalling memories from other projects" })).not.toBeChecked();
-    // The bypass is called out as an error, not a hint.
-    await expect(page.getByText(/sets recall\.peer_scope to all/)).toBeVisible();
-    await expect(page.getByText("github.com-example-project")).toBeVisible();
+    // A bare file is a product default like the isolation switch: the first
+    // load writes the recommended rule, so a workspace outside git is isolated
+    // without anyone visiting this page and choosing it.
+    const select = card.getByRole("combobox", { name: "Peer source" });
+    await expect(select).toHaveValue("git-directory");
+    await expect.poll(async () => JSON.parse(await readFile(fixture.configPath, "utf8")).plugin?.dsh?.peerSource)
+      .toEqual(RULE);
+
+    const stored = JSON.parse(await readFile(fixture.configPath, "utf8"));
+    // The shared section belongs to the other harnesses and stays untouched.
+    expect(stored.plugin.peerSource).toBeUndefined();
+    expect(stored.api_key).toBe("keep-this-secret");
   } finally {
     await fixture.close();
     await fixture.cleanup();
   }
 });
 
-test("a directory outside a repository reports the user-level fallback", async ({ page }) => {
-  const fixture = await startFixture();
+test("the card warns when the rule leaves non-repository directories sharing space", async ({ page }) => {
+  // The official default, pinned explicitly: every directory outside a
+  // repository then lands in the user-level space, which is worth saying.
+  const fixture = await startFixture({ initialConfig: { plugin: { dsh: { peerSource: "git" } } } });
   try {
-    const scratch = join(fixture.directory, "scratch");
-    await mkdir(scratch, { recursive: true });
     await page.goto(fixture.url);
+    const card = page.getByRole("region", { name: "Which directories share memories" });
+    const select = card.getByRole("combobox", { name: "Peer source" });
+    await expect(select).toHaveValue("git");
+    await expect(card.getByRole("alert").filter({ hasText: "shares the user-level space" })).toBeVisible();
 
-    await page.getByLabel("Project directory").fill(scratch);
-    await page.getByRole("button", { name: "Resolve" }).click();
-
-    await expect(page.getByText("not inside a git repository")).toBeVisible();
-    await expect(page.getByText("user-level space (no project namespace)")).toBeVisible();
-    await expect(page.getByText(/No peer is derived for/)).toBeVisible();
-  } finally {
-    await fixture.close();
-    await fixture.cleanup();
-  }
-});
-
-test("a repository that pins its own peer is reported", async ({ page }) => {
-  const fixture = await startFixture();
-  try {
-    const cwd = await gitRepo(fixture.directory, { version: 1, peer: { id: "team-shared" } });
-    await page.goto(fixture.url);
-
-    await page.getByLabel("Project directory").fill(cwd);
-    await page.getByRole("button", { name: "Resolve" }).click();
-
-    await expect(page.getByText(/pins the peer "team-shared" for this project/)).toBeVisible();
-    await expect(page.getByRole("definition").filter({ hasText: "team-shared" })).toBeVisible();
+    // Choosing the recommendation writes its templates and clears the warning.
+    await select.selectOption("git-directory");
+    await expect(select).toHaveValue("git-directory");
+    await expect(card.getByRole("alert").filter({ hasText: "shares the user-level space" })).toHaveCount(0);
+    expect(JSON.parse(await readFile(fixture.configPath, "utf8")).plugin.dsh.peerSource).toEqual(RULE);
   } finally {
     await fixture.close();
     await fixture.cleanup();

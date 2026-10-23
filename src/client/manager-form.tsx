@@ -41,6 +41,16 @@ interface RecallTuningView {
  * default" — which the server turns back into an absent key. */
 interface RecallTuningDraft { scoreThreshold: string; recallLimit: string; recallQueryExpansion: "auto" | "off"; recallExcludeUris: string; recallEventsDecayProtection: string; timeoutMs: string; recallContextTimeoutMs: string; }
 interface RestartView { restarted: boolean; count: number; reason?: string; error?: string; }
+/** The `peer.source` rule: a policy, not a per-session value. */
+interface PeerSourceView {
+  choice: "git" | "git-directory" | "cwd" | "none" | "custom";
+  templates: string[];
+  origin: "env" | "plugin.dsh" | "plugin" | "default";
+  envOverride: string;
+  sharedValue: string;
+  recommended: "git" | "git-directory" | "cwd" | "none";
+  needsAttention: boolean;
+}
 export interface ManagerFormProps { apiPrefix?: string; fetchFn?: typeof fetch; t?: Translation; }
 
 /** One display key per server-side isolation risk code. */
@@ -146,8 +156,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   // "" means "the directory the DSH host runs in", which is what the official
   // plugin resolved at apply. Any other value is a project the user wants to
   // inspect: peer derivation is per session, so it is exact for any path.
-  const [projectCwd, setProjectCwd] = useState("");
-  const [projectDraft, setProjectDraft] = useState("");
+  const [peerSource, setPeerSource] = useState<PeerSourceView>();
   // The first-load pass pins product defaults and may reload the official
   // plugin. It runs on its own state: a slow or stuck reload must not leave the
   // connection form disabled, which is what a single shared `busy` did.
@@ -178,34 +187,41 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   // The isolation section only renders when this endpoint answers, so hosts
   // without the route (older fixtures) keep their previous page shape. After
   // an action, a transient failure instead keeps the current view on screen.
-  const cwdQuery = (cwd: string): string => (cwd === "" ? "" : `?cwd=${encodeURIComponent(cwd)}`);
-  const loadRecallScope = async (hideOnFailure = true, cwd = projectCwd): Promise<RecallScopeView | undefined> => {
+  const loadRecallScope = async (hideOnFailure = true): Promise<RecallScopeView | undefined> => {
     try {
-      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-scope${cwdQuery(cwd)}`))).value as RecallScopeView;
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-scope`))).value as RecallScopeView;
       setRecallScope(value);
       return value;
     } catch { if (hideOnFailure) setRecallScope(undefined); return undefined; }
   };
   // Same contract as the isolation section: a host without the route keeps its
   // previous page shape, and a failure after an action keeps the current view.
-  const loadRecallTuning = async (hideOnFailure = true, cwd = projectCwd): Promise<RecallTuningView | undefined> => {
+  const loadRecallTuning = async (hideOnFailure = true): Promise<RecallTuningView | undefined> => {
     try {
-      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-tuning${cwdQuery(cwd)}`))).value as RecallTuningView;
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-tuning`))).value as RecallTuningView;
       setRecallTuning(value);
       return value;
     } catch { if (hideOnFailure) setRecallTuning(undefined); return undefined; }
   };
   // Same contract again: a host without the route keeps its previous page
   // shape, and a failure after an action keeps the current view.
-  const loadPeerId = async (hideOnFailure = true, cwd = projectCwd): Promise<PeerIdView | undefined> => {
+  const loadPeerId = async (hideOnFailure = true): Promise<PeerIdView | undefined> => {
     try {
-      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-peer${cwdQuery(cwd)}`))).value as PeerIdView;
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-peer`))).value as PeerIdView;
       setPeerId(value);
       return value;
     } catch { if (hideOnFailure) setPeerId(undefined); return undefined; }
   };
 
-  useEffect(() => { void load(); void loadVersion(); void initializeRecallSettings(); void loadPeerId(); }, []);
+  useEffect(() => {
+    void load();
+    void loadVersion();
+    // The init pass reads the isolation switch, the tuning knobs and the
+    // peer-source rule itself; reading the rule again here would race it, and a
+    // late read could overwrite the value a save just wrote.
+    void initializeRecallSettings();
+    void loadPeerId();
+  }, []);
 
   // The peer id draft follows the loaded view: an empty box means "no
   // plugin.peerId", which restores the automatic per-repository derivation.
@@ -282,7 +298,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     setBusy(true);
     if (previous) setRecallScope({ ...previous, scope: isolate ? "actor" : "all" });
     try {
-      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-scope${cwdQuery(projectCwd)}`, {
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-scope`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ scope: isolate ? "actor" : "all" }),
@@ -311,16 +327,21 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   const initializeRecallSettings = async () => {
     const scope = await loadRecallScope(true);
     const tuning = await loadRecallTuning(true);
+    const source = await loadPeerSource(true);
     const pinScope = scope?.source === "default";
     const tuningPatch = tuning?.initPatch ?? {};
     const pinTuning = Object.keys(tuningPatch).length > 0;
-    if (!pinScope && !pinTuning) return;
+    // The peer-source rule decides whether a workspace that is not a git
+    // repository gets a namespace at all, so it is pinned like the other
+    // product defaults rather than left to the official `git` default.
+    const pinSource = source?.origin === "default";
+    if (!pinScope && !pinTuning && !pinSource) return;
     setInitializing(true);
-    let step: "scope" | "tuning" = "scope";
+    let step: "scope" | "tuning" | "peer-source" = "scope";
     try {
       let pending = false;
       if (pinScope) {
-        const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-scope${cwdQuery(projectCwd)}`, {
+        const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-scope`, {
           method: "PUT",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ scope: "actor" }),
@@ -330,13 +351,24 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
       }
       step = "tuning";
       if (pinTuning) {
-        const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-tuning${cwdQuery(projectCwd)}`, {
+        const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-tuning`, {
           method: "PUT",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(tuningPatch),
         }))).value as RecallTuningView;
         setRecallTuning(value);
         pending = pending || value.restartPending;
+      }
+      step = "peer-source";
+      if (pinSource) {
+        // One write only: the reload below picks every key up at once.
+        const value = (await responseJson(await fetchFn(`${apiPrefix}/peer-source`, {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ peerSource: source?.recommended }),
+        }))).value as PeerSourceView;
+        setPeerSource(value);
+        pending = true;
       }
       if (pending) {
         setStatus(t("reloading"));
@@ -345,7 +377,9 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     } catch (error) {
       setStatus(step === "scope"
         ? t("isolationSaveFailed")
-        : t("tuningSaveFailed", { error: error instanceof Error ? error.message : "unknown" }));
+        : step === "peer-source"
+          ? t("peerSourceSaveFailed", { error: error instanceof Error ? error.message : "unknown" })
+          : t("tuningSaveFailed", { error: error instanceof Error ? error.message : "unknown" }));
     } finally { setInitializing(false); }
   };
 
@@ -400,7 +434,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     };
     setBusy(true);
     try {
-      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-tuning${cwdQuery(projectCwd)}`, {
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-tuning`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
@@ -432,7 +466,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     if (!peerId) return;
     setBusy(true);
     try {
-      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-peer${cwdQuery(projectCwd)}`, {
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-peer`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ peerId: peerIdDraft.trim() }),
@@ -454,26 +488,36 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     }
   };
 
-  /** Re-resolve the three project-scoped views for another directory. */
-  const applyProject = async (event?: React.FormEvent) => {
-    event?.preventDefault();
-    const next = projectDraft.trim();
+  /** The `peer.source` rule and the sidebar workspaces it applies to: a policy
+   * plus a read-only inspection, neither of them per-session state. */
+  const loadPeerSource = async (hideOnFailure = true): Promise<PeerSourceView | undefined> => {
+    try {
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/peer-source`))).value as PeerSourceView;
+      setPeerSource(value);
+      return value;
+    } catch { if (hideOnFailure) setPeerSource(undefined); return undefined; }
+  };
+  const savePeerSource = async (choice: PeerSourceView["recommended"]) => {
     setBusy(true);
     try {
-      setProjectCwd(next);
-      await Promise.all([
-        loadRecallScope(false, next),
-        loadRecallTuning(false, next),
-        loadPeerId(false, next),
-      ]);
-      setStatus(t("projectResolved"));
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/peer-source`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ peerSource: choice }),
+      }))).value as PeerSourceView;
+      setPeerSource(value);
+      // A rule change only reaches the running plugin through a reload.
+      setStatus(t("reloading"));
+      await runRestart();
+    } catch (error) {
+      setStatus(t("peerSourceSaveFailed", { error: error instanceof Error ? error.message : "unknown" }));
     } finally { setBusy(false); }
   };
 
   const fillCurrentRepo = async () => {
     setBusy(true);
     try {
-      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-peer/derive${cwdQuery(projectCwd)}`))).value as { peerId: string; origin?: string };
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-peer/derive`))).value as { peerId: string; origin?: string };
       if (value.peerId === "") setStatus(t("peerIdNotInRepo"));
       else { setPeerIdDraft(value.peerId); setStatus(t("peerIdDetected", { peerId: value.peerId })); }
     } catch (error) {
@@ -560,20 +604,6 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     {recallScope === undefined ? null : (
       <section className="ovm-card" aria-label={t("projectTitle")}>
         <h2>{t("projectTitle")}</h2>
-        {/* Project-scoped: peer derivation runs per session against the
-            session's directory, so any absolute path answers exactly. */}
-        <form className="ovm-projectPath" onSubmit={(event) => void applyProject(event)}>
-          <label>{t("projectPath")}
-            <input value={projectDraft} onChange={(event) => setProjectDraft(event.target.value)} placeholder={recallScope.project.cwd} />
-          </label>
-          <div className="ovm-actions"><button type="submit" disabled={busy}>{t("projectResolve")}</button></div>
-        </form>
-        <p className="ovm-hint">{t("projectPathHint")}</p>
-        <dl className="ovm-projectMeta">
-          <div><dt>{t("projectRoot")}</dt><dd>{recallScope.project.workspaceRoot === "" ? t("projectNotInRepo") : recallScope.project.workspaceRoot}</dd></div>
-          <div><dt>{t("projectPeer")}</dt><dd>{recallScope.project.peer === "" ? t("projectUserSpace") : recallScope.project.peer}</dd></div>
-          <div><dt>{t("projectScope")}</dt><dd>{recallScope.scope === "actor" ? t("scopeActor") : t("scopeAll")} · {t(SOURCE_KEYS[recallScope.source] ?? "scopeSourceDefault")}</dd></div>
-        </dl>
         <label className="ovm-switchRow">
           <span className="ovm-switchBox">
             <input
@@ -605,15 +635,36 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
             </ul>
           </div>
         ) : null}
-        {recallScope.project.declarations.length === 0
-          ? <p className="ovm-hint">{t("projectNoDeclarations")}</p>
-          : (
-            <div className="ovm-declarations">
-              <h3>{t("projectDeclarations")}</h3>
-              <ul>{recallScope.project.declarations.map((item) => <li key={item.key}><code>{item.key}</code> = <code>{String(item.value)}</code> · {item.layer}</li>)}</ul>
-            </div>
-          )}
-        {recallScope.project.warnings.length > 0 ? <ul className="ovm-warnings">{recallScope.project.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : null}
+      </section>
+    )}
+    {peerSource === undefined ? null : (
+      <section className="ovm-card" aria-label={t("peerSourceTitle")}>
+        <h2>{t("peerSourceTitle")}</h2>
+        {/* A rule, not a per-session value: the official plugin derives one peer
+            per session from that session's directory, so this decides the shape
+            of every derivation rather than naming one project. */}
+        <p className="ovm-hint">{t("peerSourceHint")}</p>
+        <label>{t("peerSourceLabel")}
+          <select
+            value={peerSource.choice}
+            disabled={busy || peerSource.origin === "env"}
+            onChange={(event) => {
+              const next = event.target.value;
+              if (next === "custom") return;
+              void savePeerSource(next as PeerSourceView["recommended"]);
+            }}
+          >
+            {peerSource.choice === "custom" ? <option value="custom">{t("peerSourceCustom")}</option> : null}
+            <option value="git-directory">{t("peerSourceGitDirectory")}</option>
+            <option value="git">{t("peerSourceGit")}</option>
+            <option value="cwd">{t("peerSourceCwd")}</option>
+            <option value="none">{t("peerSourceNone")}</option>
+          </select>
+        </label>
+        <p className="ovm-hint"><code>{peerSource.templates.length === 0 ? "[]" : peerSource.templates.join(" → ")}</code> · {t(SOURCE_KEYS[peerSource.origin] ?? "scopeSourceDefault")}</p>
+        {peerSource.origin === "env" ? <p className="ovm-warning" role="alert">{t("envOverrideWarning", { variable: "OPENVIKING_PEER_SOURCE" })}</p> : null}
+        {peerSource.sharedValue !== "" ? <p className="ovm-hint">{t("peerSourceSharedNote", { value: peerSource.sharedValue })}</p> : null}
+        {peerSource.needsAttention ? <p className="ovm-warning" role="alert">{t("peerSourceAttention")}</p> : null}
       </section>
     )}
     {peerId === undefined ? null : (

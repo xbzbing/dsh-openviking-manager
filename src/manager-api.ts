@@ -20,6 +20,12 @@ import {
 } from "./recall-peer.js";
 import { readMemoryProject, type MemoryProject } from "./memory-project.js";
 import {
+  effectivePeerSource,
+  normalizePeerSource,
+  peerSourceView,
+  savePeerSource,
+} from "./peer-source.js";
+import {
   currentRecallTuning,
   recallTuningView,
   snapshotLoadedRecallTuning,
@@ -516,6 +522,35 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
           });
         } catch (error) {
           writeJson(res, 500, { ok: false, error: error instanceof Error ? error.message : "Unable to derive the peer id" });
+        }
+      },
+    },
+    {
+      kind: "exact",
+      path: `${MANAGER_API_PREFIX}/peer-source`,
+      handler: async (req, res) => {
+        if (rejectCrossOrigin(req, res)) return;
+        if (req.method === "GET") {
+          try {
+            writeJson(res, 200, { ok: true, value: await peerSourceView(ovcliPath, { env }) });
+          } catch (error) {
+            writeJson(res, 500, { ok: false, error: error instanceof Error ? error.message : "Unable to read the peer source rule" });
+          }
+          return;
+        }
+        if (req.method !== "PUT") {
+          writeJson(res, 405, { error: "method not allowed" });
+          return;
+        }
+        try {
+          // The value domain is the official `peer.source`: a preset name, a
+          // template, or a list of templates tried in order.
+          const body = await readJson(req);
+          const value = normalizePeerSource((body as Record<string, unknown> | null)?.peerSource);
+          await savePeerSource(ovcliPath, value);
+          writeJson(res, 200, { ok: true, value: await peerSourceView(ovcliPath, { env }) });
+        } catch (error) {
+          writeJson(res, 400, { ok: false, error: error instanceof Error ? error.message : "Unable to save the peer source rule" });
         }
       },
     },

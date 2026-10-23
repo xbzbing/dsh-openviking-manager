@@ -52,7 +52,15 @@ test("peer id is empty by default and saving a value writes plugin.peerId then r
     // Pin isolation and all three product defaults up front so first-load
     // initialization triggers no reload of its own: the only restart here is
     // the peer-id save, which keeps the count unambiguous.
-    initialConfig: { plugin: { recallPeerScope: "actor", scoreThreshold: 0.5, recallQueryExpansion: "off", timeoutMs: 15000 } },
+    initialConfig: {
+      plugin: {
+        recallPeerScope: "actor",
+        scoreThreshold: 0.5, recallQueryExpansion: "off", timeoutMs: 15000,
+        // The peer-source rule is a product default too; pinning it keeps the
+        // first-load pass from reloading before the action under test.
+        peerSource: ["{git_remote}", "{git_root}", "{cwd}"],
+      },
+    },
   });
   try {
     await page.goto(fixture.url);
