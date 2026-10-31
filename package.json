@@ -29,6 +29,7 @@
     "!lib/standalone.*",
     "!lib/client/standalone.*",
     "locale/*.json",
+    "docs/details/*.md",
     "icon.svg",
     "cordis.patch.yml",
     "README.md",
