@@ -710,6 +710,34 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
         </div>
       </form>
     </section>
+    {inputPill === undefined ? null : (
+      <section className="ovm-card" aria-label={t("inputPillTitle")}>
+        <h2>{t("inputPillTitle")}</h2>
+        <SegmentedControl
+          id="ovm-inputPill"
+          label={t("inputPillLabel")}
+          value={inputPill ? "show" : "hide"}
+          disabled={inputPillBusy}
+          options={[
+            { value: "hide", label: t("inputPillHide") },
+            { value: "show", label: t("inputPillShow") },
+          ]}
+          onChange={(next: string) => void saveInputPill(next === "show")}
+        />
+        {INPUT_PILL_MODES.map((mode) => (
+          <div
+            key={mode}
+            id={`ovm-inputPill-${mode}-panel`}
+            role="tabpanel"
+            aria-labelledby={`ovm-inputPill-${mode}`}
+            hidden={(inputPill ? "show" : "hide") !== mode}
+          >
+            <p className="ovm-hint ovm-isolationHint">{t("inputPillHint")}</p>
+          </div>
+        ))}
+        {inputPillStatus !== "" ? <p className="ovm-status" role="status">{inputPillStatus}</p> : null}
+      </section>
+    )}
     {recallScope === undefined ? null : (
       <section className="ovm-card" aria-label={t("projectTitle")}>
         <h2>{t("projectTitle")}</h2>
@@ -1002,34 +1030,6 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
             not hide that the file value is not the effective one. */}
         {tuningEnvVars.length > 0 ? <p className="ovm-warning" role="alert">{t("tuningEnvWarning", { vars: tuningEnvVars.join(", ") })}</p> : null}
         {tuningWorkspaceLayers.length > 0 ? <p className="ovm-warning" role="alert">{t("tuningWorkspaceWarning", { keys: tuningWorkspaceLayers.join(", ") })}</p> : null}
-      </section>
-    )}
-    {inputPill === undefined ? null : (
-      <section className="ovm-card" aria-label={t("inputPillTitle")}>
-        <h2>{t("inputPillTitle")}</h2>
-        <SegmentedControl
-          id="ovm-inputPill"
-          label={t("inputPillLabel")}
-          value={inputPill ? "show" : "hide"}
-          disabled={inputPillBusy}
-          options={[
-            { value: "hide", label: t("inputPillHide") },
-            { value: "show", label: t("inputPillShow") },
-          ]}
-          onChange={(next: string) => void saveInputPill(next === "show")}
-        />
-        {INPUT_PILL_MODES.map((mode) => (
-          <div
-            key={mode}
-            id={`ovm-inputPill-${mode}-panel`}
-            role="tabpanel"
-            aria-labelledby={`ovm-inputPill-${mode}`}
-            hidden={(inputPill ? "show" : "hide") !== mode}
-          >
-            <p className="ovm-hint ovm-isolationHint">{t("inputPillHint")}</p>
-          </div>
-        ))}
-        {inputPillStatus !== "" ? <p className="ovm-status" role="status">{inputPillStatus}</p> : null}
       </section>
     )}
     <section className="ovm-card"><details className="ovm-recovery ovm-collapse"><summary><h2>{t("recoverTitle")}</h2></summary><div className="ovm-collapseContent"><p className="ovm-hint">{t("recoverHint")}</p>

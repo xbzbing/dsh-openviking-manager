@@ -235,6 +235,10 @@ test("hides the composer pill by default and shows it once the setting turns it 
     const card = page.getByRole("region", { name: "Composer pill" });
     const hide = card.getByRole("tab", { name: "Hide" });
     const show = card.getByRole("tab", { name: "Show" });
+    // The card sits between the connection form and project isolation.
+    const topOf = (name) => page.getByRole("region", { name }).evaluate((element) => element.getBoundingClientRect().top);
+    expect(await topOf("Composer pill")).toBeLessThan(await topOf("Project memory isolation"));
+
     await expect(hide).toHaveAttribute("aria-selected", "true");
     const toggle = page.getByRole("button", { name: "Toggle OpenViking memory for this session" });
     await expect(toggle).toHaveCount(0);
