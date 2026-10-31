@@ -11,6 +11,7 @@
 - `user_key` 不得从服务端 API 回传给浏览器。已有 key 仅以掩码展示；新建或轮换产生的新 key 只可在当前表单内等待用户保存。
 - 任何新增 HTTP 路由都必须保持同源检查、`no-store` 响应和输入验证。
 - 会话开关只拦截官方插件在该会话的注入/写入/MCP 请求，不修改其行为定义：开关状态为进程内存（默认开启，重启复位），关闭只对之后的 agent step 生效。
+- 输入框「OpenViking」胶囊默认隐藏，配置页「输入框胶囊」卡片可切换显示。该显示偏好属于本插件自身的界面设置，写入 `$DSH_HOME/plugin-data/dsh-openviking-manager/preferences.json`（`ui-preferences` 路由），不进 `ovcli.conf`；隐藏胶囊不改变会话开关状态。
 - 本插件不修改 `ov.conf`、不编排 OpenViking 容器/服务，也不复制官方记忆插件能力。
 - 持久控制只写官方声明的配置面（`ovcli.conf` 的 `plugin.dsh` 段）；键名与取值域以 `@openviking/dsh-memory-plugin` 的 config-schema 为唯一真源，写入保留未知键与共享 `plugin` 段（它属于本机其他 harness），不发明自有配置键。隔离开关写 `plugin.dsh.recallPeerScope`（显式 `actor`/`all`，不靠删键回落）与可选的 `plugin.dsh.peerId`；召回调优卡片暴露官方已声明的 `scoreThreshold`、`recallLimit`、`recallQueryExpansion`、`recallExcludeUris`、`recallEventsDecayProtection`、`timeoutMs`、`recallContextTimeoutMs` 七个键。其中 `scoreThreshold`（0.5）、`recallQueryExpansion`（off）与 `timeoutMs`（15000）带**产品默认**：首次打开配置页且没有任何层定义该键时自动写入并重载——写的是官方键，不改官方默认，文件/工作区/ env 的取值仍然优先。`timeoutMs` 的官方 dsh harness 默认是 10000，产品默认钉到 15000 是为了在后端 search/rerank 卡死时给单次请求一个明确上限；`recallContextTimeoutMs` 官方默认 0（按 `timeoutMs` 与扩写/改写地板派生），不钉产品默认。留空即回到该键的默认值，恢复默认时同时清理共享段的同名残留键；越界或格式错误的请求被拒绝且不落盘。
 - 隔离模型：隔离单元是**项目**（peer），由官方按会话所在 workspace 的 git 身份推导，`actor` 只召回本项目。必须能表达「同项目跨 agent/机器共享、不同项目即使同机同 agent 隔离」；不得用机器级 pin 去实现项目隔离（pin 会让所有项目共用一个 peer，UI 已标注该代价）。目录不在 git 仓库时 peer 为空、写入用户级空间，必须明确提示。

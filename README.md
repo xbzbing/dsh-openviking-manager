@@ -38,7 +38,7 @@ dsh plugin --profile web add https://github.com/xbzbing/dsh-openviking-manager/r
 - 本机发现：读取 `~/.openviking/ov.conf` 的非敏感状态，例如认证模式、是否存在 root key；`ovcli.conf` 始终优先；
 - 临时使用 `root_api_key` 调用官方 Admin API：列账号、列用户、创建账号/用户、重新生成用户 Key；
 - 根据当前 endpoint 推导 Studio 地址（`<endpoint>/studio`），允许用户手工改为反向代理地址；
-- 会话级 OpenViking 开关：对话输入框左侧的按钮（默认开启）。关闭某个会话后，本插件会拦截官方插件在该会话的上下文注入、记忆写入/提交，并拒绝其 `mcp__openviking__*` 工具调用，使该会话不再读写 OpenViking；
+- 会话级 OpenViking 开关：对话输入框左侧的「OpenViking」胶囊（会话默认开启）。胶囊本身默认隐藏，可在配置页「输入框胶囊」卡片中选择显示；隐藏胶囊不会关闭记忆。关闭某个会话后，本插件会拦截官方插件在该会话的上下文注入、记忆写入/提交，并拒绝其 `mcp__openviking__*` 工具调用，使该会话不再读写 OpenViking；
 - 项目记忆隔离（**默认开启**）：写入 `plugin.dsh.recallPeerScope`，首次打开配置页且没有任何层定义该值时自动写入 `actor` 并重载。`actor` 只召回本项目 peer 的记忆；peer 由官方插件按每个会话所在 workspace 的 git 身份（远端优先、无远端用仓库根）推导，于是**同一项目跨 agent、跨机器、跨 clone/worktree 共享一份记忆，不同项目即使同机同 agent 也互相隔离**。关闭开关写 `plugin.dsh.recallPeerScope: "all"`，回到官方默认的「本项目优先、跨项目降权」；写的是 DSH 作用域，不会改动本机其他 harness 的共享 `plugin` 段；
 - 项目面板：可填项目目录（默认宿主启动目录）单独解析，显示仓库根、项目 peer 及其推导来源、召回范围的**生效值与来源**；并列出仓库里 `.openviking/config.json`、`config.local.json` 以及 `~/.openviking/workspaces/<slot>.json` 的声明——这些工作区层的优先级**高于** `ovcli.conf`，其中会把隔离改宽的项（`recall.peer_scope: all`、`recall.enabled: false`、`capture.enabled: false`、`peer.id` 钉死）会以错误/警告列出；目录不在 git 仓库时提示「推导不出 peer，会写入所有非项目目录共用的用户级空间」。本插件只读这些文件，**从不写入**工作区配置；
 - 召回调优：在同一页调整官方插件的自动召回参数 —— `scoreThreshold`（召回分数阈值，本插件默认 0.5、官方默认 0.35）、`recallLimit`（单次注入条数上限，默认 10）、`recallQueryExpansion`（查询扩写，本插件默认关闭、官方默认 auto）、`recallExcludeUris`（排除的 URI 子树，适合屏蔽 skills、resources 目录索引这类样板内容）、`recallEventsDecayProtection`（事件记忆的衰减保护时长，如 `7d`；留空＝服务端默认不保护）、`timeoutMs`（请求超时，本插件默认 15000 毫秒、官方 dsh 默认 10000）、`recallContextTimeoutMs`（召回搜索超时，官方默认 0＝按请求超时与扩写/改写地板派生）。后端 search/rerank 卡死时调低这两个超时，可让召回快速失败、不再拖住整个回合（会话感知搜索有 15s/45s 地板，只有 `recallContextTimeoutMs` 设正值才压得动）。键名与取值域严格取自官方 config-schema，只写 `plugin.dsh` 并保留其他键与共享 `plugin` 段；分数阈值、查询扩写与请求超时带**产品默认**，首次打开配置页且没有任何层定义该键时自动写入并重载，字段留空即回到该键的默认值（并同时清掉共享段里的同名键，避免残留值继续生效）；`OPENVIKING_*` 环境变量与工作区层优先级更高，被覆盖的字段只读并显示警告；保存后自动重新加载官方记忆插件；
@@ -62,6 +62,7 @@ dsh plugin --profile web add https://github.com/xbzbing/dsh-openviking-manager/r
 - 现有 `user_key` 从服务端本地读取，浏览器只收到掩码；连接验证可在不回显旧 key 的情况下完成。
 - 多数管理路由仅接受同源请求，响应使用 `no-store`，且不在日志中记录请求头。
 - 会话开关状态仅保存在插件进程内存中，重启 DSH 后所有会话恢复默认开启。
+- 「输入框胶囊」的显示设置属于本插件自身的界面偏好，保存在 `$DSH_HOME/plugin-data/dsh-openviking-manager/preferences.json`（默认 `~/.dsh`），不写入 `ovcli.conf`。
 - 关闭只对之后的 agent step 生效：历史消息里已注入的 OpenViking 上下文在被压缩前仍留在该会话中；关闭期间官方插件此前排队的待提交写入仍可能由其全局恢复逻辑补发。本插件不启动、停止或修改 OpenViking 服务端，也不替换官方记忆插件。
 - 隔离开关只写官方声明的 `plugin.dsh.recallPeerScope` 键（`actor` / `all` 都显式写入，避免删键回落到共享段的值），只作用于 DSH，不改动共享 `plugin` 段里其他 harness 的设置，`ovcli.conf` 中的其余键（含凭据）一律保留。保存后的自动重载只经宿主 Cordis 公开机制重载官方插件使其重读配置，不修改官方代码；副作用是对打开的会话做一次提交归档并短暂重建 MCP 工具（卡片文案已提示）。`OPENVIKING_RECALL_PEER_SCOPE` 与工作区层优先级更高，页面会显示覆盖来源。
 - 工作区配置（`.openviking/config.json`、`config.local.json`、`~/.openviking/workspaces/<slot>.json`）**只读不写**：本插件把它们当作高于 `ovcli.conf` 的声明展示，并标出会破坏隔离的项；编辑工作区配置仍是用户/仓库自己的事。生效值由官方解析器（`shared/plugin-config.mjs`）算出，不自行重写合并规则。
@@ -136,6 +137,7 @@ src/
   openviking-admin.ts   官方 Admin API 适配
   manager-api.ts        DSH 同源 HTTP 路由（含会话开关）
   session-toggle.ts     会话级 OpenViking 开关的内存状态
+  ui-preferences.ts     本插件界面偏好（输入框胶囊显示开关）的读写
   ov-prestep.ts         识别并剥离官方插件注入的 pre-step 消息
   ov-tool-guard.ts      关闭会话对 mcp__openviking__* 工具的拒绝
   openviking-gate.ts    对官方 OpenVikingRuntime 的按会话短路包装

@@ -37,6 +37,7 @@ import { probeOpenViking } from "./openviking-client.js";
 import { createAccount, createUser, listAccounts, listUsers, rotateUserKey } from "./openviking-admin.js";
 import { isSessionOpenVikingEnabled, normalizeSessionId, setOpenVikingEnabled } from "./session-toggle.js";
 import { checkLatestVersion, readVersionInfo } from "./version.js";
+import { loadUiPreferences, parseUiPreferencesPatch, resolveUiPreferencesPath, saveUiPreferences } from "./ui-preferences.js";
 
 export const MANAGER_API_PREFIX = "/plugins/dsh-openviking-manager/api";
 /** Sent when an admin operation is attempted before an OpenViking endpoint is saved. */
@@ -74,6 +75,9 @@ export interface ManagerApiOptions {
    * assertions. An explicit `ovcliPath` / `ovconfPath` still wins over the env
    * resolution, keeping path-injecting tests fully hermetic. */
   env?: RecallScopeEnv;
+  /** This manager's own display preferences file; defaults to
+   * `$DSH_HOME/plugin-data/dsh-openviking-manager/preferences.json`. */
+  preferencesPath?: string;
 }
 
 /** Resolve the two config paths this manager operates on. An explicitly
@@ -200,6 +204,7 @@ function rejectCrossOrigin(req: IncomingMessage, res: ServerResponse): boolean {
 export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
   const env = options.env ?? process.env;
   const { ovcliPath, ovconfPath } = resolvePaths(options, env);
+  const preferencesPath = options.preferencesPath ?? resolveUiPreferencesPath(env);
   const scopeOptionsFor = (project: MemoryProject): { workspaceScope?: unknown; workspaceLayer?: string } => {
     const declaration = project.declarations.find((item) => item.key === "recall.peer_scope");
     return { workspaceScope: declaration?.value, workspaceLayer: declaration?.layer };
@@ -421,6 +426,33 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
           writeJson(res, 200, { ok: true, value: { sessionId, enabled: isSessionOpenVikingEnabled(sessionId) } });
         } catch (error) {
           writeJson(res, 400, { ok: false, error: error instanceof Error ? error.message : "Unable to update the session toggle" });
+        }
+      },
+    },
+    {
+      kind: "exact",
+      path: `${MANAGER_API_PREFIX}/ui-preferences`,
+      handler: async (req, res) => {
+        if (rejectCrossOrigin(req, res)) return;
+        if (req.method === "GET") {
+          writeJson(res, 200, { ok: true, value: await loadUiPreferences(preferencesPath) });
+          return;
+        }
+        if (req.method !== "PUT") {
+          writeJson(res, 405, { error: "method not allowed" });
+          return;
+        }
+        let patch;
+        try {
+          patch = parseUiPreferencesPatch(await readJson(req));
+        } catch (error) {
+          writeJson(res, 400, { ok: false, error: error instanceof Error ? error.message : "Invalid preferences" });
+          return;
+        }
+        try {
+          writeJson(res, 200, { ok: true, value: await saveUiPreferences(preferencesPath, patch) });
+        } catch (error) {
+          writeJson(res, 500, { ok: false, error: error instanceof Error ? error.message : "Unable to save preferences" });
         }
       },
     },

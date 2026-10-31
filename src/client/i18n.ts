@@ -89,6 +89,13 @@ export type TranslationKey =
   | "toggleStateOff"
   | "toggleAction"
   | "toggleFailed"
+  | "inputPillTitle"
+  | "inputPillLabel"
+  | "inputPillShow"
+  | "inputPillHide"
+  | "inputPillHint"
+  | "inputPillSaved"
+  | "inputPillSaveFailed"
   | "aboutTitle"
   | "openRepository"
   | "checkUpdates"
@@ -273,6 +280,13 @@ const en: Record<TranslationKey, string> = {
   toggleStateOff: "OpenViking memory is off for this session",
   toggleAction: "Toggle OpenViking memory for this session",
   toggleFailed: "Unable to update the OpenViking toggle.",
+  inputPillTitle: "Composer pill",
+  inputPillLabel: "OpenViking pill in the input box",
+  inputPillShow: "Show",
+  inputPillHide: "Hide",
+  inputPillHint: "Shows an OpenViking pill next to the input box that turns memory on or off for that session. Hiding it does not turn memory off: every session keeps memory on unless you switch it off with the pill.",
+  inputPillSaved: "Composer pill setting saved.",
+  inputPillSaveFailed: "Unable to save the composer pill setting.",
   aboutTitle: "About this plugin",
   openRepository: "Open on GitHub",
   checkUpdates: "Check for updates",
@@ -456,6 +470,13 @@ const zh: Record<TranslationKey, string> = {
   toggleStateOff: "本会话 OpenViking 记忆已关闭",
   toggleAction: "切换本会话的 OpenViking 记忆开关",
   toggleFailed: "无法更新 OpenViking 开关。",
+  inputPillTitle: "输入框胶囊",
+  inputPillLabel: "输入框中的 OpenViking 胶囊",
+  inputPillShow: "显示",
+  inputPillHide: "隐藏",
+  inputPillHint: "在输入框旁显示 OpenViking 胶囊，用来开关该会话的记忆。隐藏胶囊不会关闭记忆：除非用胶囊关掉，每个会话的记忆都保持开启。",
+  inputPillSaved: "输入框胶囊设置已保存。",
+  inputPillSaveFailed: "无法保存输入框胶囊设置。",
   aboutTitle: "关于本插件",
   openRepository: "在 GitHub 打开",
   checkUpdates: "检查新版本",

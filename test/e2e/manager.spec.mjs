@@ -7,7 +7,7 @@ import { test, expect } from "@playwright/test";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 
-async function startManagerFixture({ openVikingUrl = "http://127.0.0.1:8008", sessionToggleGetDelayMs = 0 } = {}) {
+async function startManagerFixture({ openVikingUrl = "http://127.0.0.1:8008", sessionToggleGetDelayMs = 0, showInputToggle } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "dsh-ov-manager-e2e-"));
   const configPath = join(directory, "ovcli.conf");
   // Pre-seeded so first-load initialisation writes nothing: see probe.spec.mjs.
@@ -18,9 +18,11 @@ async function startManagerFixture({ openVikingUrl = "http://127.0.0.1:8008", se
     user: "alice",
     plugin: { dsh: { recallPeerScope: "actor", scoreThreshold: 0.5, recallQueryExpansion: "off", timeoutMs: 15000 } },
   }), "utf8");
+  const preferencesPath = join(directory, "preferences.json");
+  if (showInputToggle !== undefined) await writeFile(preferencesPath, JSON.stringify({ showInputToggle }), "utf8");
   const script = await readFile(join(root, "lib", "standalone.js"));
   const api = await import(join(root, "lib", "manager-api.js"));
-  const routes = new Map(api.makeManagerRoutes({ ovcliPath: configPath }).map((route) => [route.path, route.handler]));
+  const routes = new Map(api.makeManagerRoutes({ ovcliPath: configPath, preferencesPath }).map((route) => [route.path, route.handler]));
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
     if (url.pathname === "/") {
@@ -47,6 +49,7 @@ async function startManagerFixture({ openVikingUrl = "http://127.0.0.1:8008", se
   return {
     url: `http://127.0.0.1:${port}`,
     configPath,
+    preferencesPath,
     // Destroy idle keep-alive sockets before awaiting close so teardown never
     // waits out the browser connection's idle timeout.
     close: () => new Promise((resolve, reject) => {
@@ -131,7 +134,7 @@ test("shows the plugin version tag and GitHub repository with a manual update ch
 });
 
 test("keeps the toggle unavailable while its initial state read is pending", async ({ page }) => {
-  const fixture = await startManagerFixture({ sessionToggleGetDelayMs: 250 });
+  const fixture = await startManagerFixture({ sessionToggleGetDelayMs: 250, showInputToggle: true });
   try {
     await page.goto(fixture.url);
     const toggle = page.getByRole("button", { name: "Toggle OpenViking memory for this session" });
@@ -148,7 +151,7 @@ test("keeps the toggle unavailable while its initial state read is pending", asy
 });
 
 test("shows the session state as a color marker with the detail on hover", async ({ page }) => {
-  const fixture = await startManagerFixture();
+  const fixture = await startManagerFixture({ showInputToggle: true });
   try {
     // The toggle state lives in process memory, so earlier tests in this worker
     // may already have flipped this session; pin it before the page reads it.
@@ -189,7 +192,7 @@ test("shows the session state as a color marker with the detail on hover", async
 });
 
 test("collapses the toggle to a dot when the screen or the composer row gets narrow", async ({ page }) => {
-  const fixture = await startManagerFixture();
+  const fixture = await startManagerFixture({ showInputToggle: true });
   try {
     await page.goto(fixture.url);
     const toggle = page.getByRole("button", { name: "Toggle OpenViking memory for this session" });
@@ -220,6 +223,37 @@ test("collapses the toggle to a dot when the screen or the composer row gets nar
 
     await root.evaluate((element) => { element.style.width = "900px"; });
     await expect(label).toBeVisible();
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("hides the composer pill by default and shows it once the setting turns it on", async ({ page }) => {
+  const fixture = await startManagerFixture();
+  try {
+    await page.goto(fixture.url);
+    const card = page.getByRole("region", { name: "Composer pill" });
+    const hide = card.getByRole("tab", { name: "Hide" });
+    const show = card.getByRole("tab", { name: "Show" });
+    await expect(hide).toHaveAttribute("aria-selected", "true");
+    const toggle = page.getByRole("button", { name: "Toggle OpenViking memory for this session" });
+    await expect(toggle).toHaveCount(0);
+
+    await show.click();
+    await expect(card.getByRole("status")).toHaveText("Composer pill setting saved.");
+    await expect(show).toHaveAttribute("aria-selected", "true");
+    // The pill follows the saved value on the same page, without a reload.
+    await expect(toggle).toBeVisible();
+    expect(JSON.parse(await readFile(fixture.preferencesPath, "utf8"))).toEqual({ showInputToggle: true });
+
+    // The stored value survives a reload.
+    await page.reload();
+    await expect(toggle).toBeVisible();
+    await expect(page.getByRole("region", { name: "Composer pill" }).getByRole("tab", { name: "Show" })).toHaveAttribute("aria-selected", "true");
+
+    await page.getByRole("region", { name: "Composer pill" }).getByRole("tab", { name: "Hide" }).click();
+    await expect(toggle).toHaveCount(0);
+    expect(JSON.parse(await readFile(fixture.preferencesPath, "utf8"))).toEqual({ showInputToggle: false });
   } finally {
     await fixture.close();
   }

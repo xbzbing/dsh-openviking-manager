@@ -17,6 +17,9 @@ test("uses Simplified Chinese when the browser language is Chinese", async ({ pa
     if (req.url === "/plugins/dsh-openviking-manager/api/discovery") {
       return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true, value: { ovcli: { kind: "missing", config: { url: "http://127.0.0.1:1933", account: "", user: "", apiKeySet: false, apiKeyMasked: "" } }, suggestedEndpoint: "http://127.0.0.1:1933", localServer: { found: false, rootKeyAvailable: false } } }));
     }
+    if (req.url === "/plugins/dsh-openviking-manager/api/ui-preferences" && req.method === "GET") {
+      return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true, value: { showInputToggle: true } }));
+    }
     if (req.url?.startsWith("/plugins/dsh-openviking-manager/api/session-toggle") && req.method === "GET") {
       return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true, value: { sessionId: "standalone-session", enabled: true } }));
     }
@@ -33,6 +36,9 @@ test("uses Simplified Chinese when the browser language is Chinese", async ({ pa
     await toggle.hover();
     await expect.poll(() => toggle.evaluate((element) => getComputedStyle(element, "::after").opacity)).toBe("1");
     expect(await toggle.evaluate((element) => getComputedStyle(element, "::after").content)).toContain("本会话 OpenViking 记忆已开启");
+    const pillCard = page.getByRole("region", { name: "输入框胶囊" });
+    await expect(pillCard.getByRole("tab", { name: "显示" })).toHaveAttribute("aria-selected", "true");
+    await expect(pillCard.getByRole("tab", { name: "隐藏" })).toBeVisible();
     await page.locator("details.ovm-recovery summary").click();
     await expect(page.getByRole("alert")).toContainText("请先在上方保存 OpenViking 服务地址");
   } finally {

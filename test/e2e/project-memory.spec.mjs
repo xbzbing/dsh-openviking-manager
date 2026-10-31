@@ -25,7 +25,7 @@ async function startFixture({ workspacePaths, initialConfig, env: extraEnv = {} 
     OPENVIKING_STATE_DIR: join(directory, "state"),
     ...extraEnv,
   };
-  const options = { ovcliPath: configPath, env };
+  const options = { ovcliPath: configPath, env, preferencesPath: join(directory, "preferences.json") };
   if (workspacePaths) options.workspacePaths = workspacePaths;
   const routes = new Map(api.makeManagerRoutes(options).map((route) => [route.path, route.handler]));
   const server = createServer((req, res) => {

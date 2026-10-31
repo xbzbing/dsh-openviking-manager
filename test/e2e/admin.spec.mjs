@@ -56,7 +56,7 @@ async function startManagerFixture(openVikingUrl, { writeConfig = true } = {}) {
   }
   const script = await readFile(join(root, "lib", "standalone.js"));
   const api = await import(join(root, "lib", "manager-api.js"));
-  const routes = new Map(api.makeManagerRoutes({ ovcliPath: configPath }).map((route) => [route.path, route.handler]));
+  const routes = new Map(api.makeManagerRoutes({ ovcliPath: configPath, preferencesPath: join(directory, "preferences.json") }).map((route) => [route.path, route.handler]));
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
     if (url.pathname === "/") return res.writeHead(200, { "content-type": "text/html" }).end('<!doctype html><html><body><div id="root"></div><script src="/app.js"></script></body></html>');

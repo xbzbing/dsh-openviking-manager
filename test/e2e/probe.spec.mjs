@@ -62,7 +62,7 @@ async function startManagerFixture(openVikingUrl, { restartMemoryPlugin, restart
   await writeFile(configPath, JSON.stringify(document), "utf8");
   const script = await readFile(join(root, "lib", "standalone.js"));
   const api = await import(join(root, "lib", "manager-api.js"));
-  const options = { ovcliPath: configPath };
+  const options = { ovcliPath: configPath, preferencesPath: join(directory, "preferences.json") };
   if (restartMemoryPlugin) options.restartMemoryPlugin = restartMemoryPlugin;
   if (restartTimeoutMs !== undefined) options.restartTimeoutMs = restartTimeoutMs;
   const routes = new Map(api.makeManagerRoutes(options).map((route) => [route.path, route.handler]));

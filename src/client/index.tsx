@@ -6,7 +6,7 @@ import type { PluginConfigViewProps } from "@deepseek-ai/dsh-client-ui-plugin-ma
 import type { Translate } from "@deepseek-ai/dsh-client-ui-slots";
 import { dictionaries, type TranslationKey } from "./i18n.js";
 import { ManagerForm } from "./manager-form.js";
-import { OpenVikingToggle } from "./ov-toggle.js";
+import { OpenVikingInputSlot } from "./ov-toggle.js";
 import { installManagerStyles } from "./styles.js";
 
 declare module "@deepseek-ai/dsh-client-ui-slots" {
@@ -50,7 +50,7 @@ export function apply(ctx: ClientContext): void {
         registrant: "dsh-openviking-manager",
         inject: (sessionId: string) => ({ sessionId }),
       },
-      OpenVikingToggle,
+      OpenVikingInputSlot,
     ),
   );
 }

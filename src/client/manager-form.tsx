@@ -6,6 +6,7 @@ import {
   type MenuItem,
 } from "@deepseek-ai/dsh-client-ui-primitives";
 import { browserLocale, createTranslation, type Translation, type TranslationKey } from "./i18n.js";
+import { setShowInputToggle } from "./ui-preferences.js";
 
 export interface ConfigView { url: string; account: string; user: string; apiKeySet: boolean; apiKeyMasked: string; }
 interface ConfigResult { kind: "missing" | "invalid-json" | "invalid-shape" | "ready"; config: ConfigView; permissionWarning?: boolean; message?: string; }
@@ -82,6 +83,8 @@ const RISK_KEYS: Record<string, TranslationKey> = {
   "no-peer": "riskNoPeer",
   "root-key-credential": "riskRootKey",
 };
+/** The composer pill control's two choices, in render order: each owns a panel id. */
+const INPUT_PILL_MODES = ["hide", "show"] as const;
 /** The isolation control's two modes, in render order: each owns a panel id. */
 const ISOLATION_MODES = ["all", "actor"] as const;
 const SOURCE_KEYS: Record<string, TranslationKey> = {
@@ -178,6 +181,11 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   // inspect: peer derivation is per session, so it is exact for any path.
   const [peerSource, setPeerSource] = useState<PeerSourceView>();
   const [workspaces, setWorkspaces] = useState<WorkspacesView>();
+  /** Whether the composer shows the OpenViking pill; undefined hides the card
+   * on hosts without the preferences route. */
+  const [inputPill, setInputPill] = useState<boolean>();
+  const [inputPillBusy, setInputPillBusy] = useState(false);
+  const [inputPillStatus, setInputPillStatus] = useState("");
   // The first-load pass pins product defaults and may reload the official
   // plugin. It runs on its own state: a slow or stuck reload must not leave the
   // connection form disabled, which is what a single shared `busy` did.
@@ -244,9 +252,36 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     } catch { if (hideOnFailure) setPeerId(undefined); return undefined; }
   };
 
+  const loadInputPill = async () => {
+    try {
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/ui-preferences`))).value as { showInputToggle: boolean };
+      setInputPill(value.showInputToggle);
+    } catch { setInputPill(undefined); }
+  };
+  const saveInputPill = async (show: boolean) => {
+    const previous = inputPill;
+    setInputPill(show);
+    setInputPillBusy(true);
+    try {
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/ui-preferences`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ showInputToggle: show }),
+      }))).value as { showInputToggle: boolean };
+      setInputPill(value.showInputToggle);
+      // The composer pill reads the same page-wide value, so it follows at once.
+      setShowInputToggle(value.showInputToggle);
+      setInputPillStatus(t("inputPillSaved"));
+    } catch {
+      setInputPill(previous);
+      setInputPillStatus(t("inputPillSaveFailed"));
+    } finally { setInputPillBusy(false); }
+  };
+
   useEffect(() => {
     void load();
     void loadVersion();
+    void loadInputPill();
     // The init pass reads the isolation switch, the tuning knobs and the
     // peer-source rule itself; reading the rule again here would race it, and a
     // late read could overwrite the value a save just wrote.
@@ -967,6 +1002,34 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
             not hide that the file value is not the effective one. */}
         {tuningEnvVars.length > 0 ? <p className="ovm-warning" role="alert">{t("tuningEnvWarning", { vars: tuningEnvVars.join(", ") })}</p> : null}
         {tuningWorkspaceLayers.length > 0 ? <p className="ovm-warning" role="alert">{t("tuningWorkspaceWarning", { keys: tuningWorkspaceLayers.join(", ") })}</p> : null}
+      </section>
+    )}
+    {inputPill === undefined ? null : (
+      <section className="ovm-card" aria-label={t("inputPillTitle")}>
+        <h2>{t("inputPillTitle")}</h2>
+        <SegmentedControl
+          id="ovm-inputPill"
+          label={t("inputPillLabel")}
+          value={inputPill ? "show" : "hide"}
+          disabled={inputPillBusy}
+          options={[
+            { value: "hide", label: t("inputPillHide") },
+            { value: "show", label: t("inputPillShow") },
+          ]}
+          onChange={(next: string) => void saveInputPill(next === "show")}
+        />
+        {INPUT_PILL_MODES.map((mode) => (
+          <div
+            key={mode}
+            id={`ovm-inputPill-${mode}-panel`}
+            role="tabpanel"
+            aria-labelledby={`ovm-inputPill-${mode}`}
+            hidden={(inputPill ? "show" : "hide") !== mode}
+          >
+            <p className="ovm-hint ovm-isolationHint">{t("inputPillHint")}</p>
+          </div>
+        ))}
+        {inputPillStatus !== "" ? <p className="ovm-status" role="status">{inputPillStatus}</p> : null}
       </section>
     )}
     <section className="ovm-card"><details className="ovm-recovery ovm-collapse"><summary><h2>{t("recoverTitle")}</h2></summary><div className="ovm-collapseContent"><p className="ovm-hint">{t("recoverHint")}</p>

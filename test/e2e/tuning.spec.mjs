@@ -14,7 +14,7 @@ async function startTuningFixture({ restartMemoryPlugin, initialConfig, env } = 
   await writeFile(configPath, JSON.stringify({ ...base, ...initialConfig }, null, 2), { encoding: "utf8", mode: 0o600 });
   const script = await readFile(join(root, "lib", "standalone.js"));
   const api = await import(join(root, "lib", "manager-api.js"));
-  const options = { ovcliPath: configPath, env: env ?? {} };
+  const options = { ovcliPath: configPath, env: env ?? {}, preferencesPath: join(directory, "preferences.json") };
   if (restartMemoryPlugin) options.restartMemoryPlugin = restartMemoryPlugin;
   const routes = new Map(api.makeManagerRoutes(options).map((route) => [route.path, route.handler]));
   const server = createServer((req, res) => {

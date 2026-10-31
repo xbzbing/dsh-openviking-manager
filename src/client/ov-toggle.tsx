@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Translate } from "@deepseek-ai/dsh-client-ui-slots";
 import type { TranslationKey } from "./i18n.js";
+import { useShowInputToggle } from "./ui-preferences.js";
 
 export const DEFAULT_TOGGLE_API_PREFIX = "/plugins/dsh-openviking-manager/api";
 
@@ -106,4 +107,12 @@ export function OpenVikingToggle({ sessionId, t, apiPrefix = DEFAULT_TOGGLE_API_
       <span className="ovm-ovToggleLabel">{t("toggleLabel")}</span>
     </button>
   );
+}
+
+/** The composer slot entry: renders the pill only when the configuration page
+ * turned it on. Hidden, it does not read the session state at all; the session
+ * toggle itself keeps its in-memory value (on by default). */
+export function OpenVikingInputSlot(props: OpenVikingToggleProps) {
+  const visible = useShowInputToggle(props.fetchFn ?? fetch, props.apiPrefix ?? DEFAULT_TOGGLE_API_PREFIX);
+  return visible ? <OpenVikingToggle {...props} /> : null;
 }

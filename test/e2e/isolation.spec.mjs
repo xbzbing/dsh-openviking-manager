@@ -14,7 +14,7 @@ async function startIsolationFixture({ restartMemoryPlugin, initialConfig } = {}
   await writeFile(configPath, JSON.stringify({ ...base, ...initialConfig }), { encoding: "utf8", mode: 0o600 });
   const script = await readFile(join(root, "lib", "standalone.js"));
   const api = await import(join(root, "lib", "manager-api.js"));
-  const options = { ovcliPath: configPath, env: {} };
+  const options = { ovcliPath: configPath, env: {}, preferencesPath: join(directory, "preferences.json") };
   if (restartMemoryPlugin) options.restartMemoryPlugin = restartMemoryPlugin;
   const routes = new Map(api.makeManagerRoutes(options).map((route) => [route.path, route.handler]));
   const server = createServer((req, res) => {
