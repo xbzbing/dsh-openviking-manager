@@ -1,6 +1,6 @@
 # dsh-openviking-manager
 
-[English](README_EN.md) | 简体中文
+[English](README.en.md) | 简体中文
 
 ![OpenViking 管理器](docs/assets/banner-zh.png)
 
@@ -54,7 +54,7 @@ dsh plugin --profile web add https://github.com/xbzbing/dsh-openviking-manager/r
 | ![DSH 插件页中的 openviking-manager](docs/assets/screenshots/zh/01-plugin-list.png) | ![恢复或初始化访问：列出账号](docs/assets/screenshots/zh/03-recovery-accounts.png) |
 | ![插件配置页：连接配置与连接验证](docs/assets/screenshots/zh/02-configuration.png) | ![恢复或初始化访问：创建用户](docs/assets/screenshots/zh/04-create-user.png) |
 
-截图由 `npm run screenshots` 在一个隔离的 DSH 实例中生成，英文版见 [README_EN.md](README_EN.md)。
+截图由 `npm run screenshots` 在一个隔离的 DSH 实例中生成，英文版见 [README.en.md](README.en.md)。
 
 ## 安全边界
 
