@@ -43,11 +43,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # No `registry-url`: setup-node then writes an `.npmrc` carrying an
+      # `_authToken` line, which makes npm treat the publish as token auth and
+      # skip the OIDC exchange. The registry defaults to npmjs anyway.
       - uses: actions/setup-node@v7
         with:
           node-version: '24.x'
           cache: npm
-          registry-url: 'https://registry.npmjs.org'
 
       # Read what has already happened for this version, before spending a
       # minute on a gate that may not be needed. A version carrying a hyphen
@@ -121,17 +123,33 @@ jobs:
           git tag -a "v$V" -m "v$V"
           git push origin "refs/tags/v$V"
 
-      # Trusted Publishing (OIDC) is preferred; drop the secret and register
-      # this workflow as a trusted publisher on npmjs.com. With the secret
-      # present, npm authenticates with it instead. Prereleases never reach
-      # this step.
+      # Trusted Publishing (OIDC): npm exchanges this job's id-token for a
+      # short-lived publish token. The exchange only happens when NO token is
+      # configured — and an empty `NODE_AUTH_TOKEN` counts as configured, so
+      # the variable is unset here and any agent config still carrying an
+      # `_authToken` line is stripped. npm 11.5.1 is the first CLI that does
+      # the exchange, and a prerelease never reaches this step.
       - name: Publish to npm
         if: steps.state.outputs.prerelease != 'true' && steps.state.outputs.npm != 'done'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
           V="${{ steps.state.outputs.version }}"
+          unset NODE_AUTH_TOKEN
+          if [ -n "${NPM_CONFIG_USERCONFIG:-}" ] && [ -f "$NPM_CONFIG_USERCONFIG" ]; then
+            sed -i '/_authToken/d' "$NPM_CONFIG_USERCONFIG"
+          fi
+          NPM_VERSION="$(npm --version)"
+          node -e '
+            const have = process.argv[1].split(".").map(Number);
+            const need = [11, 5, 1];
+            for (let i = 0; i < need.length; i += 1) {
+              if (have[i] > need[i]) process.exit(0);
+              if (have[i] < need[i]) {
+                console.error(`npm ${process.argv[1]} cannot publish with a trusted publisher; needs >= ${need.join(".")}`);
+                process.exit(1);
+              }
+            }
+          ' "$NPM_VERSION"
           npm publish "dsh-openviking-manager-$V.tgz" --provenance --access public
 
       - name: GitHub Release
