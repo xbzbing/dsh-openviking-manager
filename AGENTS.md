@@ -17,7 +17,7 @@
 - 隔离模型：隔离单元是**项目**（peer），由官方按会话所在 workspace 的 git 身份推导，`actor` 只召回本项目。必须能表达「同项目跨 agent/机器共享、不同项目即使同机同 agent 隔离」；不得用机器级 pin 去实现项目隔离（pin 会让所有项目共用一个 peer，UI 已标注该代价）。目录不在 git 仓库时 peer 为空、写入用户级空间，必须明确提示。
 - 工作区层（`<repo>/.openviking/config.json`、`config.local.json`、`~/.openviking/workspaces/<slot>.json`）优先级**高于** `ovcli.conf`：本插件只经官方 `resolveSettings` / `resolveWorkspaceSettings` 读取并展示其声明与风险（`recall.peer_scope: all`、`recall.enabled: false`、`capture.enabled: false`、`peer.id` 钉死、`no-peer`、root key 凭据），**不写入**这些文件，也不自行重写合并规则。
 - workspace 层配置由用户与仓库手工管理：本插件只读、只展示，不提供编辑界面。`~/.openviking/workspaces/<slot>.json` 同属该层。
-- 官方插件的重载只通过宿主 Cordis 公开机制（先按 `openviking-memory` 显示名扫描 registry，再退回模块身份 `registry.get()`；官方 0.5.29 的入口会 import 宿主包，故不以 import 入口为主路径），使其重新读取配置；不修改官方插件代码与行为定义。隔离与召回调优设置保存后自动执行一次重载，UI 文案提前提示重载及其副作用；重载结果在状态行报告，未完成或官方插件未加载时由状态行给出重启 DSH 实例的指引。
+- 官方插件的重载只通过宿主 Cordis 公开机制（先按 `openviking-memory` 显示名扫描 registry，再退回模块身份 `registry.get()`；官方 0.5.29+ 的入口会 import 宿主包，故不以 import 入口为主路径），使其重新读取配置；不修改官方插件代码与行为定义。隔离与召回调优设置保存后自动执行一次重载，UI 文案提前提示重载及其副作用；重载结果在状态行报告，未完成或官方插件未加载时由状态行给出重启 DSH 实例的指引。
 - env 层（如 `OPENVIKING_RECALL_PEER_SCOPE`、`OPENVIKING_PEER_ID` 及各召回调优键的 `OPENVIKING_*` 变量）优先级高于本插件可写的任何文件，且进程启动后不可变；UI 必须显示其覆盖状态，而不是让文件设置假装生效。工作区层介于 env 与 `plugin.<harness>` 之间，同样要在 UI 中如实标注来源。
 
 ## 技术约定

@@ -171,7 +171,7 @@ test("a workspace file asking for a newer client warns, without blocking", async
 
   const project = await readMemoryProject({ cwd, env, ovcli: {}, ovconfDsh: undefined });
 
-  // The comparison runs against the installed official client (0.5.29 here),
+  // The comparison runs against the installed official client (0.5.34 here),
   // not against an empty version that would skip the check entirely.
   assert.ok(project.warnings.some((warning) => warning.includes("99.0.0")));
   // "Warns and never blocks": the declaration still applies.

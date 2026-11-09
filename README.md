@@ -74,7 +74,7 @@ dsh plugin --profile web add https://github.com/xbzbing/dsh-openviking-manager/r
 - Node.js `>= 22`
 - DSH `>= 0.1.6-alpha.2 < 0.3.0-0`
 - 一个可访问的 OpenViking 服务
-- 官方 `@openviking/dsh-memory-plugin` `>= 0.3.2`（不设上限；本仓库已完整测试至 `0.5.29`，并对 `0.5.20` / `0.5.29` 逐项核对了本插件所依赖的 runtime 接口、工作区层与配置面）
+- 官方 `@openviking/dsh-memory-plugin` `>= 0.5.29`（不设上限；本仓库已完整测试至 `0.5.34`，并对 `0.5.20` / `0.5.29` / `0.5.34` 逐项核对了本插件所依赖的 runtime 接口、工作区层与配置面）
 
 ## 服务端兼容性
 
@@ -92,12 +92,13 @@ dsh plugin --profile web add https://github.com/xbzbing/dsh-openviking-manager/r
 - 只用远端向量库（`http`/`volcengine`/`vikingdb`）或 IP/L2/稀疏融合分数时**不受影响**，无需调整；
 - 升级后若发现弱相关内容变多，可在 0.5–0.75 之间按需微调。
 
-### OpenViking 服务端 v0.5.2 / 官方插件 0.5.29
+### OpenViking 服务端 v0.5.2 / 官方插件 0.5.29–0.5.34
 
-- **项目隔离的依据没有变**：peer 仍由会话所在 workspace 的 git 身份推导（`shared/workspace-peer.mjs` 与 `workspace-identity.mjs` 在 0.5.20→0.5.29 之间无差异），`recallPeerScope: actor` 仍通过 `peer_scope` 传给 `/search/search`。
+- **项目隔离的依据没有变**：peer 仍由会话所在 workspace 的 git 身份推导（`shared/workspace-peer.mjs` 与 `workspace-identity.mjs` 在 0.5.20→0.5.34 之间无差异），`recallPeerScope: actor` 仍通过 `peer_scope` 传给 `/search/search`。
 - **`/mcp` 拒绝 root key**：把 root key 当客户端 key 用的部署，升级后数据面探测正常、记忆工具全部失败；本插件新增了这条诊断。
 - **外部 peer 身份改为无损 `ext-<base64>`**：旧的有损 peer 目录不会自动读取，存在歧义的数据需运维确认归属后迁移；本插件的 peer 校验因此拒绝 `ext-` 前缀，避免手工钉死时落进服务端的外部身份命名空间。
-- **新增官方键**：`recallEventsDecayProtection`（事件衰减保护，0.5.29 起，已加入调优面板）；`captureRedact`（抓取脱敏，off/standard/strict，默认 standard）属于抓取面，本插件暂不暴露，需要时直接在 `ovcli.conf` 的 `plugin.dsh` 里设置。
+- **官方键变化**：`recallEventsDecayProtection`（事件衰减保护，0.5.29 起，已加入调优面板）。`captureRedact` 在 0.5.30 已被官方移除（连同客户端抓取脱敏实现），0.5.34 会忽略该键；旧配置里的残留值本插件不会删除，但不要再依赖它。
+- **0.5.34 新增客户端召回压缩**：`recallCompress`、`recallCompressTimeoutMs`、`recallCompressModel`、`recallCompressThinking` 等键由官方插件在 DSH 侧调用宿主模型完成压缩；DSH 默认 `off`，不影响现有行为。本插件的调优卡片不暴露这组键，手动写进 `plugin.dsh` 会被保留；开启后压缩调用发生在 `recallMessage` 内，本插件的会话开关仍会在进入压缩前拦截。
 - **默认值变化只影响官方行为**：`captureToolResults` 在 dsh 下默认开启、`resumeArchiveInject` 与 `takeoverEnabled` 默认改为关闭，都不改变本插件写入的键。
 - Watch API 迁移、Working Memory 默认关闭、LangChain 导入迁移、Pi 扩展工具改名均发生在服务端或其他宿主，不影响本插件。
 

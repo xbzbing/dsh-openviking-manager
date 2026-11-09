@@ -6,8 +6,9 @@ import { harnessSection, pluginSection } from "./recall-scope.js";
  *
  * The keys, value domains and defaults below are the ones declared in the
  * official `shared/config-schema.mjs` of `@openviking/dsh-memory-plugin`
- * (read from 0.5.29); that file stays the single source of truth and this
- * module never invents a knob of its own:
+ * (read from 0.5.34; the seven knobs below are unchanged since 0.5.29); that
+ * file stays the single source of truth and this module never invents a knob of
+ * its own:
  *
  *   scoreThreshold              number  0..1          default 0.35  OPENVIKING_SCORE_THRESHOLD   (workspace: recall.score_threshold)
  *   recallLimit                 int     1..50         default 10    OPENVIKING_RECALL_LIMIT      (sendOnlyWhenConfigured; workspace: recall.max_items)
