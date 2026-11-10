@@ -31,7 +31,7 @@ type HostContext = {
     event: "session/event",
     listener: (session: { id?: string }, event: { type?: string }) => void,
   ): () => void;
-  webServer: { register(route: WebRoute): () => void };
+  webServer: { register(route: WebRoute): () => void; getOrigin(): string };
   /** The reflection layer, used to *read* a service without declaring it a hard
    * dependency. `inject` has no optional form, so a plugin that needs the
    * workspace registry to load would disappear entirely on a host that does
@@ -64,6 +64,18 @@ function workspacePathsOf(host: HostContext): string[] {
   }
 }
 
+/** The origin this host is bound to, for the manager's Host fence. Loopback is
+ * always accepted; this adds the LAN/TLS origin the server actually serves. A
+ * reverse-proxy deployment can add its public name through
+ * `DSH_OPENVIKING_MANAGER_ALLOWED_HOSTS`. */
+function allowedHostsOf(host: HostContext): string[] {
+  try {
+    return [new URL(host.webServer.getOrigin()).host];
+  } catch {
+    return [];
+  }
+}
+
 function agentSessionId(agent: AgentLike): string | undefined {
   return agent.id ?? agent.session?.id;
 }
@@ -80,6 +92,7 @@ export function apply(ctx: Context): void {
     const disposers = makeManagerRoutes({
       restartMemoryPlugin: () => restartOfficialOpenViking(ctx),
       workspacePaths: () => workspacePathsOf(host),
+      allowedHosts: allowedHostsOf(host),
     }).map((route) => host.webServer.register(route));
     return () => {
       for (const dispose of disposers) dispose();

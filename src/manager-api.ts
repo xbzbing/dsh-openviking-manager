@@ -36,13 +36,16 @@ import type { RestartResult } from "./openviking-restart.js";
 import { probeOpenViking } from "./openviking-client.js";
 import { createAccount, createUser, listAccounts, listUsers, rotateUserKey } from "./openviking-admin.js";
 import { isSessionOpenVikingEnabled, normalizeSessionId, setOpenVikingEnabled } from "./session-toggle.js";
+import { isRequestAllowed, normalizedAllowedHosts } from "./http-security.js";
 import { checkLatestVersion, readVersionInfo } from "./version.js";
 import { loadUiPreferences, parseUiPreferencesPatch, resolveUiPreferencesPath, saveUiPreferences } from "./ui-preferences.js";
 
 export const MANAGER_API_PREFIX = "/plugins/dsh-openviking-manager/api";
 /** Sent when an admin operation is attempted before an OpenViking endpoint is saved. */
 export const ENDPOINT_NOT_CONFIGURED_CODE = "endpoint-not-configured";
-const MAX_BODY_BYTES = 32 * 1024;
+/** The exclude list alone can carry 100 × 512-character URIs (~51 KiB), so a
+ * 32 KiB cap made the parser's own maximum unreachable. */
+const MAX_BODY_BYTES = 64 * 1024;
 const MAX_SESSION_ID_CHARS = 512;
 const MAX_CWD_CHARS = 4096;
 /** How long a plugin restart may take before the route answers anyway. A
@@ -78,6 +81,14 @@ export interface ManagerApiOptions {
   /** This manager's own display preferences file; defaults to
    * `$DSH_HOME/plugin-data/dsh-openviking-manager/preferences.json`. */
   preferencesPath?: string;
+  /** Authorities (host names, optionally with a port) this process serves in
+   * addition to loopback. The host passes its own bound origin here; a reverse
+   * proxy deployment can add its public name through
+   * `DSH_OPENVIKING_MANAGER_ALLOWED_HOSTS`. A request whose Host is neither
+   * loopback nor listed is refused: accepting any Host would let a DNS
+   * rebinding page reach these routes with the browser's same-origin
+   * privileges and read the masked key / write the endpoint. */
+  allowedHosts?: string[];
 }
 
 /** Resolve the two config paths this manager operates on. An explicitly
@@ -184,25 +195,18 @@ async function withTimeout(operation: Promise<RestartResult>, budget: number): P
   }
 }
 
-function isSameOrigin(req: IncomingMessage): boolean {
-  const host = req.headers.host;
-  const origin = req.headers.origin;
-  if (typeof host !== "string" || origin === undefined) return true;
-  try {
-    return new URL(origin).host === host;
-  } catch {
-    return false;
-  }
-}
-
-function rejectCrossOrigin(req: IncomingMessage, res: ServerResponse): boolean {
-  if (isSameOrigin(req)) return false;
+function rejectCrossOrigin(req: IncomingMessage, res: ServerResponse, allowedHosts: ReadonlySet<string>): boolean {
+  if (isRequestAllowed(req, allowedHosts)) return false;
   writeJson(res, 403, { error: "same-origin requests only" });
   return true;
 }
 
 export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
   const env = options.env ?? process.env;
+  const allowedHosts = normalizedAllowedHosts([
+    ...(options.allowedHosts ?? []),
+    ...(env.DSH_OPENVIKING_MANAGER_ALLOWED_HOSTS ?? "").split(","),
+  ]);
   const { ovcliPath, ovconfPath } = resolvePaths(options, env);
   const preferencesPath = options.preferencesPath ?? resolveUiPreferencesPath(env);
   const scopeOptionsFor = (project: MemoryProject): { workspaceScope?: unknown; workspaceLayer?: string } => {
@@ -266,7 +270,7 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
       kind: "exact",
       path: `${MANAGER_API_PREFIX}/discovery`,
       handler: async (req, res) => {
-        if (rejectCrossOrigin(req, res)) return;
+        if (rejectCrossOrigin(req, res, allowedHosts)) return;
         if (req.method !== "GET") {
           writeJson(res, 405, { error: "method not allowed" });
           return;
@@ -282,7 +286,7 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
       kind: "exact",
       path: `${MANAGER_API_PREFIX}/config`,
       handler: async (req, res) => {
-        if (rejectCrossOrigin(req, res)) return;
+        if (rejectCrossOrigin(req, res, allowedHosts)) return;
         if (req.method === "GET") {
           try {
             writeJson(res, 200, { ok: true, value: await loadOvcliConfig(ovcliPath) });
@@ -305,8 +309,13 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
             writeJson(res, 400, { error: "url, account, and user must be strings" });
             return;
           }
+          const before = await loadOvcliConfig(ovcliPath);
           const config = await saveOvcliConfig(ovcliPath, { url, account, user, ...(apiKey === undefined ? {} : { apiKey }) });
-          writeJson(res, 200, { ok: true, value: { kind: "ready", config, permissionWarning: false } });
+          // A blank key preserves the stored one only while the endpoint
+          // origin stays the same. Tell the UI when the save retired it, so the
+          // empty masked field is explained instead of looking like data loss.
+          const keyCleared = before.kind === "ready" && before.config.apiKeySet && !config.apiKeySet;
+          writeJson(res, 200, { ok: true, value: { kind: "ready", config, permissionWarning: false, keyCleared } });
         } catch (error) {
           writeJson(res, 400, { ok: false, error: error instanceof Error ? error.message : "Unable to save ovcli.conf" });
         }
@@ -316,7 +325,7 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
       kind: "exact",
       path: `${MANAGER_API_PREFIX}/probe`,
       handler: async (req, res) => {
-        if (rejectCrossOrigin(req, res)) return;
+        if (rejectCrossOrigin(req, res, allowedHosts)) return;
         if (req.method !== "POST") {
           writeJson(res, 405, { error: "method not allowed" });
           return;
@@ -346,7 +355,7 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
       kind: "exact",
       path: `${MANAGER_API_PREFIX}/admin`,
       handler: async (req, res) => {
-        if (rejectCrossOrigin(req, res)) return;
+        if (rejectCrossOrigin(req, res, allowedHosts)) return;
         if (req.method !== "POST") {
           writeJson(res, 405, { error: "method not allowed" });
           return;
@@ -355,6 +364,12 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
           const body = await readJson(req);
           const operation = requiredString(body, "operation");
           const rootApiKey = requiredString(body, "rootApiKey");
+          // Reject an unknown operation before its fields: otherwise a typo
+          // reports "accountId is required" instead of the real problem.
+          if (!["accounts", "users", "create-account", "create-user", "rotate-user-key"].includes(operation)) {
+            writeJson(res, 400, { ok: false, error: "unsupported admin operation" });
+            return;
+          }
           const current = await loadOvcliConfig(ovcliPath);
           const endpoint = current.kind === "ready" ? current.config.url : stringAt(body, "url")?.trim();
           if (endpoint === undefined || endpoint === "") {
@@ -386,7 +401,6 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
             writeJson(res, 200, { ok: true, value: { operation, userKey } });
             return;
           }
-          writeJson(res, 400, { ok: false, error: "unsupported admin operation" });
         } catch (error) {
           writeJson(res, 400, { ok: false, error: error instanceof Error ? error.message : "OpenViking admin request failed" });
         }
@@ -396,7 +410,7 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
       kind: "exact",
       path: `${MANAGER_API_PREFIX}/session-toggle`,
       handler: async (req, res) => {
-        if (rejectCrossOrigin(req, res)) return;
+        if (rejectCrossOrigin(req, res, allowedHosts)) return;
         if (req.method === "GET") {
           const url = new URL(req.url ?? "/", "http://localhost");
           const sessionId = normalizeSessionId(url.searchParams.get("sessionId"));
@@ -433,7 +447,7 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
       kind: "exact",
       path: `${MANAGER_API_PREFIX}/ui-preferences`,
       handler: async (req, res) => {
-        if (rejectCrossOrigin(req, res)) return;
+        if (rejectCrossOrigin(req, res, allowedHosts)) return;
         if (req.method === "GET") {
           writeJson(res, 200, { ok: true, value: await loadUiPreferences(preferencesPath) });
           return;
@@ -460,7 +474,7 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
       kind: "exact",
       path: `${MANAGER_API_PREFIX}/repair-permissions`,
       handler: async (req, res) => {
-        if (rejectCrossOrigin(req, res)) return;
+        if (rejectCrossOrigin(req, res, allowedHosts)) return;
         if (req.method !== "POST") {
           writeJson(res, 405, { error: "method not allowed" });
           return;
@@ -477,7 +491,7 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
       kind: "exact",
       path: `${MANAGER_API_PREFIX}/version`,
       handler: async (req, res) => {
-        if (rejectCrossOrigin(req, res)) return;
+        if (rejectCrossOrigin(req, res, allowedHosts)) return;
         if (req.method !== "GET") {
           writeJson(res, 405, { error: "method not allowed" });
           return;
@@ -498,7 +512,7 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
       kind: "exact",
       path: `${MANAGER_API_PREFIX}/recall-scope`,
       handler: async (req, res) => {
-        if (rejectCrossOrigin(req, res)) return;
+        if (rejectCrossOrigin(req, res, allowedHosts)) return;
         if (req.method === "GET") {
           try {
             writeJson(res, 200, { ok: true, value: await scopeView(cwdOf(req)) });
@@ -529,7 +543,7 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
       kind: "exact",
       path: `${MANAGER_API_PREFIX}/recall-tuning`,
       handler: async (req, res) => {
-        if (rejectCrossOrigin(req, res)) return;
+        if (rejectCrossOrigin(req, res, allowedHosts)) return;
         if (req.method === "GET") {
           try {
             writeJson(res, 200, { ok: true, value: await tuningView(cwdOf(req)) });
@@ -557,7 +571,7 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
       kind: "exact",
       path: `${MANAGER_API_PREFIX}/recall-peer`,
       handler: async (req, res) => {
-        if (rejectCrossOrigin(req, res)) return;
+        if (rejectCrossOrigin(req, res, allowedHosts)) return;
         if (req.method === "GET") {
           try {
             writeJson(res, 200, { ok: true, value: await peerView(cwdOf(req)) });
@@ -586,7 +600,7 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
       kind: "exact",
       path: `${MANAGER_API_PREFIX}/recall-peer/derive`,
       handler: async (req, res) => {
-        if (rejectCrossOrigin(req, res)) return;
+        if (rejectCrossOrigin(req, res, allowedHosts)) return;
         if (req.method !== "GET") {
           writeJson(res, 405, { error: "method not allowed" });
           return;
@@ -606,7 +620,7 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
       kind: "exact",
       path: `${MANAGER_API_PREFIX}/peer-source`,
       handler: async (req, res) => {
-        if (rejectCrossOrigin(req, res)) return;
+        if (rejectCrossOrigin(req, res, allowedHosts)) return;
         if (req.method === "GET") {
           try {
             writeJson(res, 200, { ok: true, value: await peerSourceView(ovcliPath, { env }) });
@@ -635,7 +649,7 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
       kind: "exact",
       path: `${MANAGER_API_PREFIX}/workspaces`,
       handler: async (req, res) => {
-        if (rejectCrossOrigin(req, res)) return;
+        if (rejectCrossOrigin(req, res, allowedHosts)) return;
         if (req.method !== "GET") {
           writeJson(res, 405, { error: "method not allowed" });
           return;
@@ -656,7 +670,7 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
       kind: "exact",
       path: `${MANAGER_API_PREFIX}/recall-scope/restart`,
       handler: async (req, res) => {
-        if (rejectCrossOrigin(req, res)) return;
+        if (rejectCrossOrigin(req, res, allowedHosts)) return;
         if (req.method !== "POST") {
           writeJson(res, 405, { error: "method not allowed" });
           return;

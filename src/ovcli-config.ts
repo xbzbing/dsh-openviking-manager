@@ -36,7 +36,9 @@ function asString(value: unknown): string {
 }
 
 function maskKey(value: string): string {
-  if (value.length <= 4) return value === "" ? "" : "••••";
+  // A short key has no safe prefix/suffix to reveal: showing two characters of
+  // a five-character key would hand over most of it.
+  if (value.length <= 8) return value === "" ? "" : "••••";
   return `${value.slice(0, 2)}…${value.slice(-3)}`;
 }
 
@@ -120,11 +122,29 @@ export async function loadOvcliConfig(path: string): Promise<OvcliLoadResult> {
   return { kind: "ready", config: viewOf(parsed as Record<string, unknown>), permissionWarning: isUnsafeMode(info.mode) };
 }
 
+/** The origin a stored URL points at, or undefined when it is not a URL. A
+ * credential is scoped to an origin: changing the origin must not send the old
+ * key to the new server. */
+function originOf(value: string): string | undefined {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function saveOvcliConfig(path: string, input: OvcliConfigInput): Promise<OvcliConfigView> {
   const url = assertHttpEndpoint(input.url);
   const existing = await readOvcliObject(path);
   const existingKey = asString(existing.api_key);
-  const apiKey = input.apiKey === undefined ? existingKey : input.apiKey.trim();
+  const previousUrl = asString(existing.url);
+  // A key is a credential for one origin. Keep it only while the endpoint
+  // stays on that origin; an endpoint rewrite (which a rebinding page could
+  // attempt) would otherwise forward the stored user key to a new server.
+  const endpointOriginChanged = previousUrl !== "" && originOf(previousUrl) !== originOf(url);
+  const apiKey = input.apiKey === undefined
+    ? (endpointOriginChanged ? "" : existingKey)
+    : input.apiKey.trim();
   const next: Record<string, unknown> = {
     ...existing,
     url,
