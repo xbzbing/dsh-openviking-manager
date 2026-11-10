@@ -10,12 +10,14 @@ export type TranslationKey =
   | "noUsableConfig"
   | "unableLoad"
   | "configurationSaved"
+  | "endpointKeyCleared"
   | "unableSave"
   | "permissionsRepaired"
   | "repairPermissions"
   | "unableRepair"
   | "localServerFound"
   | "authMode"
+  | "authModeUnknown"
   | "localManagementAvailable"
   | "noLocalRootKey"
   | "invalidConfig"
@@ -40,11 +42,15 @@ export type TranslationKey =
   | "peerSourceCwd"
   | "peerSourceNone"
   | "peerSourceSharedNote"
-  | "peerSourceAttention"
+  | "peerSourceAttentionNone"
+  | "peerSourceAttentionCwd"
+  | "peerSourceAttentionGit"
+  | "peerSourceAttentionMixed"
   | "peerSourceSaveFailed"
   | "workspacesTitle"
   | "workspacesHint"
   | "workspacesEmpty"
+  | "workspacesTruncated"
   | "workspaceShares"
   | "workspaceIsolated"
   | "workspaceOverrides"
@@ -154,6 +160,7 @@ export type TranslationKey =
   | "tuningSaveFailed"
   | "tuningEnvWarning"
   | "tuningReloadNotice"
+  | "tuningSharedRestoreNote"
   | "projectTitle"
   | "projectPath"
   | "projectResolve"
@@ -173,13 +180,16 @@ export type TranslationKey =
   | "projectDeclarations"
   | "projectNoDeclarations"
   | "projectRisks"
+  | "riskUnknown"
   | "projectWarnings"
+  | "projectUnavailable"
   | "projectSharedNote"
   | "projectResolved"
   | "decayLabel"
   | "decayHint"
   | "tuningWorkspaceWarning"
   | "peerIdHazard"
+  | "peerIdSharedClearNote"
   | "riskScopeAll"
   | "riskRecallOff"
   | "riskCaptureOff"
@@ -201,12 +211,14 @@ const en: Record<TranslationKey, string> = {
   noUsableConfig: "No usable ovcli.conf was found.",
   unableLoad: "Unable to load configuration.",
   configurationSaved: "Configuration saved. The stored user key remains masked.",
+  endpointKeyCleared: "Configuration saved. The endpoint changed origin, so the stored user key was cleared; enter a key for the new server if it needs one.",
   unableSave: "Unable to save configuration.",
   permissionsRepaired: "File permissions repaired.",
   repairPermissions: "Repair file permissions",
   unableRepair: "Unable to repair file permissions. Fix ~/.openviking/ovcli.conf manually.",
   localServerFound: "Local server config found",
   authMode: "auth mode",
+  authModeUnknown: "unknown",
   localManagementAvailable: "local management is available",
   noLocalRootKey: "no local root key detected",
   invalidConfig: "The file needs repair before it can be safely reused. Enter the correct values and save a compatible configuration.",
@@ -218,7 +230,7 @@ const en: Record<TranslationKey, string> = {
   optional: "optional",
   existingKey: "Existing key: {key}",
   pasteUserKey: "Paste a user_key",
-  keyHint: "Leave the key blank to preserve the existing key. This field accepts a user key, never a root API key.",
+  keyHint: "Leave the key blank to preserve the existing key while the endpoint keeps the same origin; changing the origin clears it. This field accepts a user key, never a root API key.",
   save: "Save configuration",
   verify: "Verify connection",
   verifying: "Verifying…",
@@ -231,11 +243,15 @@ const en: Record<TranslationKey, string> = {
   peerSourceCwd: "Directory only",
   peerSourceNone: "Off (user-level space)",
   peerSourceSharedNote: "The shared plugin section still says {value} for the other harnesses on this machine; this manager only writes plugin.dsh.",
-  peerSourceAttention: "With this rule a workspace that is not a git repository shares the user-level space with every other directory that has no peer. Repository first with a directory fallback keeps clones together and plain folders separate.",
+  peerSourceAttentionNone: "With no templates every directory writes to the shared user-level space, so different projects mix their memories.",
+  peerSourceAttentionCwd: "Every directory is its own namespace: clones and worktrees of one repository will not share memories.",
+  peerSourceAttentionGit: "A workspace that is not a git repository shares the user-level space with every other directory that has no peer. Repository first with a directory fallback keeps clones together and plain folders separate.",
+  peerSourceAttentionMixed: "This custom rule has no repository identity or no directory fallback; check that it separates the projects you expect.",
   peerSourceSaveFailed: "Unable to save the peer source rule: {error}",
   workspacesTitle: "Workspace status",
   workspacesHint: "Each workspace as a session in it would be resolved. Two workspaces on one peer share memories; an empty peer means the shared user-level space.",
   workspacesEmpty: "No workspaces are registered on this host.",
+  workspacesTruncated: "This host has more workspaces than the panel inspects; the list below is partial.",
   workspaceShares: "Shares memories with: {peers}",
   workspaceIsolated: "Isolated: no other workspace resolves to this peer.",
   workspaceOverrides: "This workspace declares its own overrides: {keys}",
@@ -345,6 +361,7 @@ const en: Record<TranslationKey, string> = {
   tuningSaveFailed: "Unable to save recall tuning: {error}",
   tuningEnvWarning: "{vars} is set in the environment and outranks this file. Remove the variable and restart the DSH process to change it.",
   tuningReloadNotice: "Saving these keys reloads the official memory plugin the same way the switch above does: every open session is committed and archived once, and the OpenViking MCP tools are rebuilt briefly.",
+  tuningSharedRestoreNote: "Restoring a field to its default also removes that key from the shared plugin section used by other harnesses on this machine; that shared value cannot be restored from here.",
   projectTitle: "Project memory isolation",
   projectPath: "Project directory",
   projectResolve: "Resolve",
@@ -364,13 +381,16 @@ const en: Record<TranslationKey, string> = {
   projectDeclarations: "Repository declarations (they outrank this machine's settings)",
   projectNoDeclarations: "No workspace declaration applies to this directory.",
   projectRisks: "Isolation risks",
+  riskUnknown: "An unknown workspace risk applies to this directory.",
   projectWarnings: "Workspace warnings",
+  projectUnavailable: "The official workspace resolver is unavailable here, so this directory cannot be inspected. The connection settings still work.",
   projectSharedNote: "The shared plugin section still says {scope} for the other harnesses on this machine; this manager only writes plugin.dsh.",
   projectResolved: "Project resolved.",
   decayLabel: "Event decay protection",
   decayHint: "A duration such as 7d or 12h: event memories keep their score for that long. Empty leaves the server default (no protection).",
   tuningWorkspaceWarning: "Overridden by a workspace file: {keys}",
   peerIdHazard: "A peer pin is process-wide: every project on this machine then shares that one peer. Leave it empty to isolate per project.",
+  peerIdSharedClearNote: "The shared plugin section still pins {value} for the other harnesses on this machine. Saving a value here overrides it for DSH only; clearing this field also removes that shared pin, because it would otherwise keep every session pinned.",
   riskScopeAll: "{layer} sets recall.peer_scope to all, so this project also recalls memories from other projects.",
   riskRecallOff: "{layer} turns automatic recall off for this project.",
   riskCaptureOff: "{layer} turns capture off for this project.",
@@ -391,12 +411,14 @@ const zh: Record<TranslationKey, string> = {
   noUsableConfig: "未找到可用的 ovcli.conf。",
   unableLoad: "无法加载配置。",
   configurationSaved: "配置已保存。已存储的用户 Key 保持掩码展示。",
+  endpointKeyCleared: "配置已保存。端点源已变更，因此已清除存储的用户 Key；如果新服务需要 Key，请重新填写。",
   unableSave: "无法保存配置。",
   permissionsRepaired: "文件权限已修复。",
   repairPermissions: "修复文件权限",
   unableRepair: "无法修复文件权限。请手工修复 ~/.openviking/ovcli.conf。",
   localServerFound: "已发现本机服务配置",
   authMode: "认证模式",
+  authModeUnknown: "未知",
   localManagementAvailable: "可使用本机管理能力",
   noLocalRootKey: "未发现本机 root key",
   invalidConfig: "该文件需要修复后才能安全复用。请填写正确值并保存兼容配置。",
@@ -408,7 +430,7 @@ const zh: Record<TranslationKey, string> = {
   optional: "可选",
   existingKey: "已有 Key：{key}",
   pasteUserKey: "粘贴 user_key",
-  keyHint: "留空可保留已有 Key。此字段只接受 user key，不能填写 root API key。",
+  keyHint: "端点源不变时留空可保留已有 Key；更换端点源会清除它。此字段只接受 user key，不能填写 root API key。",
   save: "保存配置",
   verify: "验证连接",
   verifying: "正在验证…",
@@ -421,11 +443,15 @@ const zh: Record<TranslationKey, string> = {
   peerSourceCwd: "仅目录",
   peerSourceNone: "关闭（用户级空间）",
   peerSourceSharedNote: "共享 plugin 段仍写着 {value}，对本机其他 harness 生效；本插件只写 plugin.dsh。",
-  peerSourceAttention: "按当前规则，不是 git 仓库的工作区会和其它推导不出 peer 的目录共用用户级空间。「仓库优先 + 目录兜底」能让克隆共享、普通目录各自独立。",
+  peerSourceAttentionNone: "没有任何模板时，所有目录都会写入共享的用户级空间，不同项目的记忆会混在一起。",
+  peerSourceAttentionCwd: "每个目录各自独立：同一仓库的克隆和工作树不会共享记忆。",
+  peerSourceAttentionGit: "不是 git 仓库的工作区会和其它推导不出 peer 的目录共用用户级空间。「仓库优先 + 目录兜底」能让克隆共享、普通目录各自独立。",
+  peerSourceAttentionMixed: "这条自定义规则缺少仓库标识或目录兜底，请确认它按预期隔离项目。",
   peerSourceSaveFailed: "无法保存 peer 来源规则：{error}",
   workspacesTitle: "工作区现状",
   workspacesHint: "按「如果会话在这个目录里」逐个解析的结果。落在同一个 peer 的工作区共享记忆；peer 为空表示共用用户级空间。",
   workspacesEmpty: "该宿主上没有注册的工作区。",
+  workspacesTruncated: "宿主的 workspace 数量超过面板检查上限，下面的列表不完整。",
   workspaceShares: "与这些工作区共享记忆：{peers}",
   workspaceIsolated: "已隔离：没有其它工作区落到同一个 peer。",
   workspaceOverrides: "该工作区自己声明了覆盖：{keys}",
@@ -535,6 +561,7 @@ const zh: Record<TranslationKey, string> = {
   tuningSaveFailed: "无法保存召回调优设置：{error}",
   tuningEnvWarning: "环境变量 {vars} 已设置并覆盖此文件配置。请移除该变量并重启 DSH 进程。",
   tuningReloadNotice: "保存这些键同样会自动重新加载官方记忆插件，副作用与上方开关一致：会对所有打开的会话执行一次提交归档，并短暂重建 OpenViking MCP 工具。",
+  tuningSharedRestoreNote: "把字段恢复默认会同时从本机其他 harness 使用的共享 plugin 段删除该键；那个共享值无法从这里恢复。",
   projectTitle: "项目记忆隔离",
   projectPath: "项目目录",
   projectResolve: "解析",
@@ -554,13 +581,16 @@ const zh: Record<TranslationKey, string> = {
   projectDeclarations: "仓库声明（优先级高于本机设置）",
   projectNoDeclarations: "当前目录没有生效的 workspace 声明。",
   projectRisks: "隔离风险",
+  riskUnknown: "该目录存在未识别的 workspace 风险。",
   projectWarnings: "工作区解析警告",
+  projectUnavailable: "官方 workspace 解析器在此不可用，无法检查该目录；连接配置仍可正常使用。",
   projectSharedNote: "共享 plugin 段仍写着 {scope}，对本机其他 harness 生效；本插件只写 plugin.dsh。",
   projectResolved: "已重新解析项目。",
   decayLabel: "事件衰减保护",
   decayHint: "时长，如 7d、12h：事件记忆在该时长内保持分数。留空则用服务端默认（不保护）。",
   tuningWorkspaceWarning: "被仓库配置覆盖：{keys}",
   peerIdHazard: "固定 peer id 是进程级的：本机所有项目会共用这一个 peer。想按项目隔离就留空。",
+  peerIdSharedClearNote: "共享 plugin 段仍为其他 harness 钉着 {value}。在此保存只会覆盖 DSH 的值；清空本字段还会删除那个共享钉死值，否则它会让所有会话继续被钉死。",
   riskScopeAll: "{layer} 把 recall.peer_scope 设为 all，本项目会同时召回其他项目的记忆。",
   riskRecallOff: "{layer} 关闭了本项目的自动召回。",
   riskCaptureOff: "{layer} 关闭了本项目的记忆捕获。",

@@ -262,3 +262,25 @@ test("hides the composer pill by default and shows it once the setting turns it 
     await fixture.close();
   }
 });
+
+
+test("the manager stylesheet stays inside its own shell", async ({ page }) => {
+  const fixture = await startManagerFixture();
+  try {
+    await page.goto(fixture.url);
+    await expect(page.locator(".ovm-shell")).toBeVisible();
+    // A host page may render its own form and textarea outside the manager.
+    // Global element selectors used to restyle both; scope every rule to
+    // .ovm-shell and leave the rest of the page alone.
+    const computed = await page.evaluate(() => {
+      const form = document.createElement("form");
+      const area = document.createElement("textarea");
+      document.body.append(form, area);
+      return { form: getComputedStyle(form).display, textarea: getComputedStyle(area).minHeight };
+    });
+    expect(computed.form).toBe("block");
+    expect(computed.textarea).not.toBe("84px");
+  } finally {
+    await fixture.close();
+  }
+});

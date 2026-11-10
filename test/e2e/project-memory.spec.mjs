@@ -208,3 +208,65 @@ test("an environment override makes the rule card read-only", async ({ page }) =
     await fixture.cleanup();
   }
 });
+
+
+test("the project panel resolves a directory and names its peer", async ({ page }) => {
+  const fixture = await startFixture({ initialConfig: { plugin: { dsh: { peerSource: "git" } } } });
+  try {
+    const checkout = await repo(fixture.directory, "panel-repo", "git@github.com:example/panel.git");
+    const scratch = await plain(fixture.directory, "panel-scratch");
+    await page.goto(fixture.url);
+
+    const card = page.getByRole("region", { name: "Project memory isolation" });
+    await card.getByLabel("Project directory").fill(checkout);
+    await card.getByRole("button", { name: "Resolve" }).click();
+    await expect(page.getByRole("status")).toContainText("Project resolved.");
+    await expect(card).toContainText("github.com-example-panel");
+    await expect(card).toContainText("Repository root");
+
+    // Outside git the same rule yields no peer; the panel has to say so
+    // instead of showing the previous project's namespace.
+    await card.getByLabel("Project directory").fill(scratch);
+    await card.getByRole("button", { name: "Resolve" }).click();
+    await expect(card).toContainText("user-level space");
+  } finally {
+    await fixture.close();
+    await fixture.cleanup();
+  }
+});
+
+test("a repository's peer.source and peer.id declarations are shown read-only", async ({ page }) => {
+  const fixture = await startFixture({ initialConfig: { plugin: { dsh: { peerSource: RULE } } } });
+  try {
+    const checkout = await repo(fixture.directory, "declared-repo", "git@github.com:example/declared.git");
+    await mkdir(join(checkout, ".openviking"), { recursive: true });
+    await writeFile(
+      join(checkout, ".openviking", "config.json"),
+      JSON.stringify({ version: 1, peer: { source: "cwd", id: "team-shared" } }),
+      "utf8",
+    );
+    await page.goto(fixture.url);
+
+    const isolation = page.getByRole("region", { name: "Project memory isolation" });
+    await isolation.getByLabel("Project directory").fill(checkout);
+    await isolation.getByRole("button", { name: "Resolve" }).click();
+    await expect(isolation).toContainText("team-shared");
+
+    const rule = page.getByRole("region", { name: "Memory isolation rule" });
+    const trigger = rule.getByRole("button", { name: "Peer source" });
+    await expect(trigger).toBeDisabled();
+    await expect(trigger).toContainText("Directory only");
+    await expect(rule.getByRole("alert").filter({ hasText: "Overridden by a workspace file: peer.source" })).toBeVisible();
+    // The attention copy names what "directory only" actually costs.
+    await expect(rule.getByRole("alert").filter({ hasText: "Every directory is its own namespace" })).toBeVisible();
+
+    const peerCard = page.getByRole("region", { name: "Project peer id (advanced)" });
+    await peerCard.locator("summary").click();
+    await expect(peerCard.getByLabel("Project peer id (advanced)")).toHaveValue("team-shared");
+    await expect(peerCard.getByLabel("Project peer id (advanced)")).toBeDisabled();
+    await expect(peerCard.getByRole("alert").filter({ hasText: "Overridden by a workspace file: peer.id" })).toBeVisible();
+  } finally {
+    await fixture.close();
+    await fixture.cleanup();
+  }
+});

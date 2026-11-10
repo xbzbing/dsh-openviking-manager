@@ -1,100 +1,23 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  IconChevronDownOutlineRegular,
-  Menu,
-  SegmentedControl,
-  type MenuItem,
-} from "@deepseek-ai/dsh-client-ui-primitives";
-import { browserLocale, createTranslation, type Translation, type TranslationKey } from "./i18n.js";
+import { SegmentedControl } from "@deepseek-ai/dsh-client-ui-primitives";
+import { browserLocale, createTranslation, type Translation } from "./i18n.js";
+import { PeerSourceCard, type PeerSourceView } from "./peer-source-card.js";
+import { TuningCard, type RecallTuningDraft, type RecallTuningView } from "./tuning-card.js";
+import { WorkspaceCard, type WorkspacesView } from "./workspace-card.js";
+import { PeerIdCard, type PeerIdView } from "./peer-id-card.js";
+import { IsolationCard, type RecallScopeView } from "./isolation-card.js";
 import { setShowInputToggle } from "./ui-preferences.js";
 
 export interface ConfigView { url: string; account: string; user: string; apiKeySet: boolean; apiKeyMasked: string; }
-interface ConfigResult { kind: "missing" | "invalid-json" | "invalid-shape" | "ready"; config: ConfigView; permissionWarning?: boolean; message?: string; }
+interface ConfigResult { kind: "missing" | "invalid-json" | "invalid-shape" | "ready"; config: ConfigView; permissionWarning?: boolean; message?: string; keyCleared?: boolean; }
 interface DiscoveryResult { ovcli: ConfigResult; suggestedEndpoint: string; localServer: { found: boolean; authMode?: string; rootKeyAvailable: boolean; configError?: string }; }
 interface ApiEnvelope { ok: boolean; value?: unknown; error?: string; code?: string; }
 interface VersionView { current: string; repositoryUrl?: string; latest?: string; updateAvailable: boolean; releaseUrl?: string; checkedRemote: boolean; error?: string; }
-interface WorkspaceDeclarationView { key: string; value: unknown; layer: string; }
-interface ProjectRiskView { code: string; severity: "error" | "warning"; values?: Record<string, string>; }
-/** The project a session in `cwd` belongs to, resolved by the official loader
- * (workspace layers included). */
-interface ProjectView {
-  available: boolean;
-  cwd: string;
-  workspaceRoot: string;
-  peer: string;
-  peerOrigin: string;
-  pinnedPeer: string;
-  pinnedPeerSource: string;
-  declarations: WorkspaceDeclarationView[];
-  warnings: string[];
-  risks: ProjectRiskView[];
-}
-interface RecallScopeView { scope: "all" | "actor"; source: "env" | "workspace" | "plugin.dsh" | "plugin" | "default"; envOverride: string; workspaceLayer: string; sharedScope: string; restartPending: boolean; project: ProjectView; }
-interface PeerIdView { peerId: string; source: "env" | "plugin.dsh" | "plugin" | "ovcli" | "default"; envOverride: string; ovcliOverride: string; sharedPeerId: string; restartPending: boolean; project: ProjectView; }
-interface RecallTuningKnobView<T> { value: T; source: "env" | "workspace" | "plugin.dsh" | "plugin" | "default"; configured: boolean; envOverride: string; workspaceLayer: string; envVar: string; default: T; pinned: boolean; }
-interface RecallTuningView {
-  scoreThreshold: RecallTuningKnobView<number>;
-  recallLimit: RecallTuningKnobView<number>;
-  recallQueryExpansion: RecallTuningKnobView<"auto" | "off">;
-  recallExcludeUris: RecallTuningKnobView<string[]>;
-  recallEventsDecayProtection: RecallTuningKnobView<string>;
-  timeoutMs: RecallTuningKnobView<number>;
-  recallContextTimeoutMs: RecallTuningKnobView<number>;
-  restartPending: boolean;
-  /** Pinned knobs no layer supplies yet — written once on first load. */
-  initPatch: { scoreThreshold?: number; recallLimit?: number; recallQueryExpansion?: "auto" | "off"; recallExcludeUris?: string[]; timeoutMs?: number; recallContextTimeoutMs?: number };
-}
-/** Field state held between loads: a string so "empty" can mean "official
- * default" — which the server turns back into an absent key. */
-interface RecallTuningDraft { scoreThreshold: string; recallLimit: string; recallQueryExpansion: "auto" | "off"; recallExcludeUris: string; recallEventsDecayProtection: string; timeoutMs: string; recallContextTimeoutMs: string; }
 interface RestartView { restarted: boolean; count: number; reason?: string; error?: string; }
-/** The `peer.source` rule: a policy, not a per-session value. */
-interface PeerSourceView {
-  choice: "git" | "git-directory" | "cwd" | "none" | "custom";
-  templates: string[];
-  origin: "env" | "plugin.dsh" | "plugin" | "default";
-  envOverride: string;
-  sharedValue: string;
-  recommended: "git" | "git-directory" | "cwd" | "none";
-  needsAttention: boolean;
-}
-/** One sidebar workspace, as the host resolved it. */
-interface WorkspaceSummary {
-  path: string;
-  workspaceRoot: string;
-  peer: string;
-  peerOrigin: string;
-  sharedWith: string[];
-  userLevelSpace: boolean;
-  overrides: string[];
-  risks: string[];
-}
-interface WorkspacesView { available: boolean; workspaces: WorkspaceSummary[]; }
 export interface ManagerFormProps { apiPrefix?: string; fetchFn?: typeof fetch; t?: Translation; }
 
-/** One display key per server-side isolation risk code. */
-const RISK_KEYS: Record<string, TranslationKey> = {
-  "workspace-scope-all": "riskScopeAll",
-  "workspace-disables-recall": "riskRecallOff",
-  "workspace-disables-capture": "riskCaptureOff",
-  "pinned-peer": "riskPinnedPeer",
-  "workspace-pins-peer": "riskWorkspacePeer",
-  "peer-id-conflict": "riskPeerConflict",
-  "no-peer": "riskNoPeer",
-  "root-key-credential": "riskRootKey",
-};
 /** The composer pill control's two choices, in render order: each owns a panel id. */
 const INPUT_PILL_MODES = ["hide", "show"] as const;
-/** The isolation control's two modes, in render order: each owns a panel id. */
-const ISOLATION_MODES = ["all", "actor"] as const;
-const SOURCE_KEYS: Record<string, TranslationKey> = {
-  env: "scopeSourceEnv",
-  workspace: "scopeSourceWorkspace",
-  "plugin.dsh": "scopeSourceDsh",
-  plugin: "scopeSourceShared",
-  default: "scopeSourceDefault",
-};
-
 /** Mirrors ENDPOINT_NOT_CONFIGURED_CODE in src/manager-api.ts across the client boundary. */
 const ENDPOINT_NOT_CONFIGURED = "endpoint-not-configured";
 
@@ -120,7 +43,16 @@ const adminTabs: Array<{ id: AdminTab; title: "listAccounts" | "createAccount" |
 ];
 
 async function responseJson(response: Response): Promise<ApiEnvelope> {
-  const value = (await response.json()) as ApiEnvelope;
+  // A proxy or a crashed route can answer with HTML. Parse the text once and
+  // turn that into the status-bearing error the panel already displays,
+  // instead of a JSON parse error that hides the status.
+  const text = await response.text();
+  let value: ApiEnvelope;
+  try {
+    value = JSON.parse(text) as ApiEnvelope;
+  } catch {
+    throw new Error(`OpenViking Manager request failed (${response.status})`);
+  }
   if (!response.ok || !value.ok) {
     const error = new Error(value.error ?? "OpenViking Manager request failed") as Error & { code?: string };
     if (typeof value.code === "string") error.code = value.code;
@@ -129,7 +61,25 @@ async function responseJson(response: Response): Promise<ApiEnvelope> {
   return value;
 }
 
-function AdminIdentityForm(props: { title: string; submit: string; accountLabel: string; userLabel: string; disabled: boolean; defaultAccount?: string; defaultUser?: string; danger?: boolean; hint?: string; accountOptions?: string[]; chooseAccountLabel?: string; noAccountsLabel?: string; loadAccountsLabel?: string; onLoadAccounts?: () => void; onSubmit: (accountId: string, userId: string) => void }) {
+interface AdminIdentityFormProps {
+  title: string;
+  submit: string;
+  accountLabel: string;
+  userLabel: string;
+  disabled: boolean;
+  defaultAccount?: string;
+  defaultUser?: string;
+  danger?: boolean;
+  hint?: string;
+  accountOptions?: string[];
+  chooseAccountLabel?: string;
+  noAccountsLabel?: string;
+  loadAccountsLabel?: string;
+  onLoadAccounts?: () => void;
+  onSubmit: (accountId: string, userId: string) => void;
+}
+
+function AdminIdentityForm(props: AdminIdentityFormProps) {
   const [accountId, setAccountId] = useState(props.defaultAccount ?? "");
   const [userId, setUserId] = useState(props.defaultUser ?? "");
   useEffect(() => { setAccountId(props.defaultAccount ?? ""); }, [props.defaultAccount]);
@@ -176,9 +126,19 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   const [tuningDraft, setTuningDraft] = useState<RecallTuningDraft>({ scoreThreshold: "", recallLimit: "", recallQueryExpansion: "auto", recallExcludeUris: "", recallEventsDecayProtection: "", timeoutMs: "", recallContextTimeoutMs: "" });
   const [peerId, setPeerId] = useState<PeerIdView>();
   const [peerIdDraft, setPeerIdDraft] = useState("");
+  // The knobs the user actually edited. Saving only these keeps an env- or
+  // workspace-overridden value out of plugin.dsh: those fields are read-only,
+  // but a save used to submit every draft and persist the override anyway.
+  const [tuningDirty, setTuningDirty] = useState<Partial<Record<keyof RecallTuningDraft, true>>>({});
   // "" means "the directory the DSH host runs in", which is what the official
   // plugin resolved at apply. Any other value is a project the user wants to
   // inspect: peer derivation is per session, so it is exact for any path.
+  const [projectCwd, setProjectCwd] = useState("");
+  // The synchronous value behind projectCwd. A response for a directory the
+  // user has already navigated away from must not overwrite the new project's
+  // view, which is what the first-load pass did when a resolve raced it.
+  const projectCwdRef = useRef("");
+  const [projectDraft, setProjectDraft] = useState("");
   const [peerSource, setPeerSource] = useState<PeerSourceView>();
   const [workspaces, setWorkspaces] = useState<WorkspacesView>();
   /** Whether the composer shows the OpenViking pill; undefined hides the card
@@ -226,27 +186,31 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   // The isolation section only renders when this endpoint answers, so hosts
   // without the route (older fixtures) keep their previous page shape. After
   // an action, a transient failure instead keeps the current view on screen.
-  const loadRecallScope = async (hideOnFailure = true): Promise<RecallScopeView | undefined> => {
+  const cwdQuery = (cwd: string): string => (cwd === "" ? "" : `?cwd=${encodeURIComponent(cwd)}`);
+  const loadRecallScope = async (hideOnFailure = true, cwd = projectCwd): Promise<RecallScopeView | undefined> => {
     try {
-      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-scope`))).value as RecallScopeView;
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-scope${cwdQuery(cwd)}`))).value as RecallScopeView;
+      if (projectCwdRef.current !== cwd) return undefined;
       setRecallScope(value);
       return value;
     } catch { if (hideOnFailure) setRecallScope(undefined); return undefined; }
   };
   // Same contract as the isolation section: a host without the route keeps its
   // previous page shape, and a failure after an action keeps the current view.
-  const loadRecallTuning = async (hideOnFailure = true): Promise<RecallTuningView | undefined> => {
+  const loadRecallTuning = async (hideOnFailure = true, cwd = projectCwd): Promise<RecallTuningView | undefined> => {
     try {
-      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-tuning`))).value as RecallTuningView;
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-tuning${cwdQuery(cwd)}`))).value as RecallTuningView;
+      if (projectCwdRef.current !== cwd) return undefined;
       setRecallTuning(value);
       return value;
     } catch { if (hideOnFailure) setRecallTuning(undefined); return undefined; }
   };
   // Same contract again: a host without the route keeps its previous page
   // shape, and a failure after an action keeps the current view.
-  const loadPeerId = async (hideOnFailure = true): Promise<PeerIdView | undefined> => {
+  const loadPeerId = async (hideOnFailure = true, cwd = projectCwd): Promise<PeerIdView | undefined> => {
     try {
-      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-peer`))).value as PeerIdView;
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-peer${cwdQuery(cwd)}`))).value as PeerIdView;
+      if (projectCwdRef.current !== cwd) return undefined;
       setPeerId(value);
       return value;
     } catch { if (hideOnFailure) setPeerId(undefined); return undefined; }
@@ -302,6 +266,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   // is pinned, the official one otherwise.
   useEffect(() => {
     if (!recallTuning) return;
+    setTuningDirty({});
     setTuningDraft({
       scoreThreshold: recallTuning.scoreThreshold.configured ? String(recallTuning.scoreThreshold.value) : "",
       recallLimit: recallTuning.recallLimit.configured ? String(recallTuning.recallLimit.value) : "",
@@ -332,7 +297,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     event.preventDefault(); setBusy(true);
     try {
       const next = (await responseJson(await fetchFn(`${apiPrefix}/config`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...config, ...(apiKey === "" ? {} : { apiKey }) }) }))).value as ConfigResult;
-      setConfig(next.config); setApiKey(""); setKind(next.kind); setPermissionWarning(false); reportForeground(t("configurationSaved"));
+      setConfig(next.config); setApiKey(""); setKind(next.kind); setPermissionWarning(false); reportForeground(next.keyCleared === true ? t("endpointKeyCleared") : t("configurationSaved"));
     } catch (error) { reportForeground(error instanceof Error ? error.message : t("unableSave")); }
     finally { setBusy(false); }
   };
@@ -367,6 +332,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
       await loadRecallScope(false);
       await loadRecallTuning(false);
       await loadPeerId(false);
+      await loadPeerSource(false);
     }
   };
 
@@ -405,9 +371,9 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
    * initialisations would race the restart guard and reload the official
    * plugin twice — and a key some layer already supplied is never touched. */
   const initializeRecallSettings = async () => {
-    const scope = await loadRecallScope(true);
-    const tuning = await loadRecallTuning(true);
-    const source = await loadPeerSource(true);
+    const scope = await loadRecallScope(true, projectCwd);
+    const tuning = await loadRecallTuning(true, projectCwd);
+    const source = await loadPeerSource(true, projectCwd);
     const pinScope = scope?.source === "default";
     const tuningPatch = tuning?.initPatch ?? {};
     const pinTuning = Object.keys(tuningPatch).length > 0;
@@ -491,10 +457,24 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
         recallTuning.recallContextTimeoutMs,
       ].filter((knob) => knob.source === "workspace").map((knob) => knob.workspaceLayer).filter(Boolean))];
 
+  /** Mark one knob as edited. Only these keys are submitted, so a value that
+   * an env var or a workspace file currently overrides never gets copied into
+   * plugin.dsh by an unrelated save. */
+  const markTuning = (key: keyof RecallTuningDraft): void => {
+    setTuningDirty((current) => (current[key] === true ? current : { ...current, [key]: true }));
+  };
+
+  const changeTuning = (key: keyof RecallTuningDraft, value: string): void => {
+    markTuning(key);
+    setTuningDraft((current) => ({ ...current, [key]: value }));
+  };
+
   const saveTuning = async (event: React.FormEvent) => {
     event.preventDefault();
     const tuning = recallTuning;
     if (!tuning) return;
+    const dirty = Object.keys(tuningDirty) as Array<keyof RecallTuningDraft>;
+    if (dirty.length === 0) return;
     // An empty field restores the default rather than storing an empty value:
     // the product default (0.5) for the pinned threshold, the official default
     // — an absent key — for the item limit and the exclude list.
@@ -513,12 +493,13 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
         : Number(tuningDraft.timeoutMs),
       recallContextTimeoutMs: tuningDraft.recallContextTimeoutMs.trim() === "" ? null : Number(tuningDraft.recallContextTimeoutMs),
     };
+    const submitted = Object.fromEntries(dirty.map((key) => [key, payload[key]]));
     setBusy(true);
     try {
       const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-tuning`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(submitted),
       }))).value as RecallTuningView;
       setRecallTuning(value);
       // The applied plugin only reads these keys through a reload, so a changed
@@ -540,7 +521,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   /** Env or a top-level credential currently outranks plugin.peerId: the field
    * is read-only then, with a warning, rather than showing a value that would
    * not take effect. */
-  const peerIdLocked = peerId !== undefined && (peerId.source === "env" || peerId.source === "ovcli");
+  const peerIdLocked = peerId !== undefined && (peerId.source === "env" || peerId.source === "ovcli" || peerId.source === "workspace");
 
   const savePeerIdValue = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -571,9 +552,10 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
 
   /** The `peer.source` rule and the sidebar workspaces it applies to: a policy
    * plus a read-only inspection, neither of them per-session state. */
-  const loadPeerSource = async (hideOnFailure = true): Promise<PeerSourceView | undefined> => {
+  const loadPeerSource = async (hideOnFailure = true, cwd = projectCwd): Promise<PeerSourceView | undefined> => {
     try {
-      const value = (await responseJson(await fetchFn(`${apiPrefix}/peer-source`))).value as PeerSourceView;
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/peer-source${cwdQuery(cwd)}`))).value as PeerSourceView;
+      if (projectCwdRef.current !== cwd) return undefined;
       setPeerSource(value);
       return value;
     } catch { if (hideOnFailure) setPeerSource(undefined); return undefined; }
@@ -603,10 +585,30 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     } finally { setBusy(false); }
   };
 
+  /** Re-resolve every project-scoped view for another directory. The peer
+   * rule is a policy, but its workspace declaration is project-scoped too, so
+   * it follows the same path. */
+  const applyProject = async (event?: React.FormEvent) => {
+    event?.preventDefault();
+    const next = projectDraft.trim();
+    setBusy(true);
+    try {
+      projectCwdRef.current = next;
+      setProjectCwd(next);
+      await Promise.all([
+        loadRecallScope(false, next),
+        loadRecallTuning(false, next),
+        loadPeerId(false, next),
+        loadPeerSource(false, next),
+      ]);
+      reportForeground(t("projectResolved"));
+    } finally { setBusy(false); }
+  };
+
   const fillCurrentRepo = async () => {
     setBusy(true);
     try {
-      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-peer/derive`))).value as { peerId: string; origin?: string };
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-peer/derive${cwdQuery(projectCwd)}`))).value as { peerId: string; origin?: string };
       if (value.peerId === "") reportForeground(t("peerIdNotInRepo"));
       else { setPeerIdDraft(value.peerId); reportForeground(t("peerIdDetected", { peerId: value.peerId })); }
     } catch (error) {
@@ -689,7 +691,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     </header>
     <section className="ovm-card" aria-busy={busy}>
       <div className="ovm-status" role="status">{status}</div>
-      {localServer?.found ? <p className="ovm-hint">{t("localServerFound")} · {t("authMode")}: {localServer.authMode ?? "unknown"} · {localServer.rootKeyAvailable ? t("localManagementAvailable") : t("noLocalRootKey")}</p> : null}
+      {localServer?.found ? <p className="ovm-hint">{t("localServerFound")} · {t("authMode")}: {localServer.authMode ?? t("authModeUnknown")} · {localServer.rootKeyAvailable ? t("localManagementAvailable") : t("noLocalRootKey")}</p> : null}
       {localServer?.configError ? <p className="ovm-warning">{localServer.configError}</p> : null}
       {kind === "invalid-json" || kind === "invalid-shape" ? <p className="ovm-warning">{t("invalidConfig")}</p> : null}
       {permissionWarning ? <div className="ovm-warning" role="alert"><span>{t("invalidConfig")}</span><button type="button" onClick={() => void repair()} disabled={busy}>{t("repairPermissions")}</button></div> : null}
@@ -739,298 +741,54 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
       </section>
     )}
     {recallScope === undefined ? null : (
-      <section className="ovm-card" aria-label={t("projectTitle")}>
-        <h2>{t("projectTitle")}</h2>
-        {/* The platform has no switch: its cards express a two-choice mode with
-            the segmented control, so this does the same. */}
-        <SegmentedControl
-          id="ovm-isolation"
-          label={t("isolateByTopicLabel")}
-          value={recallScope.scope}
-          disabled={busy || initializing || recallScope.source === "env" || recallScope.source === "workspace"}
-          options={[
-            { value: "all", label: t("scopeAll") },
-            { value: "actor", label: t("scopeActor") },
-          ]}
-          onChange={(next: string) => void setScope(next === "actor")}
-        />
-        {/* The platform control marks each tab with `aria-controls="<id>-<value>-panel"`
-            and leaves the panel to its owner, so both exist here and the inactive
-            one stays hidden; otherwise every tab carries a dangling reference. */}
-        {ISOLATION_MODES.map((mode) => (
-          <div
-            key={mode}
-            id={`ovm-isolation-${mode}-panel`}
-            role="tabpanel"
-            aria-labelledby={`ovm-isolation-${mode}`}
-            hidden={recallScope.scope !== mode}
-          >
-            <p className="ovm-hint ovm-isolationHint">{t(mode === "actor" ? "isolationHintActor" : "isolationHintAll")}</p>
-          </div>
-        ))}
-        <p className="ovm-hint ovm-isolationHint">{t("reloadNotice")}</p>
-        {recallScope.source === "env" ? <p className="ovm-warning" role="alert">{t("envOverrideWarning", { variable: "OPENVIKING_RECALL_PEER_SCOPE" })}</p> : null}
-        {recallScope.source === "workspace" ? <p className="ovm-warning" role="alert">{t("tuningWorkspaceWarning", { keys: "recall.peer_scope" })}</p> : null}
-        {recallScope.sharedScope !== "" ? <p className="ovm-hint">{t("projectSharedNote", { scope: recallScope.sharedScope })}</p> : null}
-        {recallScope.project.risks.length > 0 ? (
-          <div className="ovm-risks">
-            <h3>{t("projectRisks")}</h3>
-            <ul>
-              {recallScope.project.risks.map((risk) => (
-                <li key={risk.code} className={risk.severity === "error" ? "ovm-warning" : "ovm-hint"} role={risk.severity === "error" ? "alert" : undefined}>
-                  {t(RISK_KEYS[risk.code] ?? "projectRisks", risk.values ?? {})}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-      </section>
+      <IsolationCard
+        scope={recallScope}
+        busy={busy}
+        initializing={initializing}
+        draft={projectDraft}
+        onDraft={setProjectDraft}
+        onResolve={applyProject}
+        onScopeChange={(isolate) => void setScope(isolate)}
+        t={t}
+      />
     )}
     {peerSource === undefined ? null : (
-      <section className="ovm-card" aria-label={t("peerSourceTitle")}>
-        <h2>{t("peerSourceTitle")}</h2>
-        {/* A rule, not a per-session value: the official plugin derives one peer
-            per session from that session's directory, so this decides the shape
-            of every derivation rather than naming one project. */}
-        <p className="ovm-hint">{t("peerSourceHint")}</p>
-        <div className="ovm-field">
-          <span className="ovm-fieldLabel" id="ovm-peer-source-label">{t("peerSourceLabel")}</span>
-          {(() => {
-            const choices: Array<{ value: PeerSourceView["recommended"]; label: string }> = [
-              { value: "git-directory", label: t("peerSourceGitDirectory") },
-              { value: "git", label: t("peerSourceGit") },
-              { value: "cwd", label: t("peerSourceCwd") },
-              { value: "none", label: t("peerSourceNone") },
-            ];
-            const current = choices.find((item) => item.value === peerSource.choice)
-              ?? { value: "git" as const, label: t("peerSourceCustom") };
-            const items: MenuItem[] = choices.map((item) => ({
-              id: item.value,
-              label: item.label,
-              disabled: busy || peerSource.origin === "env",
-            }));
-            return (
-              <Menu
-                open={ruleMenuOpen}
-                align="start"
-                selection="check"
-                selectedId={peerSource.choice}
-                items={items}
-                onClose={() => setRuleMenuOpen(false)}
-                onSelect={(id: string) => {
-                  setRuleMenuOpen(false);
-                  if (id === peerSource.choice) return;
-                  void savePeerSource(id as PeerSourceView["recommended"]);
-                }}
-                anchor={(
-                  <button
-                    type="button"
-                    className="ovm-select"
-                    aria-haspopup="menu"
-                    aria-expanded={ruleMenuOpen}
-                    aria-labelledby="ovm-peer-source-label"
-                    disabled={busy || peerSource.origin === "env"}
-                    onClick={() => setRuleMenuOpen((open) => !open)}
-                  >
-                    <span>{current.label}</span>
-                    <IconChevronDownOutlineRegular size={14} />
-                  </button>
-                )}
-              />
-            );
-          })()}
-        </div>
-        <p className="ovm-hint ovm-ruleNote"><code>{peerSource.templates.length === 0 ? "[]" : peerSource.templates.join(" → ")}</code> · {t(SOURCE_KEYS[peerSource.origin] ?? "scopeSourceDefault")}</p>
-        {peerSource.origin === "env" ? <p className="ovm-warning" role="alert">{t("envOverrideWarning", { variable: "OPENVIKING_PEER_SOURCE" })}</p> : null}
-        {peerSource.sharedValue !== "" ? <p className="ovm-hint">{t("peerSourceSharedNote", { value: peerSource.sharedValue })}</p> : null}
-        {peerSource.needsAttention ? <p className="ovm-warning" role="alert">{t("peerSourceAttention")}</p> : null}
-      </section>
+      <PeerSourceCard
+        view={peerSource}
+        busy={busy}
+        initializing={initializing}
+        open={ruleMenuOpen}
+        onOpenChange={setRuleMenuOpen}
+        onSelect={(choice) => void savePeerSource(choice)}
+        t={t}
+      />
     )}
-    {workspaces === undefined || workspaces.available === false ? null : (
-      <section className="ovm-card" aria-label={t("workspacesTitle")}>
-        {/* Folded by default: this is an inspection, not a setting, and the rows
-            are long. Read-only either way — it answers "which of my workspaces
-            share memories" as a session in each one would be resolved. */}
-        <details className="ovm-collapse">
-          <summary><h2>{t("workspacesTitle")}</h2></summary>
-          <div className="ovm-collapseContent">
-            <p className="ovm-hint">{t("workspacesHint")}</p>
-            {workspaces.workspaces.length === 0
-              ? <p className="ovm-hint">{t("workspacesEmpty")}</p>
-              : (
-                <ul className="ovm-workspaces">
-                  {workspaces.workspaces.map((workspace) => (
-                    <li key={workspace.path}>
-                      <div className="ovm-workspaceHead">
-                        <code>{workspace.path}</code>
-                        <span className={workspace.userLevelSpace ? "ovm-warning" : "ovm-hint"}>
-                          {workspace.peer === "" ? t("projectUserSpace") : workspace.peer}
-                        </span>
-                      </div>
-                      {workspace.sharedWith.length > 0
-                        ? <p className="ovm-warning">{t("workspaceShares", { peers: workspace.sharedWith.join(", ") })}</p>
-                        : <p className="ovm-hint">{t("workspaceIsolated")}</p>}
-                      {workspace.overrides.length > 0
-                        ? <p className="ovm-hint">{t("workspaceOverrides", { keys: workspace.overrides.join(", ") })}</p>
-                        : null}
-                    </li>
-                  ))}
-                </ul>
-              )}
-          </div>
-        </details>
-      </section>
-    )}
+    {workspaces === undefined || workspaces.available === false ? null : <WorkspaceCard view={workspaces} t={t} />}
     {peerId === undefined ? null : (
-      <section className="ovm-card" aria-label={t("peerIdLabel")}>
-        <details className="ovm-peerId ovm-collapse">
-          <summary><h2>{t("peerIdLabel")}</h2></summary>
-          <div className="ovm-collapseContent">
-            <p className="ovm-hint">{t("peerIdHint")}</p>
-            <form onSubmit={(event) => void savePeerIdValue(event)}>
-              <label>{t("peerIdLabel")}
-                <input
-                  value={peerIdLocked ? (peerId.envOverride || peerId.ovcliOverride) : peerIdDraft}
-                  placeholder={t("peerIdPlaceholder")}
-                  disabled={busy || peerIdLocked}
-                  onChange={(event) => setPeerIdDraft(event.target.value)}
-                />
-              </label>
-              <div className="ovm-actions">
-                <button type="button" className="ovm-secondary" disabled={busy || peerIdLocked} onClick={() => void fillCurrentRepo()}>{t("fillCurrentRepo")}</button>
-                <button type="submit" disabled={busy || peerIdLocked}>{t("savePeerId")}</button>
-              </div>
-            </form>
-            <p className="ovm-hint">{peerIdDraft.trim() === "" ? t("peerIdHintEmpty") : t("peerIdHintSet")}</p>
-            {peerIdDraft.trim() === "" ? null : <p className="ovm-warning" role="alert">{t("peerIdHazard")}</p>}
-            <p className="ovm-hint ovm-isolationHint">{t("peerIdMultiRepoNotice")}</p>
-            <p className="ovm-hint">{t("peerIdReloadNotice")}</p>
-          </div>
-        </details>
-        {/* Overrides sit outside the fold: a closed panel must not hide that the
-            file value is not the effective one. */}
-        {peerId.sharedPeerId !== "" ? <p className="ovm-warning" role="alert">{t("projectSharedNote", { scope: peerId.sharedPeerId })}</p> : null}
-        {peerId.source === "env" ? <p className="ovm-warning" role="alert">{t("peerIdEnvWarning")}</p> : null}
-        {peerId.source === "ovcli" ? <p className="ovm-warning" role="alert">{t("peerIdCredentialWarning")}</p> : null}
-      </section>
+      <PeerIdCard
+        view={peerId}
+        draft={peerIdDraft}
+        locked={peerIdLocked}
+        busy={busy}
+        onSave={savePeerIdValue}
+        onDraft={setPeerIdDraft}
+        onFill={() => void fillCurrentRepo()}
+        t={t}
+      />
     )}
     {recallTuning === undefined ? null : (
-      <section className="ovm-card" aria-label={t("tuningTitle")}>
-        {/* Collapsed by default, exactly like the recovery panel: this is
-            occasional configuration, not something to scan on every visit. */}
-        <details className="ovm-tuning ovm-collapse">
-          <summary><h2>{t("tuningTitle")}</h2></summary>
-          <div className="ovm-collapseContent">
-            <p className="ovm-hint ovm-tuningIntro">{t("tuningIntro")}</p>
-            <form onSubmit={(event) => void saveTuning(event)}>
-              <div className="ovm-tuningGrid">
-                <div className="ovm-tuningField">
-                  <label>{t("scoreThresholdLabel")}
-                    <input
-                      type="number"
-                      min={0}
-                      max={1}
-                      step="any"
-                      value={tuningDraft.scoreThreshold}
-                      placeholder={t("defaultPlaceholder", { value: String(recallTuning.scoreThreshold.default) })}
-                      disabled={busy || initializing || recallTuning.scoreThreshold.source === "env" || recallTuning.scoreThreshold.source === "workspace"}
-                      onChange={(event) => setTuningDraft({ ...tuningDraft, scoreThreshold: event.target.value })}
-                    />
-                  </label>
-                  <p className="ovm-hint">{t("scoreThresholdHint")}</p>
-                </div>
-                <div className="ovm-tuningField">
-                  <label>{t("recallLimitLabel")}
-                    <input
-                      type="number"
-                      min={1}
-                      max={50}
-                      step={1}
-                      value={tuningDraft.recallLimit}
-                      placeholder={t("defaultPlaceholder", { value: String(recallTuning.recallLimit.default) })}
-                      disabled={busy || initializing || recallTuning.recallLimit.source === "env" || recallTuning.recallLimit.source === "workspace"}
-                      onChange={(event) => setTuningDraft({ ...tuningDraft, recallLimit: event.target.value })}
-                    />
-                  </label>
-                  <p className="ovm-hint">{t("recallLimitHint")}</p>
-                </div>
-                <div className="ovm-tuningField">
-                  <label>{t("queryExpansionLabel")}
-                    <select
-                      value={tuningDraft.recallQueryExpansion}
-                      disabled={busy || initializing || recallTuning.recallQueryExpansion.source === "env" || recallTuning.recallQueryExpansion.source === "workspace"}
-                      onChange={(event) => setTuningDraft({ ...tuningDraft, recallQueryExpansion: event.target.value === "off" ? "off" : "auto" })}
-                    >
-                      <option value="auto">{t("queryExpansionAuto")}</option>
-                      <option value="off">{t("queryExpansionOff")}</option>
-                    </select>
-                  </label>
-                  <p className="ovm-hint">{t("queryExpansionHint")}</p>
-                </div>
-                <div className="ovm-tuningField">
-                  <label>{t("excludeUrisLabel")}
-                    <textarea
-                      rows={4}
-                      value={tuningDraft.recallExcludeUris}
-                      placeholder="viking://"
-                      disabled={busy || initializing || recallTuning.recallExcludeUris.source === "env" || recallTuning.recallExcludeUris.source === "workspace"}
-                      onChange={(event) => setTuningDraft({ ...tuningDraft, recallExcludeUris: event.target.value })}
-                    />
-                  </label>
-                  <p className="ovm-hint">{t("excludeUrisHint")}</p>
-                </div>
-                <div className="ovm-tuningField">
-                  <label>{t("decayLabel")}
-                    <input
-                      value={tuningDraft.recallEventsDecayProtection}
-                      placeholder="7d"
-                      disabled={busy || initializing || recallTuning.recallEventsDecayProtection.source === "env" || recallTuning.recallEventsDecayProtection.source === "workspace"}
-                      onChange={(event) => setTuningDraft({ ...tuningDraft, recallEventsDecayProtection: event.target.value })}
-                    />
-                  </label>
-                  <p className="ovm-hint">{t("decayHint")}</p>
-                </div>
-                <div className="ovm-tuningField">
-                  <label>{t("timeoutMsLabel")}
-                    <input
-                      type="number"
-                      min={1000}
-                      max={300000}
-                      step={500}
-                      value={tuningDraft.timeoutMs}
-                      placeholder={t("defaultPlaceholder", { value: String(recallTuning.timeoutMs.default) })}
-                      disabled={busy || initializing || recallTuning.timeoutMs.source === "env" || recallTuning.timeoutMs.source === "workspace"}
-                      onChange={(event) => setTuningDraft({ ...tuningDraft, timeoutMs: event.target.value })}
-                    />
-                  </label>
-                  <p className="ovm-hint">{t("timeoutMsHint")}</p>
-                </div>
-                <div className="ovm-tuningField">
-                  <label>{t("recallContextTimeoutMsLabel")}
-                    <input
-                      type="number"
-                      min={0}
-                      max={600000}
-                      step={500}
-                      value={tuningDraft.recallContextTimeoutMs}
-                      placeholder={t("defaultPlaceholder", { value: String(recallTuning.recallContextTimeoutMs.default) })}
-                      disabled={busy || initializing || recallTuning.recallContextTimeoutMs.source === "env" || recallTuning.recallContextTimeoutMs.source === "workspace"}
-                      onChange={(event) => setTuningDraft({ ...tuningDraft, recallContextTimeoutMs: event.target.value })}
-                    />
-                  </label>
-                  <p className="ovm-hint">{t("recallContextTimeoutMsHint")}</p>
-                </div>
-              </div>
-              <p className="ovm-hint">{t("tuningReloadNotice")}</p>
-              <div className="ovm-actions"><button type="submit" disabled={busy}>{t("saveTuning")}</button></div>
-            </form>
-          </div>
-        </details>
-        {/* The env-override warning sits outside the fold: a closed panel must
-            not hide that the file value is not the effective one. */}
-        {tuningEnvVars.length > 0 ? <p className="ovm-warning" role="alert">{t("tuningEnvWarning", { vars: tuningEnvVars.join(", ") })}</p> : null}
-        {tuningWorkspaceLayers.length > 0 ? <p className="ovm-warning" role="alert">{t("tuningWorkspaceWarning", { keys: tuningWorkspaceLayers.join(", ") })}</p> : null}
-      </section>
+      <TuningCard
+        view={recallTuning}
+        draft={tuningDraft}
+        dirtyCount={Object.keys(tuningDirty).length}
+        busy={busy}
+        initializing={initializing}
+        envVars={tuningEnvVars}
+        workspaceLayers={tuningWorkspaceLayers}
+        onChange={changeTuning}
+        onSave={saveTuning}
+        t={t}
+      />
     )}
     <section className="ovm-card"><details className="ovm-recovery ovm-collapse"><summary><h2>{t("recoverTitle")}</h2></summary><div className="ovm-collapseContent"><p className="ovm-hint">{t("recoverHint")}</p>
       {kind !== "ready" ? <p className="ovm-warning" role="alert">{t("endpointRequiredFirst")}</p> : null}

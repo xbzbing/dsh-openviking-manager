@@ -263,7 +263,7 @@ test("an env-configured knob is read-only and warns about the override", async (
     await expect(page.getByRole("alert").filter({ hasText: "OPENVIKING_SCORE_THRESHOLD" })).toBeVisible();
     // Only the overridden field locks; the rest of the form stays editable,
     // and the pinned expansion is initialised as usual.
-    expect(await page.getByLabel("Maximum injected items").isEnabled()).toBe(true);
+    await expect(page.getByLabel("Maximum injected items")).toBeEnabled();
     await expect(page.getByLabel("Query expansion")).toHaveValue("off");
   } finally {
     await fixture.close();
@@ -290,6 +290,41 @@ test("renders the recall tuning section in Simplified Chinese", async ({ page })
     await expect(page.getByLabel("排除的 URI")).toBeVisible();
     await expect(page.getByRole("button", { name: "保存召回调优" })).toBeVisible();
     await expect(page.getByText("保存这些键同样会自动重新加载官方记忆插件")).toBeVisible();
+  } finally {
+    await fixture.close();
+  }
+});
+
+
+test("an unrelated save never copies an env-overridden value into plugin.dsh", async ({ page }) => {
+  let restarts = 0;
+  const fixture = await startTuningFixture({
+    restartMemoryPlugin: async () => { restarts += 1; return { restarted: true, count: 1 }; },
+    initialConfig: {
+      plugin: {
+        recallPeerScope: "actor",
+        recallQueryExpansion: "off",
+        timeoutMs: 15000,
+        peerSource: ["{git_remote}", "{git_root}", "{cwd}"],
+      },
+    },
+    env: { OPENVIKING_SCORE_THRESHOLD: "0.9" },
+  });
+  try {
+    await page.goto(fixture.url);
+    await expandTuning(page);
+    await expect(page.getByLabel("Recall score threshold")).toHaveValue("0.9");
+    await expect(page.getByLabel("Recall score threshold")).toBeDisabled();
+
+    // Only the edited knob is submitted. The env value is effective for the
+    // process but must not become a file value for the next one.
+    await page.getByLabel("Maximum injected items").fill("6");
+    await page.getByRole("button", { name: "Save recall tuning" }).click();
+    await expect.poll(() => restarts).toBe(1);
+
+    const stored = JSON.parse(await readFile(fixture.configPath, "utf8"));
+    expect(stored.plugin.dsh.recallLimit).toBe(6);
+    expect(stored.plugin.dsh.scoreThreshold).toBe(undefined);
   } finally {
     await fixture.close();
   }
