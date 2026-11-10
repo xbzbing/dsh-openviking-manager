@@ -53,20 +53,24 @@ function parseRepository(repository: unknown): { owner: string; repo: string } |
 }
 
 /**
- * Compare dotted numeric versions with basic prerelease handling; returns 1
+ * Compare dotted numeric versions with semver prerelease ordering; returns 1
  * when a > b, -1 when a < b, 0 when equal. A release outranks a prerelease
- * that shares the same core (e.g. 0.2.0 > 0.2.0-beta.1).
+ * that shares the same core (e.g. 0.2.0 > 0.2.0-beta.1), and prerelease
+ * identifiers compare numerically when both are numbers (`rc.2` < `rc.10`)
+ * and ASCII-lexically otherwise.
  */
 export function compareVersions(a: string, b: string): number {
-  const split = (value: string): { core: number[]; prerelease: boolean } => {
-    const trimmed = value.trim().replace(/^v/i, "");
-    const [core, ...rest] = trimmed.split("-");
+  const split = (value: string): { core: number[]; prerelease: string[] } => {
+    const trimmed = value.trim().replace(/^v/i, "").split("+")[0]!;
+    const dash = trimmed.indexOf("-");
+    const coreText = dash === -1 ? trimmed : trimmed.slice(0, dash);
+    const prereleaseText = dash === -1 ? "" : trimmed.slice(dash + 1);
     return {
-      core: core!
-        .split(".")
-        .map((part) => Number.parseInt(part, 10))
-        .filter((part) => Number.isFinite(part)),
-      prerelease: rest.length > 0 && rest.join("-") !== "",
+      core: coreText.split(".").map((part) => {
+        const parsed = Number.parseInt(part, 10);
+        return Number.isFinite(parsed) ? parsed : 0;
+      }),
+      prerelease: prereleaseText === "" ? [] : prereleaseText.split("."),
     };
   };
   const left = split(a);
@@ -78,8 +82,30 @@ export function compareVersions(a: string, b: string): number {
     if (l > r) return 1;
     if (l < r) return -1;
   }
-  if (left.prerelease === right.prerelease) return 0;
-  return left.prerelease ? -1 : 1;
+  if (left.prerelease.length === 0 && right.prerelease.length === 0) return 0;
+  // A release has higher precedence than any prerelease with the same core.
+  if (left.prerelease.length === 0) return 1;
+  if (right.prerelease.length === 0) return -1;
+  const prereleaseLength = Math.max(left.prerelease.length, right.prerelease.length);
+  for (let index = 0; index < prereleaseLength; index += 1) {
+    const l = left.prerelease[index];
+    const r = right.prerelease[index];
+    if (l === undefined) return -1;
+    if (r === undefined) return 1;
+    const lNumeric = /^\d+$/.test(l);
+    const rNumeric = /^\d+$/.test(r);
+    if (lNumeric && rNumeric) {
+      const lNumber = Number(l);
+      const rNumber = Number(r);
+      if (lNumber !== rNumber) return lNumber > rNumber ? 1 : -1;
+    } else if (lNumeric !== rNumeric) {
+      // Numeric identifiers always have lower precedence than alphanumeric.
+      return lNumeric ? -1 : 1;
+    } else if (l !== r) {
+      return l > r ? 1 : -1;
+    }
+  }
+  return 0;
 }
 
 async function readManifest(path: string): Promise<PackageManifest> {
@@ -89,9 +115,8 @@ async function readManifest(path: string): Promise<PackageManifest> {
   return parsed as PackageManifest;
 }
 
-/** Local-only view: current version and repository URL, no network access. */
-export async function readVersionInfo(options: { manifestPath?: string } = {}): Promise<VersionCheckResult> {
-  const manifest = await readManifest(options.manifestPath ?? manifestPath());
+/** Local-only view of one manifest: current version and repository URL. */
+function infoFromManifest(manifest: PackageManifest): VersionCheckResult {
   const current = stringField(manifest.version) ?? "0.0.0";
   const repo = parseRepository(manifest.repository);
   const repositoryUrl = repo === undefined ? undefined : `https://github.com/${repo.owner}/${repo.repo}`;
@@ -105,6 +130,11 @@ export async function readVersionInfo(options: { manifestPath?: string } = {}): 
   };
 }
 
+/** Local-only view: current version and repository URL, no network access. */
+export async function readVersionInfo(options: { manifestPath?: string } = {}): Promise<VersionCheckResult> {
+  return infoFromManifest(await readManifest(options.manifestPath ?? manifestPath()));
+}
+
 /**
  * Query the GitHub releases API for the latest tag and compare it to the
  * bundled version. Network or parse failures are reported through `error`
@@ -113,8 +143,9 @@ export async function readVersionInfo(options: { manifestPath?: string } = {}): 
 export async function checkLatestVersion(
   options: { manifestPath?: string; fetchFn?: VersionFetch } = {},
 ): Promise<VersionCheckResult> {
-  const base = await readVersionInfo({ manifestPath: options.manifestPath });
-  const repo = parseRepository((await readManifest(options.manifestPath ?? manifestPath())).repository);
+  const manifest = await readManifest(options.manifestPath ?? manifestPath());
+  const base = infoFromManifest(manifest);
+  const repo = parseRepository(manifest.repository);
   if (repo === undefined) {
     return { ...base, checkedRemote: false, error: "repository is not configured" };
   }
@@ -122,6 +153,7 @@ export async function checkLatestVersion(
   try {
     const response = await fetchFn(`https://api.github.com/repos/${repo.owner}/${repo.repo}/releases/latest`, {
       headers: { accept: "application/vnd.github+json", "user-agent": "dsh-openviking-manager" },
+      signal: AbortSignal.timeout(10_000),
     });
     if (!response.ok) {
       return { ...base, checkedRemote: true, error: `GitHub responded with ${response.status}` };

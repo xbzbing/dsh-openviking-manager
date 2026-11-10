@@ -19,6 +19,11 @@ test("compareVersions orders dotted numeric versions", () => {
   assert.equal(compareVersions("v0.2.0", "0.2.0"), 0);
   assert.equal(compareVersions("1.0.0", "0.9.9"), 1);
   assert.equal(compareVersions("0.2.0", "0.2.0-beta.1"), 1);
+  assert.equal(compareVersions("0.5.0-rc.2", "0.5.0-rc.1"), 1);
+  assert.equal(compareVersions("0.5.0-rc.10", "0.5.0-rc.2"), 1);
+  assert.equal(compareVersions("0.5.0-alpha", "0.5.0-alpha.1"), -1);
+  assert.equal(compareVersions("0.5.0-alpha.1", "0.5.0-alpha.beta"), -1);
+  assert.equal(compareVersions("0.5.0-rc.1", "0.5.0-rc.1+build.7"), 0);
 });
 
 test("readVersionInfo derives the repository URL without network access", async (t) => {

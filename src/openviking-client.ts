@@ -14,6 +14,10 @@ export interface OpenVikingProbeResult {
 
 export type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
+/** A probe is a UI action; an endpoint that accepts the connection and never
+ * answers must not leave the button disabled indefinitely. */
+const PROBE_TIMEOUT_MS = 8_000;
+
 function endpoint(base: string, path: string): string {
   return `${base.replace(/\/$/, "")}${path}`;
 }
@@ -41,7 +45,7 @@ function identityOf(value: unknown): { account: string; user: string } {
 /** Probe only normal data-plane endpoints with a user key; never accept root keys. */
 export async function probeOpenViking(connection: OpenVikingConnection, fetchFn: FetchLike = fetch): Promise<OpenVikingProbeResult> {
   try {
-    const health = await fetchFn(endpoint(connection.url, "/health"));
+    const health = await fetchFn(endpoint(connection.url, "/health"), { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
     if (!health.ok) return { reachable: false, ready: false, authenticated: false, identity: undefined };
   } catch {
     return { reachable: false, ready: false, authenticated: false, identity: undefined };
@@ -49,14 +53,17 @@ export async function probeOpenViking(connection: OpenVikingConnection, fetchFn:
 
   let ready = false;
   try {
-    ready = (await fetchFn(endpoint(connection.url, "/ready"))).ok;
+    ready = (await fetchFn(endpoint(connection.url, "/ready"), { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) })).ok;
   } catch {
     ready = false;
   }
 
   if (connection.apiKey === "") return { reachable: true, ready, authenticated: false, identity: undefined };
   try {
-    const status = await fetchFn(endpoint(connection.url, "/api/v1/system/status"), { headers: headers(connection) });
+    const status = await fetchFn(endpoint(connection.url, "/api/v1/system/status"), {
+      headers: headers(connection),
+      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+    });
     if (!status.ok) return { reachable: true, ready, authenticated: false, identity: undefined };
     const identity = identityOf(await status.json());
     return { reachable: true, ready, authenticated: true, identity };

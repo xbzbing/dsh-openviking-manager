@@ -15,6 +15,9 @@ export interface CreatedIdentity {
 
 export type AdminFetch = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
+/** An admin call that hangs must not keep the panel's button spinning. */
+const ADMIN_TIMEOUT_MS = 15_000;
+
 function baseUrl(url: string): string {
   return url.replace(/\/$/, "");
 }
@@ -24,8 +27,17 @@ function headers(rootApiKey: string): Record<string, string> {
 }
 
 async function resultOf(response: Response): Promise<unknown> {
-  const body: unknown = await response.json();
+  // Read the body once as text: an error response is often plain text or
+  // HTML, and parsing it as JSON first hid the real status behind a parse
+  // error.
+  const text = await response.text();
   if (!response.ok) throw new Error(`OpenViking Admin API returned ${response.status}`);
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    throw new Error("OpenViking Admin API returned an invalid response");
+  }
   if (typeof body !== "object" || body === null) throw new Error("OpenViking Admin API returned an invalid response");
   return (body as { result?: unknown }).result;
 }
@@ -40,8 +52,17 @@ function stringField(value: Record<string, unknown>, ...keys: string[]): string 
   throw new Error(`OpenViking Admin API response is missing ${keys[0]}`);
 }
 
+function optionalStringField(value: Record<string, unknown>, ...keys: string[]): string | undefined {
+  for (const key of keys) if (typeof value[key] === "string") return value[key] as string;
+  return undefined;
+}
+
 async function adminRequest(url: string, rootApiKey: string, path: string, fetchFn: AdminFetch, init?: RequestInit): Promise<unknown> {
-  return resultOf(await fetchFn(`${baseUrl(url)}${path}`, { ...init, headers: { ...headers(rootApiKey), ...(init?.headers ?? {}) } }));
+  return resultOf(await fetchFn(`${baseUrl(url)}${path}`, {
+    ...init,
+    signal: init?.signal ?? AbortSignal.timeout(ADMIN_TIMEOUT_MS),
+    headers: { ...headers(rootApiKey), ...(init?.headers ?? {}) },
+  }));
 }
 
 export async function listAccounts(url: string, rootApiKey: string, fetchFn: AdminFetch = fetch): Promise<AdminAccount[]> {
@@ -62,8 +83,10 @@ export async function listUsers(url: string, rootApiKey: string, accountId: stri
 function createdIdentity(result: unknown, fallbackAccount: string, fallbackUser: string): CreatedIdentity {
   const value = record(result);
   return {
-    accountId: stringField(value, "account_id") || fallbackAccount,
-    userId: stringField(value, "admin_user_id", "user_id") || fallbackUser,
+    // The API may omit an id when it echoes only the created credential; the
+    // caller already knows what it asked for, so fall back to that.
+    accountId: optionalStringField(value, "account_id") ?? fallbackAccount,
+    userId: optionalStringField(value, "admin_user_id", "user_id") ?? fallbackUser,
     userKey: stringField(value, "user_key"),
   };
 }
