@@ -37,6 +37,8 @@ const REQUIRED = [
   "lib/client/index.d.ts",
   "locale/zh.json",
   "locale/en.json",
+  "docs/details/DETAIL.zh.md",
+  "docs/details/DETAIL.en.md",
   "icon.svg",
   "LICENSE",
 ];
