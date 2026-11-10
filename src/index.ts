@@ -45,9 +45,11 @@ type HostContext = {
  * Read through the reflection layer rather than `inject`: a service reached as
  * `ctx.workspaceRegistry` without being injected is not guaranteed to be
  * present, and `inject` has no optional form, so declaring it would make this
- * plugin refuse to load where it is absent. A missing registry yields an empty
- * list, and the panel then hides the section instead of guessing. */
-function workspacePathsOf(host: HostContext): string[] {
+ * plugin refuse to load where it is absent. `undefined` means the host cannot
+ * enumerate workspaces at all — distinct from an empty list, which is a host
+ * that answered with no workspaces. The panel hides the section only for the
+ * former. */
+function workspacePathsOf(host: HostContext): string[] | undefined {
   try {
     // `strict: false` also reads a service whose providing fiber is not active
     // in this context. The plain `ctx.workspaceRegistry` property throws
@@ -55,12 +57,14 @@ function workspacePathsOf(host: HostContext): string[] {
     const registry = host.reflect?.get?.("workspaceRegistry", false) as
       | { list?: () => Array<{ path?: string }> }
       | undefined;
-    const workspaces = registry?.list?.() ?? [];
+    if (typeof registry?.list !== "function") return undefined;
+    const workspaces = registry.list();
+    if (!Array.isArray(workspaces)) return undefined;
     return workspaces
       .map((workspace) => (typeof workspace?.path === "string" ? workspace.path : ""))
       .filter((path) => path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path));
   } catch {
-    return [];
+    return undefined;
   }
 }
 

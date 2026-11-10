@@ -442,12 +442,11 @@ export function recallTuningPending(current: RecallTuningState, loaded: RecallTu
  * that already carries them yields `{}`, so initialising once is all it takes. */
 export function recallTuningInitPatch(state: RecallTuningState): RecallTuningPatch {
   const patch: RecallTuningPatch = {};
+  // Only PRODUCT_DEFAULTS members can be pinned; the other knobs have no
+  // product default, so their absence is the official default.
   if (state.scoreThreshold.pinned && state.scoreThreshold.source === "default") patch.scoreThreshold = state.scoreThreshold.default;
-  if (state.recallLimit.pinned && state.recallLimit.source === "default") patch.recallLimit = state.recallLimit.default;
   if (state.recallQueryExpansion.pinned && state.recallQueryExpansion.source === "default") patch.recallQueryExpansion = state.recallQueryExpansion.default;
-  if (state.recallExcludeUris.pinned && state.recallExcludeUris.source === "default") patch.recallExcludeUris = state.recallExcludeUris.default;
   if (state.timeoutMs.pinned && state.timeoutMs.source === "default") patch.timeoutMs = state.timeoutMs.default;
-  if (state.recallContextTimeoutMs.pinned && state.recallContextTimeoutMs.source === "default") patch.recallContextTimeoutMs = state.recallContextTimeoutMs.default;
   return patch;
 }
 

@@ -167,6 +167,12 @@ test("a restart that never settles answers restart-timeout instead of hanging", 
   assert.equal(restarted.status, 200);
   assert.deepEqual(restarted.json.value, { restarted: false, count: 0, reason: "restart-timeout" });
 
+  // The abandoned restart is still running, so a second request must not start
+  // a concurrent fiber restart.
+  const again = await request(base, RESTART_PATH, { method: "POST" });
+  assert.equal(again.status, 409);
+  assert.equal(again.json.code, "restart-in-progress");
+
   // Unknown state is reported as still pending, so the panel keeps offering a
   // reload rather than claiming the new value is live.
   const view = await request(base, SCOPE_PATH);

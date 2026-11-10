@@ -143,3 +143,28 @@ test("a host that cannot enumerate workspaces says so instead of pretending", as
   assert.equal(list.json.value.available, false);
   assert.deepEqual(list.json.value.workspaces, []);
 });
+
+
+test("an empty workspace list is available; a host that cannot enumerate is not", async (t) => {
+  const { configPath, env } = await tempMachine(t);
+  const empty = await withRoutes(t, configPath, { env, workspacePaths: () => [] });
+  const emptyList = await call(empty, WORKSPACES_PATH);
+  assert.equal(emptyList.json.value.available, true);
+  assert.deepEqual(emptyList.json.value.workspaces, []);
+
+  const missing = await withRoutes(t, configPath, { env, workspacePaths: () => undefined });
+  const missingList = await call(missing, WORKSPACES_PATH);
+  assert.equal(missingList.json.value.available, false);
+  assert.deepEqual(missingList.json.value.workspaces, []);
+});
+
+
+test("a workspace list over the inspection cap is marked truncated", async (t) => {
+  const { directory, configPath, env } = await tempMachine(t);
+  const paths = Array.from({ length: 65 }, (_, index) => join(directory, `missing-${index}`));
+  const base = await withRoutes(t, configPath, { env, workspacePaths: () => paths });
+  const list = await call(base, WORKSPACES_PATH);
+  assert.equal(list.json.value.available, true);
+  assert.equal(list.json.value.truncated, true);
+  assert.equal(list.json.value.workspaces.length, 64);
+});

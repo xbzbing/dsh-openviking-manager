@@ -20,13 +20,11 @@ import {
 } from "./recall-peer.js";
 import { readMemoryProject, type MemoryProject } from "./memory-project.js";
 import {
-  effectivePeerSource,
   normalizePeerSource,
   peerSourceView,
   savePeerSource,
 } from "./peer-source.js";
 import {
-  currentRecallTuning,
   recallTuningView,
   snapshotLoadedRecallTuning,
   type WorkspaceKnobValues,
@@ -69,9 +67,10 @@ export interface ManagerApiOptions {
   /** Override the restart budget; tests use a value in the millisecond range. */
   restartTimeoutMs?: number;
   /** The sidebar workspaces, as absolute paths. Supplied by the host from
-   * `ctx.workspaceRegistry.list()`; absent means "this host cannot enumerate
-   * them", and the panel then offers the manual path field only. */
-  workspacePaths?: () => string[];
+   * `ctx.workspaceRegistry.list()`; `undefined` means "this host cannot
+   * enumerate them", and the panel then hides the section instead of
+   * pretending the list is empty. */
+  workspacePaths?: () => string[] | undefined;
   /** Env layer for the recall-scope view and for resolving which ovcli.conf /
    * ov.conf the official plugin reads; defaults to process.env. Tests pass an
    * explicit object so a machine-level OPENVIKING_* variable cannot leak into
@@ -218,6 +217,14 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
     for (const declaration of project.declarations) values[declaration.key] = { value: declaration.value, layer: declaration.layer };
     return values;
   };
+  const peerSourceWorkspaceFor = (project: MemoryProject): { value: unknown; layer: string } | undefined => {
+    const declaration = project.declarations.find((item) => item.key === "peer.source");
+    return declaration === undefined ? undefined : { value: declaration.value, layer: declaration.layer };
+  };
+  const peerIdWorkspaceFor = (project: MemoryProject): { value: unknown; layer: string } | undefined => {
+    const declaration = project.declarations.find((item) => item.key === "peer.id");
+    return declaration === undefined ? undefined : { value: declaration.value, layer: declaration.layer };
+  };
 
   /** Resolve the project `cwd` belongs to. Everything the official loader reads
    * is passed in explicitly — ovcli.conf, ov.conf's legacy `dsh` section, the
@@ -263,8 +270,10 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
     const project = await readProject(cwd);
     return recallTuningView(ovcliPath, { env, loaded: loadedTuning, workspace: workspaceValuesFor(project) });
   };
-  const peerView = async (cwd: string) =>
-    peerIdView(ovcliPath, { env, loadedPeerId, project: await readProject(cwd) });
+  const peerView = async (cwd: string) => {
+    const project = await readProject(cwd);
+    return peerIdView(ovcliPath, { env, loadedPeerId, project, workspace: peerIdWorkspaceFor(project) });
+  };
   return [
     {
       kind: "exact",
@@ -623,7 +632,8 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
         if (rejectCrossOrigin(req, res, allowedHosts)) return;
         if (req.method === "GET") {
           try {
-            writeJson(res, 200, { ok: true, value: await peerSourceView(ovcliPath, { env }) });
+            const project = await readProject(cwdOf(req));
+            writeJson(res, 200, { ok: true, value: await peerSourceView(ovcliPath, { env, workspace: peerSourceWorkspaceFor(project) }) });
           } catch (error) {
             writeJson(res, 500, { ok: false, error: error instanceof Error ? error.message : "Unable to read the peer source rule" });
           }
@@ -639,7 +649,8 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
           const body = await readJson(req);
           const value = normalizePeerSource((body as Record<string, unknown> | null)?.peerSource);
           await savePeerSource(ovcliPath, value);
-          writeJson(res, 200, { ok: true, value: await peerSourceView(ovcliPath, { env }) });
+          const project = await readProject(cwdOf(req));
+          writeJson(res, 200, { ok: true, value: await peerSourceView(ovcliPath, { env, workspace: peerSourceWorkspaceFor(project) }) });
         } catch (error) {
           writeJson(res, 400, { ok: false, error: error instanceof Error ? error.message : "Unable to save the peer source rule" });
         }
@@ -655,11 +666,16 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
           return;
         }
         try {
-          const paths = options.workspacePaths?.() ?? [];
-          const projects = await Promise.all(paths.slice(0, MAX_WORKSPACES).map((path) => readProject(path)));
+          const paths = options.workspacePaths?.();
+          const all = paths ?? [];
+          const projects = await Promise.all(all.slice(0, MAX_WORKSPACES).map((path) => readProject(path)));
           writeJson(res, 200, {
             ok: true,
-            value: { available: options.workspacePaths !== undefined, workspaces: summarizeWorkspaces(projects) },
+            value: {
+              available: paths !== undefined,
+              truncated: all.length > MAX_WORKSPACES,
+              workspaces: summarizeWorkspaces(projects),
+            },
           });
         } catch (error) {
           writeJson(res, 500, { ok: false, error: error instanceof Error ? error.message : "Unable to list the workspaces" });
@@ -685,8 +701,24 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
         }
         restarting = true;
         const budget = options.restartTimeoutMs ?? RESTART_TIMEOUT_MS;
+        const operation = options.restartMemoryPlugin();
+        let result: RestartResult;
         try {
-          const result = await withTimeout(options.restartMemoryPlugin(), budget);
+          result = await withTimeout(operation, budget);
+        } catch (error) {
+          restarting = false;
+          writeJson(res, 500, { ok: false, error: error instanceof Error ? error.message : "Unable to restart the official memory plugin" });
+          return;
+        }
+        if (result.reason === "restart-timeout") {
+          // The abandoned restart may still be running. Keep the guard until
+          // it settles: clearing it here would let a second request start a
+          // concurrent fiber restart while the first is still committing.
+          operation.then(() => { restarting = false; }, () => { restarting = false; });
+          writeJson(res, 200, { ok: true, value: result });
+          return;
+        }
+        try {
           // A successful restart re-applied the plugin, so whatever the file
           // says now is the value it loaded — for the isolation scope and the
           // recall tuning knobs alike: one reload picks up every key.
@@ -700,8 +732,6 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
             loadedPeerId = snapshotLoadedPeerId(ovcliPath, env);
           }
           writeJson(res, 200, { ok: true, value: result });
-        } catch (error) {
-          writeJson(res, 500, { ok: false, error: error instanceof Error ? error.message : "Unable to restart the official memory plugin" });
         } finally {
           restarting = false;
         }

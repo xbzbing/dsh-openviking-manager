@@ -28,7 +28,7 @@ import type { MemoryProject } from "./memory-project.js";
  * `.openviking/config.json` with `peer.id` decides for everyone who clones it;
  * `readMemoryProject` reports that separately instead of merging it here. */
 
-export type PeerIdSource = "env" | "plugin.dsh" | "plugin" | "ovcli" | "default";
+export type PeerIdSource = "env" | "workspace" | "plugin.dsh" | "plugin" | "ovcli" | "default";
 
 export const PEER_ID_ENV = "OPENVIKING_PEER_ID";
 
@@ -106,6 +106,15 @@ export function normalizePeerId(value: unknown): string | undefined {
   if (!PEER_ID_RE.test(trimmed)) {
     throw new Error("peerId may only contain letters, digits, and the characters . _ @ -");
   }
+  // The official sanitizer strips leading/trailing dots and dashes, collapses
+  // repeated `@`, and rewrites the reserved `__self` / `.` / `..` forms. A
+  // value the panel accepts must be one the server keeps verbatim.
+  if (trimmed === "." || trimmed === ".." || trimmed === "__self") {
+    throw new Error("peerId must not be a reserved identity");
+  }
+  if (/^[-.]|[-.]$/.test(trimmed) || (trimmed.match(/@/g)?.length ?? 0) > 1) {
+    throw new Error("peerId must not start or end with . or -, and may contain at most one @");
+  }
   return trimmed;
 }
 
@@ -151,15 +160,32 @@ export function snapshotLoadedPeerId(path: string, env: PeerIdEnv = {}): string 
 
 export async function peerIdView(
   path: string,
-  options: { env?: PeerIdEnv; loadedPeerId: string; project: MemoryProject },
+  options: {
+    env?: PeerIdEnv;
+    loadedPeerId: string;
+    project: MemoryProject;
+    /** A `peer.id` declared by the project's workspace layers. It outranks
+     * every layer below and is read-only here: this manager never writes a
+     * repository's workspace file. */
+    workspace?: { value: unknown; layer: string };
+  },
 ): Promise<PeerIdView> {
   const env = options.env ?? process.env;
   const config = await readOvcliObject(path);
-  const effective = effectivePeerId(config, env);
+  const below = effectivePeerId(config, env);
+  const workspacePeer = stringValue(options.workspace?.value);
+  // The environment outranks every file, including a repository's own
+  // `peer.id`; below env, the workspace layer outranks plugin.dsh, the shared
+  // section and the top-level credential.
+  const effective = below.source === "env" || workspacePeer === undefined
+    ? below
+    : { peerId: workspacePeer, source: "workspace" as const, envOverride: "", ovcliOverride: "" };
   return {
     ...effective,
     sharedPeerId: peerIdIn(pluginSection(config)) ?? "",
-    restartPending: effective.peerId !== options.loadedPeerId,
+    // A workspace layer was already in effect when the official plugin
+    // applied; this manager cannot write it, so it is never "pending" here.
+    restartPending: effective.source === "workspace" ? false : effective.peerId !== options.loadedPeerId,
     project: options.project,
   };
 }

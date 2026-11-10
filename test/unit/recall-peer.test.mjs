@@ -48,6 +48,13 @@ test("normalizePeerId accepts the server charset and rejects the rest", () => {
   // occupying it, so the panel refuses it instead of storing a different key.
   assert.throws(() => normalizePeerId("ext-ZW4t5Lit5paH"), /reserves that prefix/);
   assert.throws(() => normalizePeerId("EXT-team"), /reserves that prefix/);
+  // The official sanitizer rewrites these, so the panel must not store them.
+  assert.throws(() => normalizePeerId("."), /reserved identity/);
+  assert.throws(() => normalizePeerId(".."), /reserved identity/);
+  assert.throws(() => normalizePeerId("__self"), /reserved identity/);
+  assert.throws(() => normalizePeerId("-team"), /start or end/);
+  assert.throws(() => normalizePeerId("team."), /start or end/);
+  assert.throws(() => normalizePeerId("a@b@c"), /at most one @/);
 });
 
 test("the effective peer id follows the layer order this plugin can see", () => {
@@ -167,6 +174,34 @@ test("restartPending compares the file against the loaded snapshot", async (t) =
   assert.equal(pending.peerId, "");
   assert.equal(pending.source, "default");
   assert.equal(pending.restartPending, true);
+});
+
+test("a workspace peer.id is surfaced read-only and outranks plugin.dsh", async (t) => {
+  const path = await tempConfig(t, { plugin: { dsh: { peerId: "dsh-peer" } } });
+  const loadedPeerId = snapshotLoadedPeerId(path, {});
+  const view = await peerIdView(path, {
+    env: {},
+    loadedPeerId,
+    project: PROJECT,
+    workspace: { value: "repo-peer", layer: ".openviking/config.json" },
+  });
+  assert.equal(view.peerId, "repo-peer");
+  assert.equal(view.source, "workspace");
+  // The manager cannot write the workspace layer, and the official plugin
+  // loaded it at apply; a reload prompt would be false.
+  assert.equal(view.restartPending, false);
+  assert.equal(view.sharedPeerId, "");
+
+  // The environment outranks the workspace file, so the field must show the
+  // env value and its read-only warning, not the repository pin.
+  const envView = await peerIdView(path, {
+    env: { OPENVIKING_PEER_ID: "env-peer" },
+    loadedPeerId,
+    project: PROJECT,
+    workspace: { value: "repo-peer", layer: ".openviking/config.json" },
+  });
+  assert.equal(envView.peerId, "env-peer");
+  assert.equal(envView.source, "env");
 });
 
 test("an env override reports its source and never reads as restart-pending", async (t) => {

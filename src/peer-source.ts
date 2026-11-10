@@ -28,7 +28,7 @@ import { harnessSection, pluginSection } from "./recall-scope.js";
  * above this file and are reported by `readMemoryProject`, not merged here. */
 
 export type PeerSourceKey = "git" | "git-directory" | "cwd" | "none";
-export type PeerSourceOrigin = "env" | "plugin.dsh" | "plugin" | "default";
+export type PeerSourceOrigin = "env" | "workspace" | "plugin.dsh" | "plugin" | "default";
 
 export const PEER_SOURCE_ENV = "OPENVIKING_PEER_SOURCE";
 export const DEFAULT_PEER_SOURCE_KEY: PeerSourceKey = "git";
@@ -92,12 +92,17 @@ export function choiceOf(templates: string[]): PeerSourceKey | "custom" {
  * `peerSourceTemplates`: an empty value means the preset default, a bare word
  * naming a preset expands to it, and anything else is a template (or a list). */
 export function peerSourceTemplates(value: unknown): string[] {
-  if (Array.isArray(value)) return value.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean);
-  if (typeof value !== "string") return PEER_SOURCE_TEMPLATES[DEFAULT_PEER_SOURCE_KEY];
-  const raw = value.trim();
+  // Mirrors the official `peerSourceTemplates`: an array is taken verbatim
+  // (coerced to strings), a bare word is a preset name, and a string without a
+  // placeholder is a misspelled preset — not a literal namespace. The official
+  // loader warns and falls back to `git` for that case; doing anything else
+  // here would show a peer the running plugin never uses.
+  if (Array.isArray(value)) return value.map(String).filter(Boolean);
+  const raw = String(value ?? "").trim();
   if (raw === "") return PEER_SOURCE_TEMPLATES[DEFAULT_PEER_SOURCE_KEY];
-  if (raw in PEER_SOURCE_TEMPLATES) return PEER_SOURCE_TEMPLATES[raw as PeerSourceKey];
-  return [raw];
+  if (Object.hasOwn(PEER_SOURCE_TEMPLATES, raw)) return PEER_SOURCE_TEMPLATES[raw as PeerSourceKey];
+  if (raw.includes("{")) return [raw];
+  return PEER_SOURCE_TEMPLATES[DEFAULT_PEER_SOURCE_KEY];
 }
 
 /** A layer may carry a preset name or a list of templates. */
@@ -125,11 +130,15 @@ export function describePeerSource(value: unknown): string {
 export function effectivePeerSource(
   config: Record<string, unknown>,
   env: Record<string, string | undefined> = {},
+  workspace?: { value: unknown; layer: string },
 ): { templates: string[]; origin: PeerSourceOrigin; envOverride: string; sharedValue: string } {
   const sharedValue = describePeerSource(peerSourceIn(pluginSection(config)));
   const rawEnv = env[PEER_SOURCE_ENV]?.trim() ?? "";
   if (rawEnv !== "") {
     return { templates: peerSourceTemplates(rawEnv), origin: "env", envOverride: rawEnv, sharedValue };
+  }
+  if (workspace !== undefined) {
+    return { templates: peerSourceTemplates(workspace.value), origin: "workspace", envOverride: "", sharedValue };
   }
   const fromHarness = peerSourceIn(harnessSection(config));
   if (fromHarness !== undefined) {
@@ -153,8 +162,16 @@ export function effectivePeerSource(
  * input the official renderer would resolve to nothing. */
 export function normalizePeerSource(value: unknown): string | string[] {
   // Only a name the official loader knows may be stored as a name; the panel's
-  // own composite rule has to be written out as its templates.
-  if (typeof value === "string" && OFFICIAL_PRESET_NAMES.has(value.trim())) return value.trim();
+  // own composite rule has to be written out as its templates. A bare word
+  // that is not a preset is refused rather than stored: the official loader
+  // would warn and ignore it, so the UI would claim a rule that never applied.
+  if (typeof value === "string") {
+    const raw = value.trim();
+    if (OFFICIAL_PRESET_NAMES.has(raw)) return raw;
+    if (raw !== "" && !Object.hasOwn(PEER_SOURCE_TEMPLATES, raw) && !raw.includes("{")) {
+      throw new Error(`unknown peer.source preset "${raw}"; use one of ${[...OFFICIAL_PRESET_NAMES].join(", ")} or a template containing a placeholder such as "{dir}"`);
+    }
+  }
   // A blank entry is almost always a typo, and silently dropping it would turn
   // "one namespace per directory" into "no peer at all". `none` is the explicit
   // way to ask for that.
@@ -183,11 +200,11 @@ export function normalizePeerSource(value: unknown): string | string[] {
 
 export async function peerSourceView(
   path: string,
-  options: { env?: Record<string, string | undefined> } = {},
+  options: { env?: Record<string, string | undefined>; workspace?: { value: unknown; layer: string } } = {},
 ): Promise<PeerSourceView> {
   const env = options.env ?? process.env;
   const config = await readOvcliObject(path);
-  const effective = effectivePeerSource(config, env);
+  const effective = effectivePeerSource(config, env, options.workspace);
   const choice = choiceOf(effective.templates);
   const draft: PeerSourceView = {
     choice,
@@ -229,10 +246,4 @@ export async function savePeerSource(path: string, value: string | string[]): Pr
   const nextHarness: Record<string, unknown> = { ...rest, peerSource: value };
   nextShared.dsh = nextHarness;
   await writeOvcliObject(path, { ...existing, plugin: nextShared });
-}
-
-/** The JSON value a choice stores: the official preset name when one exists,
- * otherwise the template list. */
-export function storedValueFor(choice: PeerSourceKey): string | string[] {
-  return OFFICIAL_PRESET_NAMES.has(choice) ? choice : PEER_SOURCE_TEMPLATES[choice];
 }
