@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { IconChevronDownOutlineRegular, Menu, type MenuItem } from "@deepseek-ai/dsh-client-ui-primitives";
 import type { Translation, TranslationKey } from "./i18n.js";
 
 export interface WorkspaceSummary {
@@ -26,6 +27,11 @@ const STATUS_LABELS: Record<WorkspaceStatus, TranslationKey> = {
   "user-level": "workspaceTagUserLevel",
 };
 
+const FILTER_CHOICES: Array<{ value: StatusFilter; label: TranslationKey }> = [
+  { value: "all", label: "workspacesFilterAll" },
+  ...STATUSES.map((value) => ({ value, label: STATUS_LABELS[value] })),
+];
+
 function statusOf(workspace: WorkspaceSummary): WorkspaceStatus {
   if (workspace.userLevelSpace) return "user-level";
   return workspace.sharedWith.length > 0 ? "shared" : "isolated";
@@ -39,7 +45,10 @@ export function WorkspaceCard(props: { view: WorkspacesView; t: Translation }) {
   // list is small enough to filter on every keystroke.
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<StatusFilter>("all");
+  const [filterOpen, setFilterOpen] = useState(false);
   const needle = query.trim().toLocaleLowerCase();
+  const currentFilter = t(FILTER_CHOICES.find((item) => item.value === status)?.label ?? "workspacesFilterAll");
+  const filterItems: MenuItem[] = FILTER_CHOICES.map((item) => ({ id: item.value, label: t(item.label) }));
   const visible = view.workspaces.filter((workspace) =>
     (status === "all" || statusOf(workspace) === status)
     && (needle === "" || workspace.path.toLocaleLowerCase().includes(needle)));
@@ -66,15 +75,33 @@ export function WorkspaceCard(props: { view: WorkspacesView; t: Translation }) {
                     placeholder={t("workspacesSearch")}
                     aria-label={t("workspacesSearch")}
                   />
-                  <select
-                    className="ovm-workspaceFilter"
-                    value={status}
-                    onChange={(event) => setStatus(event.target.value as StatusFilter)}
-                    aria-label={t("workspacesFilter")}
-                  >
-                    <option value="all">{t("workspacesFilterAll")}</option>
-                    {STATUSES.map((value) => <option key={value} value={value}>{t(STATUS_LABELS[value])}</option>)}
-                  </select>
+                  {/* The shell's own menu primitive, so this matches the
+                      other rule pickers instead of the native popup. */}
+                  <Menu
+                    open={filterOpen}
+                    align="end"
+                    selection="check"
+                    selectedId={status}
+                    items={filterItems}
+                    onClose={() => setFilterOpen(false)}
+                    onSelect={(id: string) => {
+                      setFilterOpen(false);
+                      setStatus(id as StatusFilter);
+                    }}
+                    anchor={(
+                      <button
+                        type="button"
+                        className="ovm-select ovm-filterSelect"
+                        aria-haspopup="menu"
+                        aria-expanded={filterOpen}
+                        aria-label={t("workspacesFilter")}
+                        onClick={() => setFilterOpen(!filterOpen)}
+                      >
+                        <span>{currentFilter}</span>
+                        <IconChevronDownOutlineRegular size={14} />
+                      </button>
+                    )}
+                  />
                 </div>
                 {visible.length === 0
                   ? <p className="ovm-hint">{needle === "" ? t("workspacesNoMatchStatus") : t("workspacesNoMatch", { query: query.trim() })}</p>

@@ -181,22 +181,29 @@ test("the workspace list says which directories share one namespace", async ({ p
       await search.fill("");
       await expect(card.locator("li")).toHaveCount(3);
 
-      // The status filter narrows the same local list; "All statuses" resets.
-      const filter = card.getByRole("combobox", { name: "Filter workspaces by status" });
-      await filter.selectOption("shared");
+      // The status filter is the shell's menu, not a native select; "All
+      // statuses" resets it.
+      const filter = card.getByRole("button", { name: "Filter workspaces by status" });
+      await filter.click();
+      await card.getByRole("menuitem", { name: "Shared" }).click();
+      await expect(filter).toContainText("Shared");
       await expect(card.locator("li")).toHaveCount(2);
       await expect(card.locator(".ovm-tag")).toHaveText(["Shared", "Shared"]);
-      await filter.selectOption("isolated");
+      await filter.click();
+      await card.getByRole("menuitem", { name: "Isolated" }).click();
       await expect(card.locator("li")).toHaveCount(1);
       await expect(card).toContainText(playground);
-      await filter.selectOption("user-level");
+      await filter.click();
+      await card.getByRole("menuitem", { name: "User-level space" }).click();
       await expect(card.locator("li")).toHaveCount(0);
       await expect(card).toContainText("No workspace is in this state");
-      await filter.selectOption("all");
+      await filter.click();
+      await card.getByRole("menuitem", { name: "All statuses" }).click();
       await expect(card.locator("li")).toHaveCount(3);
 
       // Search and status compose instead of replacing one another.
-      await filter.selectOption("shared");
+      await filter.click();
+      await card.getByRole("menuitem", { name: "Shared" }).click();
       await search.fill("checkout-b");
       await expect(card.locator("li")).toHaveCount(1);
       await expect(card).toContainText("checkout-b");
