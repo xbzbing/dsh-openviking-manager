@@ -180,6 +180,26 @@ test("the workspace list says which directories share one namespace", async ({ p
       await expect(card).toContainText("No workspace matches");
       await search.fill("");
       await expect(card.locator("li")).toHaveCount(3);
+
+      // The status filter narrows the same local list; "All statuses" resets.
+      const filter = card.getByRole("combobox", { name: "Filter workspaces by status" });
+      await filter.selectOption("shared");
+      await expect(card.locator("li")).toHaveCount(2);
+      await expect(card.locator(".ovm-tag")).toHaveText(["Shared", "Shared"]);
+      await filter.selectOption("isolated");
+      await expect(card.locator("li")).toHaveCount(1);
+      await expect(card).toContainText(playground);
+      await filter.selectOption("user-level");
+      await expect(card.locator("li")).toHaveCount(0);
+      await expect(card).toContainText("No workspace is in this state");
+      await filter.selectOption("all");
+      await expect(card.locator("li")).toHaveCount(3);
+
+      // Search and status compose instead of replacing one another.
+      await filter.selectOption("shared");
+      await search.fill("checkout-b");
+      await expect(card.locator("li")).toHaveCount(1);
+      await expect(card).toContainText("checkout-b");
     } finally {
       await listed.close();
       await listed.cleanup();

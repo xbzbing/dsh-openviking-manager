@@ -61,6 +61,9 @@ export type TranslationKey =
   | "workspaceTagUserLevel"
   | "workspaceUserLevelHint"
   | "workspacePeerLabel"
+  | "workspacesFilter"
+  | "workspacesFilterAll"
+  | "workspacesNoMatchStatus"
   | "openStudio"
   | "unreachable"
   | "notReady"
@@ -269,6 +272,9 @@ const en: Record<TranslationKey, string> = {
   workspaceTagUserLevel: "User-level space",
   workspaceUserLevelHint: "No peer: this directory shares the user-level space with every other directory that has no peer.",
   workspacePeerLabel: "peer",
+  workspacesFilter: "Filter workspaces by status",
+  workspacesFilterAll: "All statuses",
+  workspacesNoMatchStatus: "No workspace is in this state.",
   openStudio: "Open Studio",
   unreachable: "OpenViking is unreachable at this endpoint.",
   notReady: "OpenViking is reachable but not ready.",
@@ -476,6 +482,9 @@ const zh: Record<TranslationKey, string> = {
   workspaceTagUserLevel: "用户级空间",
   workspaceUserLevelHint: "peer 为空：该目录与所有推导不出 peer 的目录共用同一个用户级空间。",
   workspacePeerLabel: "peer",
+  workspacesFilter: "按状态筛选工作区",
+  workspacesFilterAll: "全部状态",
+  workspacesNoMatchStatus: "没有处于该状态的工作区。",
   openStudio: "打开 Studio",
   unreachable: "该服务地址无法访问 OpenViking。",
   notReady: "OpenViking 可访问，但尚未就绪。",

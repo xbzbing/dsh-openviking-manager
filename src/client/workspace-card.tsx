@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { Translation } from "./i18n.js";
+import type { Translation, TranslationKey } from "./i18n.js";
 
 export interface WorkspaceSummary {
   path: string;
@@ -14,17 +14,35 @@ export interface WorkspaceSummary {
 
 export interface WorkspacesView { available: boolean; truncated: boolean; workspaces: WorkspaceSummary[]; }
 
+/** The three states a row can report. The filter menu reuses the row tag's
+ * words so the control and the result cannot drift apart. */
+const STATUSES = ["shared", "isolated", "user-level"] as const;
+type WorkspaceStatus = typeof STATUSES[number];
+type StatusFilter = "all" | WorkspaceStatus;
+
+const STATUS_LABELS: Record<WorkspaceStatus, TranslationKey> = {
+  shared: "workspaceTagShared",
+  isolated: "workspaceTagIsolated",
+  "user-level": "workspaceTagUserLevel",
+};
+
+function statusOf(workspace: WorkspaceSummary): WorkspaceStatus {
+  if (workspace.userLevelSpace) return "user-level";
+  return workspace.sharedWith.length > 0 ? "shared" : "isolated";
+}
+
 /** Read-only inspection of the sidebar workspaces: which directories resolve
  * to the same peer, and which workspace keys override this machine. */
 export function WorkspaceCard(props: { view: WorkspacesView; t: Translation }) {
   const { view, t } = props;
-  // Local-only filter: typing must not reach the host, and the registry list is
-  // small enough to filter on every keystroke.
+  // Both filters are local: typing must not reach the host, and the registry
+  // list is small enough to filter on every keystroke.
   const [query, setQuery] = useState("");
+  const [status, setStatus] = useState<StatusFilter>("all");
   const needle = query.trim().toLocaleLowerCase();
-  const visible = needle === ""
-    ? view.workspaces
-    : view.workspaces.filter((workspace) => workspace.path.toLocaleLowerCase().includes(needle));
+  const visible = view.workspaces.filter((workspace) =>
+    (status === "all" || statusOf(workspace) === status)
+    && (needle === "" || workspace.path.toLocaleLowerCase().includes(needle)));
   return (
     <section className="ovm-card" aria-label={t("workspacesTitle")}>
       {/* Folded by default: this is an inspection, not a setting, and the rows
@@ -39,33 +57,46 @@ export function WorkspaceCard(props: { view: WorkspacesView; t: Translation }) {
             ? <p className="ovm-hint">{t("workspacesEmpty")}</p>
             : (
               <>
-                <input
-                  className="ovm-workspaceSearch"
-                  type="search"
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder={t("workspacesSearch")}
-                  aria-label={t("workspacesSearch")}
-                />
+                <div className="ovm-workspaceTools">
+                  <input
+                    className="ovm-workspaceSearch"
+                    type="search"
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder={t("workspacesSearch")}
+                    aria-label={t("workspacesSearch")}
+                  />
+                  <select
+                    className="ovm-workspaceFilter"
+                    value={status}
+                    onChange={(event) => setStatus(event.target.value as StatusFilter)}
+                    aria-label={t("workspacesFilter")}
+                  >
+                    <option value="all">{t("workspacesFilterAll")}</option>
+                    {STATUSES.map((value) => <option key={value} value={value}>{t(STATUS_LABELS[value])}</option>)}
+                  </select>
+                </div>
                 {visible.length === 0
-                  ? <p className="ovm-hint">{t("workspacesNoMatch", { query: query.trim() })}</p>
+                  ? <p className="ovm-hint">{needle === "" ? t("workspacesNoMatchStatus") : t("workspacesNoMatch", { query: query.trim() })}</p>
                   : (
                     <ul className="ovm-workspaces">
                       {visible.map((workspace) => {
-                        const shared = workspace.sharedWith.length > 0;
+                        const state = statusOf(workspace);
                         // The row keeps one line for the path and one for the
                         // peer: the status tag never sits between them, so a
                         // long path cannot be mistaken for the peer name.
-                        const tag = workspace.userLevelSpace
-                          ? { label: t("workspaceTagUserLevel"), className: "ovm-tagUserLevel", hint: t("workspaceUserLevelHint") }
-                          : shared
-                            ? { label: t("workspaceTagShared"), className: "ovm-tagShared", hint: t("workspaceShares", { peers: workspace.sharedWith.join(", ") }) }
-                            : { label: t("workspaceTagIsolated"), className: "ovm-tagIsolated", hint: t("workspaceIsolated") };
+                        const hint = state === "user-level"
+                          ? t("workspaceUserLevelHint")
+                          : state === "shared"
+                            ? t("workspaceShares", { peers: workspace.sharedWith.join(", ") })
+                            : t("workspaceIsolated");
                         return (
                           <li key={workspace.path}>
                             <div className="ovm-workspaceHead">
                               <code>{workspace.path}</code>
-                              <span className={`ovm-tag ${tag.className}`} title={tag.hint} aria-label={tag.hint}>{tag.label}</span>
+                              <span className={`ovm-tag ovm-tag${state === "user-level" ? "UserLevel" : state === "shared" ? "Shared" : "Isolated"}`} title={hint} aria-label={hint}>
+                                {t(STATUS_LABELS[state])}
+                              </span>
                             </div>
                             <p className="ovm-workspacePeer">
                               <span className="ovm-workspacePeerLabel">{t("workspacePeerLabel")}</span>
