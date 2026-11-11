@@ -156,17 +156,30 @@ test("the workspace list says which directories share one namespace", async ({ p
       await card.locator("summary").click();
       await expect(card.locator("li").first()).toBeVisible();
 
-      // Each row's own path is its <code>; a sibling's name also appears in the
-      // "shares with" line, so match on the path element, not the row text.
+      // Line 1 is the path plus a status tag whose explanation is the tooltip;
+      // line 2 is always the peer, so the two cannot be mistaken for each other.
       const shared = card.locator("li").filter({ has: page.locator("code", { hasText: cloneA }) });
-      await expect(shared).toContainText("github.com-example-shared");
-      await expect(shared).toContainText("Shares memories with");
-      await expect(shared).toContainText("checkout-b");
+      await expect(shared.locator(".ovm-workspaceHead code")).toHaveText(cloneA);
+      await expect(shared.locator(".ovm-workspacePeer code")).toHaveText("github.com-example-shared");
+      const sharedTag = shared.locator(".ovm-tag");
+      await expect(sharedTag).toHaveText("Shared");
+      await expect(sharedTag).toHaveAttribute("title", /checkout-b/);
 
       // A plain directory gets a namespace of its own, so it is isolated.
       const isolated = card.locator("li").filter({ has: page.locator("code", { hasText: playground }) });
-      await expect(isolated).toContainText("Isolated");
-      await expect(isolated).not.toContainText("user-level space");
+      await expect(isolated.locator(".ovm-tag")).toHaveText("Isolated");
+      await expect(isolated.locator(".ovm-tag")).toHaveAttribute("title", "Isolated: no other workspace resolves to this peer.");
+
+      // The search filters the list locally, without another API round trip.
+      const search = card.getByRole("searchbox");
+      await search.fill("checkout-a");
+      await expect(card.locator("li")).toHaveCount(1);
+      await expect(card.locator("li")).toContainText(cloneA);
+      await search.fill("no-such-workspace");
+      await expect(card.locator("li")).toHaveCount(0);
+      await expect(card).toContainText("No workspace matches");
+      await search.fill("");
+      await expect(card.locator("li")).toHaveCount(3);
     } finally {
       await listed.close();
       await listed.cleanup();

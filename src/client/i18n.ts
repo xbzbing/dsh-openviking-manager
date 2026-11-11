@@ -54,6 +54,13 @@ export type TranslationKey =
   | "workspaceShares"
   | "workspaceIsolated"
   | "workspaceOverrides"
+  | "workspacesSearch"
+  | "workspacesNoMatch"
+  | "workspaceTagIsolated"
+  | "workspaceTagShared"
+  | "workspaceTagUserLevel"
+  | "workspaceUserLevelHint"
+  | "workspacePeerLabel"
   | "openStudio"
   | "unreachable"
   | "notReady"
@@ -255,6 +262,13 @@ const en: Record<TranslationKey, string> = {
   workspaceShares: "Shares memories with: {peers}",
   workspaceIsolated: "Isolated: no other workspace resolves to this peer.",
   workspaceOverrides: "This workspace declares its own overrides: {keys}",
+  workspacesSearch: "Search workspaces",
+  workspacesNoMatch: "No workspace matches “{query}”.",
+  workspaceTagIsolated: "Isolated",
+  workspaceTagShared: "Shared",
+  workspaceTagUserLevel: "User-level space",
+  workspaceUserLevelHint: "No peer: this directory shares the user-level space with every other directory that has no peer.",
+  workspacePeerLabel: "peer",
   openStudio: "Open Studio",
   unreachable: "OpenViking is unreachable at this endpoint.",
   notReady: "OpenViking is reachable but not ready.",
@@ -455,6 +469,13 @@ const zh: Record<TranslationKey, string> = {
   workspaceShares: "与这些工作区共享记忆：{peers}",
   workspaceIsolated: "已隔离：没有其它工作区落到同一个 peer。",
   workspaceOverrides: "该工作区自己声明了覆盖：{keys}",
+  workspacesSearch: "搜索工作区",
+  workspacesNoMatch: "没有匹配“{query}”的工作区。",
+  workspaceTagIsolated: "已隔离",
+  workspaceTagShared: "共享",
+  workspaceTagUserLevel: "用户级空间",
+  workspaceUserLevelHint: "peer 为空：该目录与所有推导不出 peer 的目录共用同一个用户级空间。",
+  workspacePeerLabel: "peer",
   openStudio: "打开 Studio",
   unreachable: "该服务地址无法访问 OpenViking。",
   notReady: "OpenViking 可访问，但尚未就绪。",
