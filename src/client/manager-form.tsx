@@ -656,8 +656,11 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     // The previous answer is cleared so a stale one never sits beside "Verifying…".
     setVerifyResult("");
     try {
-      const probe = (await responseJson(await fetchFn(`${apiPrefix}/probe`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ apiKey }) }))).value as unknown as { reachable: boolean; ready: boolean; authenticated: boolean; identity?: { account: string; user: string } };
+      const probe = (await responseJson(await fetchFn(`${apiPrefix}/probe`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ apiKey }) }))).value as unknown as { reachable: boolean; ready: boolean; authenticated: boolean; keyRejected?: boolean; identity?: { account: string; user: string } };
       if (!probe.reachable) setVerifyResult(t("unreachable"));
+      // A rejected key is a credential problem, not a readiness problem: the
+      // service answered the probe, so do not make the user wait for /ready.
+      else if (probe.keyRejected === true) setVerifyResult(t("keyNotAccepted"));
       else if (!probe.ready) setVerifyResult(t("notReady"));
       else if (!probe.authenticated) setVerifyResult(t("keyNotAccepted"));
       else {
