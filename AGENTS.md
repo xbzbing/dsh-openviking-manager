@@ -25,7 +25,7 @@
 
 - Node.js ESM + TypeScript；运行时文件在 `src/`，编译输出为 `lib/`。
 - DSH Web 插件浏览器入口由 `src/client/index.tsx` 注册到 `plugins.bundle.config`，包导出为 `./client`。
-- UI 的可见文案一律通过 `src/client/i18n.ts` 的 `TranslationKey`。新增 key 时必须同步 `en` 和 `zh` 两个字典。
+- UI 的可见文案一律通过 `src/client/i18n.ts` 的 `TranslationKey`（公共入口）。字典按语言拆分在 `src/client/locales/`：key 以 `src/client/locales/zh.ts` 为唯一真源，`TranslationKey` 由它推导（`keyof typeof zh`）；`src/client/locales/en.ts` 必须覆盖同一组 key。`i18n.ts` 只保留 `ManagerLocale`、`Translation` 与 locale 辅助函数，并转出 `dictionaries` 和 `TranslationKey`。新增 key 时先改 `zh.ts`，再补 `en.ts`。
 - 在 DSH 中跟随 `ctx.locale`；独立 E2E 页面通过浏览器语言回退。
 - CSS 位于 `src/client/styles.ts`。维持 DSH 设计 token、原生可访问控件和响应式栅格。
 - `npm run build` 生成 `lib/`。`lib/` **不入库**，出厂产物由发版 workflow 生成，见「分发与安装」。不要把 `.tgz` 提交到仓库。
