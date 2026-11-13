@@ -1,21 +1,35 @@
+import { readFileSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-/** Display preferences owned by this manager, not by OpenViking. They live in
- * the plugin's own file under the DSH home rather than in ovcli.conf: that file
+/** Preferences owned by this manager, not by OpenViking. They live in the
+ * plugin's own file under the DSH home rather than in ovcli.conf: that file
  * only carries keys the official plugin declares. */
 export interface UiPreferences {
   /** Whether the composer shows the per-session OpenViking pill. Off by default:
    * the session toggle keeps working (and defaults to on) while hidden. */
   showInputToggle: boolean;
+  /** Whether the host denies the agent's explicit `mcp__openviking__remember`
+   * calls. Off by default; automatic capture is never affected. */
+  disableMcpRemember: boolean;
 }
 
-export const DEFAULT_UI_PREFERENCES: UiPreferences = { showInputToggle: false };
+export const DEFAULT_UI_PREFERENCES: UiPreferences = {
+  showInputToggle: false,
+  disableMcpRemember: false,
+};
 
 export function resolveUiPreferencesPath(env: { [key: string]: string | undefined } = process.env): string {
   const home = env.DSH_HOME?.trim() || join(homedir(), ".dsh");
   return join(home, "plugin-data", "dsh-openviking-manager", "preferences.json");
+}
+
+function normalizePreferences(stored: Record<string, unknown>): UiPreferences {
+  return {
+    showInputToggle: typeof stored.showInputToggle === "boolean" ? stored.showInputToggle : DEFAULT_UI_PREFERENCES.showInputToggle,
+    disableMcpRemember: typeof stored.disableMcpRemember === "boolean" ? stored.disableMcpRemember : DEFAULT_UI_PREFERENCES.disableMcpRemember,
+  };
 }
 
 async function readObject(path: string): Promise<Record<string, unknown>> {
@@ -23,27 +37,52 @@ async function readObject(path: string): Promise<Record<string, unknown>> {
     const parsed: unknown = JSON.parse(await readFile(path, "utf8"));
     return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
   } catch {
-    // Missing or unreadable: a display preference falls back to its default
-    // instead of breaking the composer.
+    // Missing or unreadable: a preference falls back to its default instead of
+    // breaking the composer or the tool guard.
+    return {};
+  }
+}
+
+function readObjectSync(path: string): Record<string, unknown> {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+  } catch {
     return {};
   }
 }
 
 export async function loadUiPreferences(path: string): Promise<UiPreferences> {
-  const stored = await readObject(path);
-  return {
-    showInputToggle: typeof stored.showInputToggle === "boolean" ? stored.showInputToggle : DEFAULT_UI_PREFERENCES.showInputToggle,
-  };
+  return normalizePreferences(await readObject(path));
 }
 
-/** Validate a PUT body: only known keys with the right type are accepted. */
+/** Startup read for the synchronous tool guard. The file is tiny (two booleans);
+ * a missing or malformed file keeps the backward-compatible defaults. */
+export function loadUiPreferencesSync(path: string): UiPreferences {
+  return normalizePreferences(readObjectSync(path));
+}
+
+const PREFERENCE_KEYS = ["showInputToggle", "disableMcpRemember"] as const;
+
+/** Validate a PUT body: only known keys with the right type are accepted. A
+ * patch may carry either key or both; an empty object is not a no-op. */
 export function parseUiPreferencesPatch(body: unknown): Partial<UiPreferences> {
   if (typeof body !== "object" || body === null || Array.isArray(body)) throw new Error("body must be a JSON object");
   const record = body as Record<string, unknown>;
-  const unknownKeys = Object.keys(record).filter((key) => key !== "showInputToggle");
+  const unknownKeys = Object.keys(record).filter((key) => !(PREFERENCE_KEYS as readonly string[]).includes(key));
   if (unknownKeys.length > 0) throw new Error(`unknown preference: ${unknownKeys.join(", ")}`);
-  if (typeof record.showInputToggle !== "boolean") throw new Error("showInputToggle must be a boolean");
-  return { showInputToggle: record.showInputToggle };
+
+  const patch: Partial<UiPreferences> = {};
+  if ("showInputToggle" in record) {
+    if (typeof record.showInputToggle !== "boolean") throw new Error("showInputToggle must be a boolean");
+    patch.showInputToggle = record.showInputToggle;
+  }
+  if ("disableMcpRemember" in record) {
+    if (typeof record.disableMcpRemember !== "boolean") throw new Error("disableMcpRemember must be a boolean");
+    patch.disableMcpRemember = record.disableMcpRemember;
+  }
+  if (Object.keys(patch).length === 0) throw new Error("at least one preference is required");
+  return patch;
 }
 
 /** Merge the patch into the stored object and replace the file atomically.

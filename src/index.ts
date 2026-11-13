@@ -11,6 +11,7 @@ import { stripOpenVikingInjectedMessages } from "./ov-prestep.js";
 import { openVikingToolDenialReason } from "./ov-tool-guard.js";
 import { installOpenVikingRuntimeGate } from "./openviking-gate.js";
 import { restartOfficialOpenViking } from "./openviking-restart.js";
+import { loadUiPreferencesSync, resolveUiPreferencesPath } from "./ui-preferences.js";
 
 export const name = "openviking-manager";
 export const inject = ["webServer", "tools"];
@@ -89,6 +90,11 @@ function agentSessionId(agent: AgentLike): string | undefined {
  * against version drift or an already-queued official injection. */
 export function apply(ctx: Context): void {
   const host = ctx as unknown as HostContext;
+  // The tool guard is synchronous, so the MCP remember policy is loaded once
+  // here and kept current by the preferences route after a save. A malformed or
+  // missing file keeps the backward-compatible default: allow explicit writes.
+  const preferencesPath = resolveUiPreferencesPath();
+  const rememberPolicy = { blocked: loadUiPreferencesSync(preferencesPath).disableMcpRemember };
   host.effect(() => {
     // Restarting goes through the public cordis registry: it reloads the
     // official plugin so an ovcli.conf change is re-read without restarting
@@ -97,6 +103,10 @@ export function apply(ctx: Context): void {
       restartMemoryPlugin: () => restartOfficialOpenViking(ctx),
       workspacePaths: () => workspacePathsOf(host),
       allowedHosts: allowedHostsOf(host),
+      preferencesPath,
+      onPreferencesSaved: (preferences) => {
+        rememberPolicy.blocked = preferences.disableMcpRemember;
+      },
     }).map((route) => host.webServer.register(route));
     return () => {
       for (const dispose of disposers) dispose();
@@ -138,6 +148,7 @@ export function apply(ctx: Context): void {
     openVikingToolDenialReason(
       exec.name,
       isOpenVikingEnabledForActiveStep(exec.agent?.id),
+      rememberPolicy.blocked,
     ),
   ), "openviking-manager: gate OpenViking MCP tools");
 }

@@ -264,6 +264,27 @@ test("hides the composer pill by default and shows it once the setting turns it 
 });
 
 
+test("blocks explicit MCP remember calls from the configuration page", async ({ page }) => {
+  const fixture = await startManagerFixture();
+  try {
+    await page.goto(fixture.url);
+    const card = page.getByRole("region", { name: "MCP remember" });
+    const allow = card.getByRole("tab", { name: "Allow" });
+    const block = card.getByRole("tab", { name: "Block" });
+    await expect(allow).toHaveAttribute("aria-selected", "true");
+
+    await block.click();
+    await expect(card.getByRole("status")).toHaveText("MCP remember setting saved.");
+    expect(JSON.parse(await readFile(fixture.preferencesPath, "utf8"))).toEqual({ disableMcpRemember: true });
+
+    // The stored policy survives a reload.
+    await page.reload();
+    await expect(page.getByRole("region", { name: "MCP remember" }).getByRole("tab", { name: "Block" })).toHaveAttribute("aria-selected", "true");
+  } finally {
+    await fixture.close();
+  }
+});
+
 test("the manager stylesheet stays inside its own shell", async ({ page }) => {
   const fixture = await startManagerFixture();
   try {

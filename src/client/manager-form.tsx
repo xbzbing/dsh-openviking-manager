@@ -23,6 +23,8 @@ interface ProbeView {
   keyRejected: boolean;
   keyMissing: boolean;
   identity?: { account: string; user: string };
+  /** Optional: older servers do not report a version from `/health`. */
+  version?: string;
 }
 export interface ManagerFormProps { apiPrefix?: string; fetchFn?: typeof fetch; t?: Translation; }
 
@@ -156,6 +158,11 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   const [inputPill, setInputPill] = useState<boolean>();
   const [inputPillBusy, setInputPillBusy] = useState(false);
   const [inputPillStatus, setInputPillStatus] = useState("");
+  /** Whether the host denies explicit mcp__openviking__remember calls; undefined
+   * hides the card on hosts that do not serve the new preference yet. */
+  const [rememberBlocked, setRememberBlocked] = useState<boolean>();
+  const [rememberBusy, setRememberBusy] = useState(false);
+  const [rememberStatus, setRememberStatus] = useState("");
   // The first-load pass pins product defaults and may reload the official
   // plugin. It runs on its own state: a slow or stuck reload must not leave the
   // connection form disabled, which is what a single shared `busy` did.
@@ -166,6 +173,8 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   /** Where "Verify connection" answers: beside its own button, not on the card's
    * status line, which the reload notices also write to. */
   const [verifyResult, setVerifyResult] = useState("");
+  /** Server version from the same /health call that fed the probe. */
+  const [verifyVersion, setVerifyVersion] = useState("");
   /** The rule dropdown is the platform Menu, which is controlled. */
   const [ruleMenuOpen, setRuleMenuOpen] = useState(false);
   // The status line has two kinds of writer: what the user just did, and the
@@ -226,11 +235,18 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     } catch { if (hideOnFailure) setPeerId(undefined); return undefined; }
   };
 
-  const loadInputPill = async () => {
+  const loadPreferences = async () => {
     try {
-      const value = (await responseJson(await fetchFn(`${apiPrefix}/ui-preferences`))).value as { showInputToggle: boolean };
-      setInputPill(value.showInputToggle);
-    } catch { setInputPill(undefined); }
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/ui-preferences`))).value as {
+        showInputToggle?: boolean;
+        disableMcpRemember?: boolean;
+      };
+      setInputPill(typeof value.showInputToggle === "boolean" ? value.showInputToggle : undefined);
+      setRememberBlocked(typeof value.disableMcpRemember === "boolean" ? value.disableMcpRemember : undefined);
+    } catch {
+      setInputPill(undefined);
+      setRememberBlocked(undefined);
+    }
   };
   const saveInputPill = async (show: boolean) => {
     const previous = inputPill;
@@ -251,11 +267,29 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
       setInputPillStatus(t("inputPillSaveFailed"));
     } finally { setInputPillBusy(false); }
   };
+  const saveRememberBlocked = async (blocked: boolean) => {
+    const previous = rememberBlocked;
+    setRememberBlocked(blocked);
+    setRememberBusy(true);
+    try {
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/ui-preferences`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ disableMcpRemember: blocked }),
+      }))).value as { disableMcpRemember?: boolean };
+      if (typeof value.disableMcpRemember !== "boolean") throw new Error("invalid preferences response");
+      setRememberBlocked(value.disableMcpRemember);
+      setRememberStatus(t("rememberSaved"));
+    } catch {
+      setRememberBlocked(previous);
+      setRememberStatus(t("rememberSaveFailed"));
+    } finally { setRememberBusy(false); }
+  };
 
   useEffect(() => {
     void load();
     void loadVersion();
-    void loadInputPill();
+    void loadPreferences();
     // The init pass reads the isolation switch, the tuning knobs and the
     // peer-source rule itself; reading the rule again here would race it, and a
     // late read could overwrite the value a save just wrote.
@@ -665,8 +699,10 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     // as the server's own timeout, and the button renames itself meanwhile.
     // The previous answer is cleared so a stale one never sits beside "Verifying…".
     setVerifyResult("");
+    setVerifyVersion("");
     try {
       const probe = (await responseJson(await fetchFn(`${apiPrefix}/probe`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ apiKey }) }))).value as unknown as ProbeView;
+      if (typeof probe.version === "string" && probe.version !== "") setVerifyVersion(probe.version);
       if (!probe.reachable) setVerifyResult(t("unreachable"));
       // Missing or rejected credentials are credential problems, not readiness
       // problems: the service answered the probe, so do not make the user wait
@@ -723,7 +759,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
         <label>{t("endpoint")}<input required value={config.url} onChange={(event) => setConfig({ ...config, url: event.target.value })} placeholder="http://127.0.0.1:1933" /></label>
         <label>{t("account")}<input value={config.account} onChange={(event) => setConfig({ ...config, account: event.target.value })} /></label>
         <label>{t("user")}<input value={config.user} onChange={(event) => setConfig({ ...config, user: event.target.value })} /></label>
-        <label>{t("newUserKey")} <span className="ovm-optional">({t("optional")})</span><input type="password" value={apiKey} onChange={(event) => { setApiKey(event.target.value); setVerifyResult(""); }} placeholder={config.apiKeySet ? t("existingKey", { key: config.apiKeyMasked }) : t("pasteUserKey")} /></label>
+        <label>{t("newUserKey")} <span className="ovm-optional">({t("optional")})</span><input type="password" value={apiKey} onChange={(event) => { setApiKey(event.target.value); setVerifyResult(""); setVerifyVersion(""); }} placeholder={config.apiKeySet ? t("existingKey", { key: config.apiKeyMasked }) : t("pasteUserKey")} /></label>
         <p className="ovm-hint">{t("keyHint")}</p>
         <div className="ovm-actions">
           <button type="submit" disabled={busy}>{t("save")}</button>
@@ -732,6 +768,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
               line it competes with the reload notices above. `aria-live`
               announces it as it lands. */}
           <span className="ovm-verifyResult" aria-live="polite">{verifyResult}</span>
+          {verifyVersion !== "" ? <span className="ovm-verifyVersion">{t("serverVersion", { version: verifyVersion })}</span> : null}
           <a href={studioUrl} target="_blank" rel="noreferrer">{t("openStudio")}</a>
         </div>
       </form>
@@ -762,6 +799,24 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
           </div>
         ))}
         {inputPillStatus !== "" ? <p className="ovm-status" role="status">{inputPillStatus}</p> : null}
+      </section>
+    )}
+    {rememberBlocked === undefined ? null : (
+      <section className="ovm-card" aria-label={t("rememberTitle")}>
+        <h2>{t("rememberTitle")}</h2>
+        <SegmentedControl
+          id="ovm-remember"
+          label={t("rememberLabel")}
+          value={rememberBlocked ? "blocked" : "allowed"}
+          disabled={rememberBusy}
+          options={[
+            { value: "allowed", label: t("rememberAllow") },
+            { value: "blocked", label: t("rememberBlock") },
+          ]}
+          onChange={(next: string) => void saveRememberBlocked(next === "blocked")}
+        />
+        <p className="ovm-hint ovm-isolationHint">{t("rememberHint")}</p>
+        {rememberStatus !== "" ? <p className="ovm-status" role="status">{rememberStatus}</p> : null}
       </section>
     )}
     {recallScope === undefined ? null : (

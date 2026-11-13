@@ -17,6 +17,9 @@ export interface OpenVikingProbeResult {
    * answered. Distinct from `keyRejected`: nothing was rejected. */
   keyMissing: boolean;
   identity: { account: string; user: string } | undefined;
+  /** Reported by `/health` when the server exposes it; omitted on older builds
+   * or when the health payload is not JSON. */
+  version?: string;
 }
 
 export type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
@@ -106,6 +109,23 @@ async function probeRequest(
   }
 }
 
+/** Read the optional `version` from a successful `/health` payload. A missing
+ * or malformed body is not a probe failure; it only omits the badge. */
+async function healthVersion(response: Response): Promise<string | undefined> {
+  try {
+    const body = (await response.json()) as { version?: unknown };
+    return typeof body.version === "string" && body.version.trim() !== "" ? body.version.trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Add the version without making existing callers assert an extra undefined
+ * field, which is what an object literal with `version: undefined` would do. */
+function withVersion(result: OpenVikingProbeResult, version: string | undefined): OpenVikingProbeResult {
+  return version === undefined ? result : { ...result, version };
+}
+
 /** Probe only normal data-plane endpoints with a user key; never accept root keys. */
 export async function probeOpenViking(connection: OpenVikingConnection, fetchFn: FetchLike = fetch, timing: ProbeTiming = {}): Promise<OpenVikingProbeResult> {
   const requestTimeoutMs = timing.requestTimeoutMs ?? PROBE_REQUEST_TIMEOUT_MS;
@@ -134,6 +154,10 @@ export async function probeOpenViking(connection: OpenVikingConnection, fetchFn:
     }
   }
   if (!health.ok && !isAuthChallenge(health)) return probeResult();
+  // The version rides on the same successful /health body the probe just
+  // checked; read it once here, after the status branches, so an error or
+  // challenge body is never consumed as JSON.
+  const version = health.ok ? await healthVersion(health) : undefined;
 
   let readyResponse = await probeRequest(fetchFn, endpoint(connection.url, "/ready"), budget, requestTimeoutMs);
   if (readyResponse !== undefined && isAuthChallenge(readyResponse) && authorization !== undefined) {
@@ -143,25 +167,25 @@ export async function probeOpenViking(connection: OpenVikingConnection, fetchFn:
   const ready = readyResponse?.ok === true;
 
   if (authorization === undefined) {
-    return probeResult({ reachable: true, ready, keyMissing: true });
+    return withVersion(probeResult({ reachable: true, ready, keyMissing: true }), version);
   }
 
   const status = await probeRequest(fetchFn, endpoint(connection.url, "/api/v1/system/status"), budget, requestTimeoutMs, headers(connection));
   if (status === undefined) {
-    return probeResult({ reachable: true, ready, keyRejected });
+    return withVersion(probeResult({ reachable: true, ready, keyRejected }), version);
   }
   if (isAuthChallenge(status)) {
-    return probeResult({ reachable: true, ready, keyRejected: true });
+    return withVersion(probeResult({ reachable: true, ready, keyRejected: true }), version);
   }
   if (!status.ok) {
-    return probeResult({ reachable: true, ready, keyRejected });
+    return withVersion(probeResult({ reachable: true, ready, keyRejected }), version);
   }
   try {
-    return probeResult({ reachable: true, ready, authenticated: true, identity: identityOf(await status.json()) });
+    return withVersion(probeResult({ reachable: true, ready, authenticated: true, identity: identityOf(await status.json()) }), version);
   } catch {
     // The status endpoint answered 200 but not with JSON. Keep the connection
     // reachable; identity is unavailable and the UI falls back to the
     // readiness or credential message.
-    return probeResult({ reachable: true, ready });
+    return withVersion(probeResult({ reachable: true, ready }), version);
   }
 }
