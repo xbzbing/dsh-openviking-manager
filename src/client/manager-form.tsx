@@ -767,8 +767,10 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
           {/* The answer stays beside the button that asked: on the card's status
               line it competes with the reload notices above. `aria-live`
               announces it as it lands. */}
-          <span className="ovm-verifyResult" aria-live="polite">{verifyResult}</span>
-          {verifyVersion !== "" ? <span className="ovm-verifyVersion">{t("serverVersion", { version: verifyVersion })}</span> : null}
+          <span className="ovm-verifyGroup">
+            <span className="ovm-verifyResult" aria-live="polite">{verifyResult}</span>
+            {verifyVersion !== "" ? <span className="ovm-verifyVersion">{t("serverVersion", { version: verifyVersion })}</span> : null}
+          </span>
           <a href={studioUrl} target="_blank" rel="noreferrer">{t("openStudio")}</a>
         </div>
       </form>

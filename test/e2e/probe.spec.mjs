@@ -136,6 +136,9 @@ test("shows the OpenViking server version from the health probe", async ({ page 
     await page.getByRole("button", { name: "Verify connection" }).click();
     await expect(page.locator(".ovm-verifyResult")).toHaveText("Connected as personal/alice.");
     await expect(page.locator(".ovm-verifyVersion")).toHaveText("OpenViking v0.5.5");
+    // The badge sits directly after the result text inside the flex group, not
+    // across the free space next to the Studio link.
+    await expect(page.locator(".ovm-verifyGroup > .ovm-verifyResult + .ovm-verifyVersion")).toHaveCount(1);
   } finally {
     await manager.close();
     await openViking.close();
