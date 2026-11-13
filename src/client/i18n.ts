@@ -68,6 +68,10 @@ export type TranslationKey =
   | "unreachable"
   | "notReady"
   | "keyNotAccepted"
+  | "keyRequired"
+  | "connectedNotReady"
+  | "connectedNoIdentity"
+  | "verifyInconclusive"
   | "connectedAs"
   | "recoverTitle"
   | "recoverHint"
@@ -287,6 +291,10 @@ const en: Record<TranslationKey, string> = {
   unreachable: "OpenViking is unreachable at this endpoint.",
   notReady: "OpenViking is reachable but not ready.",
   keyNotAccepted: "Service is reachable, but the supplied user key was not accepted.",
+  keyRequired: "Service is reachable, but no user key is configured.",
+  connectedNotReady: "Connected as {identity}, but the readiness check did not pass.",
+  connectedNoIdentity: "Connected, but the service reported no account or user.",
+  verifyInconclusive: "Service is reachable and ready, but the user key could not be verified.",
   connectedAs: "Connected as {identity}.",
   recoverTitle: "Recover or initialize access",
   recoverHint: "Use a root API key only for this management session. It is never saved to ovcli.conf.",
@@ -505,6 +513,10 @@ const zh: Record<TranslationKey, string> = {
   unreachable: "该服务地址无法访问 OpenViking。",
   notReady: "OpenViking 可访问，但尚未就绪。",
   keyNotAccepted: "服务可达，但提供的用户 Key 未获接受。",
+  keyRequired: "服务可达，但尚未配置用户 Key。",
+  connectedNotReady: "已连接为 {identity}，但就绪检查未通过。",
+  connectedNoIdentity: "已连接，但服务未返回账号或用户身份。",
+  verifyInconclusive: "服务可达且已就绪，但无法确认用户 Key 是否有效。",
   connectedAs: "已连接为 {identity}。",
   recoverTitle: "恢复或初始化访问",
   recoverHint: "root API key 仅用于本次管理操作，绝不会写入 ovcli.conf。",

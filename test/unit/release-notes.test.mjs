@@ -42,9 +42,11 @@ const PRERELEASE_VERSION = /-/;
 /** `dsh plugin --profile web add dsh-openviking-manager@1.2.3` */
 const NPM_INSTALL = /dsh plugin --profile web add dsh-openviking-manager@\d+\.\d+\.\d+/;
 
-/** A GitHub Release asset URL for this package. */
+/** A GitHub Release asset URL for this package. Not global: the loop below
+ * feeds it to `assert.match`, and a `/g` regex carries `lastIndex` between
+ * files, so the second note would be searched from the first one's offset. */
 const ASSET_INSTALL =
-  /releases\/download\/(v\d+\.\d+\.\d+[^\s/]*)\/dsh-openviking-manager-\d+\.\d+\.\d+[^\s/]*\.tgz/g;
+  /releases\/download\/(v\d+\.\d+\.\d+[^\s/]*)\/dsh-openviking-manager-\d+\.\d+\.\d+[^\s/]*\.tgz/;
 
 /** Every install command a page tells the reader to run. The prose around them
  * may freely name the forms that do *not* work — that is how a reader learns
