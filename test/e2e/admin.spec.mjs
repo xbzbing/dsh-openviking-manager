@@ -99,9 +99,20 @@ test("lays out the recovery toggle inline with its heading", async ({ page }) =>
     expect(marker.borderTopWidth).toBe("1px");
     expect(marker.width).toBe("24px");
 
-    const heading = await page.locator("details.ovm-recovery > summary > h2").boundingBox();
-    const toggle = await summary.boundingBox();
-    expect(Math.abs((heading.y + heading.height / 2) - (toggle.y + toggle.height / 2))).toBeLessThan(3);
+    // Measure both boxes in one evaluation. The manager keeps rendering cards
+    // after the first paint, and two separate boundingBox() round trips can
+    // straddle that reflow: the CI flake compared a heading and a summary from
+    // different layouts and reported a 247px delta, not a 2px layout error.
+    // Both rects here come from the same layout, so a card moving down the page
+    // (which shifts both elements together) cannot fail the assertion.
+    const centerDelta = await summary.evaluate((element) => {
+      const heading = element.querySelector("h2");
+      if (heading === null) throw new Error("the recovery heading is missing");
+      const toggle = element.getBoundingClientRect();
+      const title = heading.getBoundingClientRect();
+      return Math.abs((title.y + title.height / 2) - (toggle.y + toggle.height / 2));
+    });
+    expect(centerDelta).toBeLessThan(3);
   } finally {
     await manager.close();
     await openViking.close();

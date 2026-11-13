@@ -14,6 +14,16 @@ interface DiscoveryResult { ovcli: ConfigResult; suggestedEndpoint: string; loca
 interface ApiEnvelope { ok: boolean; value?: unknown; error?: string; code?: string; }
 interface VersionView { current: string; repositoryUrl?: string; latest?: string; updateAvailable: boolean; releaseUrl?: string; checkedRemote: boolean; error?: string; }
 interface RestartView { restarted: boolean; count: number; reason?: string; error?: string; }
+/** The `/probe` route always writes every field; keep the shape explicit so a
+ * new probe state cannot be silently ignored here. */
+interface ProbeView {
+  reachable: boolean;
+  ready: boolean;
+  authenticated: boolean;
+  keyRejected: boolean;
+  keyMissing: boolean;
+  identity?: { account: string; user: string };
+}
 export interface ManagerFormProps { apiPrefix?: string; fetchFn?: typeof fetch; t?: Translation; }
 
 /** The composer pill control's two choices, in render order: each owns a panel id. */
@@ -656,18 +666,32 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     // The previous answer is cleared so a stale one never sits beside "Verifying…".
     setVerifyResult("");
     try {
-      const probe = (await responseJson(await fetchFn(`${apiPrefix}/probe`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ apiKey }) }))).value as unknown as { reachable: boolean; ready: boolean; authenticated: boolean; identity?: { account: string; user: string } };
+      const probe = (await responseJson(await fetchFn(`${apiPrefix}/probe`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ apiKey }) }))).value as unknown as ProbeView;
       if (!probe.reachable) setVerifyResult(t("unreachable"));
-      else if (!probe.ready) setVerifyResult(t("notReady"));
-      else if (!probe.authenticated) setVerifyResult(t("keyNotAccepted"));
-      else {
-        // The data plane may answer with the user alone (OpenViking 0.5.x does),
-        // so the account falls back to the one this request authenticated with.
-        // Joining blindly used to render "Connected as /alice".
+      // Missing or rejected credentials are credential problems, not readiness
+      // problems: the service answered the probe, so do not make the user wait
+      // for /ready before telling them what to fix.
+      else if (probe.keyMissing) setVerifyResult(t("keyRequired"));
+      else if (probe.keyRejected) setVerifyResult(t("keyNotAccepted"));
+      else if (probe.authenticated) {
+        // A successful /status is the authoritative authentication result.
+        // Hosted gateways may not expose /ready to user keys; report the
+        // connection and warn about readiness instead of failing the whole
+        // verification.
         const account = probe.identity?.account || config.account;
         const user = probe.identity?.user ?? "";
-        setVerifyResult(t("connectedAs", { identity: account === "" ? user : `${account}/${user}` }));
+        // Neither half can be assumed present: joining blindly rendered
+        // "personal/" when the data plane reported only a user.
+        const identity = [account, user].filter((part) => part !== "").join("/");
+        if (identity === "") setVerifyResult(t("connectedNoIdentity"));
+        else if (probe.ready) setVerifyResult(t("connectedAs", { identity }));
+        else setVerifyResult(t("connectedNotReady", { identity }));
       }
+      // Reachable and ready, yet the key could not be confirmed: /status failed
+      // or answered without JSON. Saying "key not accepted" would send the user
+      // to rotate a key that was never rejected.
+      else if (!probe.ready) setVerifyResult(t("notReady"));
+      else setVerifyResult(t("verifyInconclusive"));
     } catch (error) { setVerifyResult(error instanceof Error ? error.message : t("unreachable")); }
     finally { setVerifying(false); }
   };

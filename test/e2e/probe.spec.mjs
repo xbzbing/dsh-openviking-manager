@@ -7,14 +7,29 @@ import { test, expect } from "@playwright/test";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 
-async function startOpenVikingFixture({ delayMs = 0, statusResult = { account: "personal", user: "alice" } } = {}) {
+async function startOpenVikingFixture({ delayMs = 0, statusResult = { account: "personal", user: "alice" }, requireAuth = false, acceptedKey = "keep-this-secret", readyRejectsKey = false, statusStatus = 200 } = {}) {
   const server = createServer(async (req, res) => {
     const path = new URL(req.url ?? "/", "http://127.0.0.1").pathname;
     // A slow data plane is how the in-flight state becomes observable.
     if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+    const authorized = req.headers.authorization === `Bearer ${acceptedKey}`;
+    // A gateway can accept the user key on /health and /status but still not
+    // expose /ready to it. The probe must treat that as a readiness warning,
+    // not as a failed connection.
+    if (readyRejectsKey && path === "/ready") {
+      return res.writeHead(401, { "content-type": "application/json" }).end(JSON.stringify({ status: "error", error: { code: "AuthenticationError" } }));
+    }
+    // The hosted service authenticates liveness and readiness too; anonymous
+    // requests get 401 instead of a health payload.
+    if (requireAuth && !authorized && (path === "/health" || path === "/ready" || path === "/api/v1/system/status")) {
+      return res.writeHead(401, { "content-type": "application/json" }).end(JSON.stringify({ status: "error", error: { code: "AuthenticationError" } }));
+    }
     if (path === "/health") return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ status: "ok" }));
     if (path === "/ready") return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ status: "ready" }));
-    if (path === "/api/v1/system/status" && req.headers.authorization === "Bearer keep-this-secret" && req.headers["x-openviking-account"] === "personal" && req.headers["x-openviking-user"] === "alice") {
+    if (path === "/api/v1/system/status" && statusStatus !== 200) {
+      return res.writeHead(statusStatus, { "content-type": "application/json" }).end(JSON.stringify({ status: "error" }));
+    }
+    if (path === "/api/v1/system/status" && authorized && req.headers["x-openviking-account"] === "personal" && req.headers["x-openviking-user"] === "alice") {
       return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ result: statusResult }));
     }
     if (req.headers["x-api-key"] === "root-for-test" && path === "/api/v1/admin/accounts") {
@@ -41,7 +56,7 @@ async function startOpenVikingFixture({ delayMs = 0, statusResult = { account: "
   };
 }
 
-async function startManagerFixture(openVikingUrl, { restartMemoryPlugin, restartTimeoutMs, seedPluginDefaults = true } = {}) {
+async function startManagerFixture(openVikingUrl, { restartMemoryPlugin, restartTimeoutMs, seedPluginDefaults = true, apiKey = "keep-this-secret" } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "dsh-ov-manager-e2e-probe-"));
   const configPath = join(directory, "ovcli.conf");
   // The first-load initialisation pins the isolation switch and the product
@@ -52,7 +67,7 @@ async function startManagerFixture(openVikingUrl, { restartMemoryPlugin, restart
   // that pass — the case where a slow reload used to disable every control.
   const document = {
     url: openVikingUrl,
-    api_key: "keep-this-secret",
+    ...(apiKey === "" ? {} : { api_key: apiKey }),
     account: "personal",
     user: "alice",
     ...(seedPluginDefaults
@@ -114,6 +129,98 @@ test("verifies the existing server-side user key without showing it in the brows
 });
 
 const SAVED = "Configuration saved. The stored user key remains masked.";
+
+test("authenticates health and readiness when the server protects them", async ({ page }) => {
+  // A hosted server rejects the anonymous liveness probe; the probe must retry
+  // with the stored user key instead of reporting the endpoint as unreachable.
+  const openViking = await startOpenVikingFixture({ requireAuth: true });
+  const manager = await startManagerFixture(openViking.url);
+  try {
+    await page.goto(manager.url);
+    await page.getByRole("button", { name: "Verify connection" }).click();
+    await expect(page.locator(".ovm-verifyResult")).toHaveText("Connected as personal/alice.");
+  } finally {
+    await manager.close();
+    await openViking.close();
+  }
+});
+
+test("shows a rejected key as reachable instead of unreachable", async ({ page }) => {
+  // The server answers, but the stored key is not the one it accepts. That is a
+  // credential problem, not a network problem, and the message must say so.
+  const openViking = await startOpenVikingFixture({ requireAuth: true, acceptedKey: "another-key" });
+  const manager = await startManagerFixture(openViking.url);
+  try {
+    await page.goto(manager.url);
+    await page.getByRole("button", { name: "Verify connection" }).click();
+    await expect(page.locator(".ovm-verifyResult")).toHaveText("Service is reachable, but the supplied user key was not accepted.");
+  } finally {
+    await manager.close();
+    await openViking.close();
+  }
+});
+
+test("asks for a user key when the endpoint itself requires authentication", async ({ page }) => {
+  // The user has not entered a key yet. The endpoint is reachable but the
+  // answer is 401, so the next action is "enter a key", not "wait for /ready".
+  const openViking = await startOpenVikingFixture({ requireAuth: true });
+  const manager = await startManagerFixture(openViking.url, { apiKey: "" });
+  try {
+    await page.goto(manager.url);
+    await page.getByRole("button", { name: "Verify connection" }).click();
+    await expect(page.locator(".ovm-verifyResult")).toHaveText("Service is reachable, but no user key is configured.");
+  } finally {
+    await manager.close();
+    await openViking.close();
+  }
+});
+
+test("asks for a user key when health and readiness answer anonymously", async ({ page }) => {
+  // /health and /ready are open, but no key is configured, so the probe stops
+  // before /status. The previous message claimed the supplied key was rejected;
+  // there was no supplied key at all.
+  const openViking = await startOpenVikingFixture();
+  const manager = await startManagerFixture(openViking.url, { apiKey: "" });
+  try {
+    await page.goto(manager.url);
+    await page.getByRole("button", { name: "Verify connection" }).click();
+    await expect(page.locator(".ovm-verifyResult")).toHaveText("Service is reachable, but no user key is configured.");
+  } finally {
+    await manager.close();
+    await openViking.close();
+  }
+});
+
+test("treats an authenticated status as connected when readiness rejects the key", async ({ page }) => {
+  // A hosted gateway may not expose /ready to user keys. /status accepts the
+  // key, so the connection is usable; readiness becomes a warning instead of
+  // turning a working endpoint into "not ready".
+  const openViking = await startOpenVikingFixture({ requireAuth: true, readyRejectsKey: true });
+  const manager = await startManagerFixture(openViking.url);
+  try {
+    await page.goto(manager.url);
+    await page.getByRole("button", { name: "Verify connection" }).click();
+    await expect(page.locator(".ovm-verifyResult")).toHaveText("Connected as personal/alice, but the readiness check did not pass.");
+  } finally {
+    await manager.close();
+    await openViking.close();
+  }
+});
+
+test("says the key is unconfirmed when the service is ready but status fails", async ({ page }) => {
+  // /health and /ready pass, /status returns 500. The key was never rejected,
+  // so telling the user it was sends them to rotate a working credential.
+  const openViking = await startOpenVikingFixture({ statusStatus: 500 });
+  const manager = await startManagerFixture(openViking.url);
+  try {
+    await page.goto(manager.url);
+    await page.getByRole("button", { name: "Verify connection" }).click();
+    await expect(page.locator(".ovm-verifyResult")).toHaveText("Service is reachable and ready, but the user key could not be verified.");
+  } finally {
+    await manager.close();
+    await openViking.close();
+  }
+});
 
 test("falls back to the configured account when the data plane reports only a user", async ({ page }) => {
   // OpenViking 0.5.x answers /api/v1/system/status with `result.user` alone.
