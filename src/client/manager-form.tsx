@@ -146,6 +146,11 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   const [inputPill, setInputPill] = useState<boolean>();
   const [inputPillBusy, setInputPillBusy] = useState(false);
   const [inputPillStatus, setInputPillStatus] = useState("");
+  /** Whether the host denies explicit mcp__openviking__remember calls; undefined
+   * hides the card on hosts that do not serve the new preference yet. */
+  const [rememberBlocked, setRememberBlocked] = useState<boolean>();
+  const [rememberBusy, setRememberBusy] = useState(false);
+  const [rememberStatus, setRememberStatus] = useState("");
   // The first-load pass pins product defaults and may reload the official
   // plugin. It runs on its own state: a slow or stuck reload must not leave the
   // connection form disabled, which is what a single shared `busy` did.
@@ -218,11 +223,18 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     } catch { if (hideOnFailure) setPeerId(undefined); return undefined; }
   };
 
-  const loadInputPill = async () => {
+  const loadPreferences = async () => {
     try {
-      const value = (await responseJson(await fetchFn(`${apiPrefix}/ui-preferences`))).value as { showInputToggle: boolean };
-      setInputPill(value.showInputToggle);
-    } catch { setInputPill(undefined); }
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/ui-preferences`))).value as {
+        showInputToggle?: boolean;
+        disableMcpRemember?: boolean;
+      };
+      setInputPill(typeof value.showInputToggle === "boolean" ? value.showInputToggle : undefined);
+      setRememberBlocked(typeof value.disableMcpRemember === "boolean" ? value.disableMcpRemember : undefined);
+    } catch {
+      setInputPill(undefined);
+      setRememberBlocked(undefined);
+    }
   };
   const saveInputPill = async (show: boolean) => {
     const previous = inputPill;
@@ -243,11 +255,29 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
       setInputPillStatus(t("inputPillSaveFailed"));
     } finally { setInputPillBusy(false); }
   };
+  const saveRememberBlocked = async (blocked: boolean) => {
+    const previous = rememberBlocked;
+    setRememberBlocked(blocked);
+    setRememberBusy(true);
+    try {
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/ui-preferences`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ disableMcpRemember: blocked }),
+      }))).value as { disableMcpRemember?: boolean };
+      if (typeof value.disableMcpRemember !== "boolean") throw new Error("invalid preferences response");
+      setRememberBlocked(value.disableMcpRemember);
+      setRememberStatus(t("rememberSaved"));
+    } catch {
+      setRememberBlocked(previous);
+      setRememberStatus(t("rememberSaveFailed"));
+    } finally { setRememberBusy(false); }
+  };
 
   useEffect(() => {
     void load();
     void loadVersion();
-    void loadInputPill();
+    void loadPreferences();
     // The init pass reads the isolation switch, the tuning knobs and the
     // peer-source rule itself; reading the rule again here would race it, and a
     // late read could overwrite the value a save just wrote.
@@ -746,6 +776,24 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
           </div>
         ))}
         {inputPillStatus !== "" ? <p className="ovm-status" role="status">{inputPillStatus}</p> : null}
+      </section>
+    )}
+    {rememberBlocked === undefined ? null : (
+      <section className="ovm-card" aria-label={t("rememberTitle")}>
+        <h2>{t("rememberTitle")}</h2>
+        <SegmentedControl
+          id="ovm-remember"
+          label={t("rememberLabel")}
+          value={rememberBlocked ? "blocked" : "allowed"}
+          disabled={rememberBusy}
+          options={[
+            { value: "allowed", label: t("rememberAllow") },
+            { value: "blocked", label: t("rememberBlock") },
+          ]}
+          onChange={(next: string) => void saveRememberBlocked(next === "blocked")}
+        />
+        <p className="ovm-hint ovm-isolationHint">{t("rememberHint")}</p>
+        {rememberStatus !== "" ? <p className="ovm-status" role="status">{rememberStatus}</p> : null}
       </section>
     )}
     {recallScope === undefined ? null : (

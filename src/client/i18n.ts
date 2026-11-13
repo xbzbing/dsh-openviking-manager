@@ -112,6 +112,13 @@ export type TranslationKey =
   | "inputPillHint"
   | "inputPillSaved"
   | "inputPillSaveFailed"
+  | "rememberTitle"
+  | "rememberLabel"
+  | "rememberAllow"
+  | "rememberBlock"
+  | "rememberHint"
+  | "rememberSaved"
+  | "rememberSaveFailed"
   | "serverVersion"
   | "aboutTitle"
   | "openRepository"
@@ -324,6 +331,13 @@ const en: Record<TranslationKey, string> = {
   inputPillHint: "Shows an OpenViking pill next to the input box that turns memory on or off for that session. Hiding it does not turn memory off: every session keeps memory on unless you switch it off with the pill.",
   inputPillSaved: "Composer pill setting saved.",
   inputPillSaveFailed: "Unable to save the composer pill setting.",
+  rememberTitle: "MCP remember",
+  rememberLabel: "Allow the agent to call mcp__openviking__remember",
+  rememberAllow: "Allow",
+  rememberBlock: "Block",
+  rememberHint: "Blocks explicit mcp__openviking__remember calls in every session. Automatic capture is unaffected and still writes to the session's project peer.",
+  rememberSaved: "MCP remember setting saved.",
+  rememberSaveFailed: "Unable to save the MCP remember setting.",
   serverVersion: "OpenViking {version}",
   aboutTitle: "About this plugin",
   openRepository: "Open on GitHub",
@@ -535,6 +549,13 @@ const zh: Record<TranslationKey, string> = {
   inputPillHint: "在输入框旁显示 OpenViking 胶囊，用来开关该会话的记忆。隐藏胶囊不会关闭记忆：除非用胶囊关掉，每个会话的记忆都保持开启。",
   inputPillSaved: "输入框胶囊设置已保存。",
   inputPillSaveFailed: "无法保存输入框胶囊设置。",
+  rememberTitle: "MCP remember",
+  rememberLabel: "允许 agent 调用 mcp__openviking__remember",
+  rememberAllow: "允许",
+  rememberBlock: "禁止",
+  rememberHint: "在所有会话中拦截 agent 显式调用 mcp__openviking__remember。自动捕获不受影响，仍会写入会话所属的项目 peer。",
+  rememberSaved: "MCP remember 设置已保存。",
+  rememberSaveFailed: "无法保存 MCP remember 设置。",
   serverVersion: "OpenViking {version}",
   aboutTitle: "关于本插件",
   openRepository: "在 GitHub 打开",

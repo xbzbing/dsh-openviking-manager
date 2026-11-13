@@ -9,12 +9,12 @@ import { resolveUiPreferencesPath } from "../../lib/ui-preferences.js";
 
 const PREFERENCES_PATH = "/plugins/dsh-openviking-manager/api/ui-preferences";
 
-async function withRoutes(t) {
+async function withRoutes(t, options = {}) {
   const directory = await mkdtemp(join(tmpdir(), "dsh-ovm-ui-preferences-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const ovcliPath = join(directory, "ovcli.conf");
   const preferencesPath = join(directory, "plugin-data", "preferences.json");
-  const routes = new Map(makeManagerRoutes({ ovcliPath, env: {}, preferencesPath }).map((route) => [route.path, route.handler]));
+  const routes = new Map(makeManagerRoutes({ ovcliPath, env: {}, preferencesPath, ...options }).map((route) => [route.path, route.handler]));
   const server = createServer((req, res) => {
     const handler = routes.get(new URL(req.url ?? "/", "http://127.0.0.1").pathname);
     if (!handler) return void res.writeHead(404).end();
@@ -39,7 +39,7 @@ test("the composer pill is hidden when no preference is stored", async (t) => {
   const response = await fetch(`${base}${PREFERENCES_PATH}`);
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("cache-control"), "no-store");
-  assert.deepEqual(await response.json(), { ok: true, value: { showInputToggle: false } });
+  assert.deepEqual(await response.json(), { ok: true, value: { showInputToggle: false, disableMcpRemember: false } });
 });
 
 test("saving the pill preference writes the plugin's own file and leaves ovcli.conf alone", async (t) => {
@@ -50,12 +50,31 @@ test("saving the pill preference writes the plugin's own file and leaves ovcli.c
   const saved = await put(base, { showInputToggle: true });
   assert.equal(saved.status, 200);
   assert.equal(saved.cache, "no-store");
-  assert.deepEqual(saved.json, { ok: true, value: { showInputToggle: true } });
+  assert.deepEqual(saved.json, { ok: true, value: { showInputToggle: true, disableMcpRemember: false } });
   assert.deepEqual(JSON.parse(await readFile(preferencesPath, "utf8")), { showInputToggle: true });
   assert.equal(await readFile(ovcliPath, "utf8"), before);
 
   const read = await (await fetch(`${base}${PREFERENCES_PATH}`)).json();
   assert.equal(read.value.showInputToggle, true);
+});
+
+test("a partial patch can change only the MCP remember policy", async (t) => {
+  const { base, preferencesPath } = await withRoutes(t);
+  const saved = await put(base, { disableMcpRemember: true });
+  assert.equal(saved.status, 200);
+  assert.deepEqual(saved.json, { ok: true, value: { showInputToggle: false, disableMcpRemember: true } });
+  assert.deepEqual(JSON.parse(await readFile(preferencesPath, "utf8")), { disableMcpRemember: true });
+
+  const read = await (await fetch(`${base}${PREFERENCES_PATH}`)).json();
+  assert.equal(read.value.disableMcpRemember, true);
+  assert.equal(read.value.showInputToggle, false);
+});
+
+test("notifies the host after a save so the tool guard follows at once", async (t) => {
+  const saved = [];
+  const { base } = await withRoutes(t, { onPreferencesSaved: (preferences) => saved.push(preferences) });
+  await put(base, { disableMcpRemember: true });
+  assert.deepEqual(saved, [{ showInputToggle: false, disableMcpRemember: true }]);
 });
 
 test("a save keeps keys the file already carries", async (t) => {
@@ -70,7 +89,7 @@ test("a save keeps keys the file already carries", async (t) => {
 
 test("invalid preference bodies are rejected without touching the file", async (t) => {
   const { base, preferencesPath } = await withRoutes(t);
-  for (const body of [{ showInputToggle: "yes" }, {}, { showInputToggle: true, other: 1 }, [true]]) {
+  for (const body of [{ showInputToggle: "yes" }, { disableMcpRemember: "yes" }, {}, { showInputToggle: true, other: 1 }, [true]]) {
     const { status, json } = await put(base, body);
     assert.equal(status, 400, JSON.stringify(body));
     assert.equal(json.ok, false);
@@ -89,7 +108,7 @@ test("an unreadable preference file falls back to hidden", async (t) => {
   await put(base, { showInputToggle: true });
   await writeFile(preferencesPath, "{not json", "utf8");
   const read = await (await fetch(`${base}${PREFERENCES_PATH}`)).json();
-  assert.deepEqual(read, { ok: true, value: { showInputToggle: false } });
+  assert.deepEqual(read, { ok: true, value: { showInputToggle: false, disableMcpRemember: false } });
 });
 
 test("the default file lives under the DSH home", () => {

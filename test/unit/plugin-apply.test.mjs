@@ -1,8 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { apply } from "../../lib/index.js";
 import { openVikingRuntimePrototype } from "../../lib/openviking-gate.js";
 import { setOpenVikingEnabled } from "../../lib/session-toggle.js";
+
+// apply() reads the plugin's own preferences synchronously for the tool guard;
+// keep that read away from the developer's real $DSH_HOME.
+const dshHome = mkdtempSync(join(tmpdir(), "dsh-ovm-apply-"));
+process.env.DSH_HOME = dshHome;
 
 function openVikingMessage() {
   return { source: { kind: "plugin", plugin: "openviking-memory" } };
@@ -67,6 +75,25 @@ test("apply gates real Agent.id for pre-step injection and monotonic MCP guard",
   } finally {
     fixture.dispose();
     setOpenVikingEnabled(id, true);
+  }
+});
+
+test("the persisted MCP remember policy reaches the tool guard", () => {
+  const id = "apply-remember-policy";
+  setOpenVikingEnabled(id, true);
+  const preferencesPath = join(dshHome, "plugin-data", "dsh-openviking-manager", "preferences.json");
+  mkdirSync(dirname(preferencesPath), { recursive: true });
+  writeFileSync(preferencesPath, JSON.stringify({ disableMcpRemember: true }), "utf8");
+  const fixture = createHost();
+  try {
+    apply(fixture.host);
+    const guard = fixture.guard();
+    assert.match(guard({ name: "mcp__openviking__remember", agent: { id } }), /Explicit OpenViking memory writes are disabled/);
+    assert.equal(guard({ name: "mcp__openviking__find", agent: { id } }), undefined);
+  } finally {
+    fixture.dispose();
+    setOpenVikingEnabled(id, true);
+    rmSync(preferencesPath, { force: true });
   }
 });
 

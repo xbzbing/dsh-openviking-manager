@@ -36,7 +36,13 @@ import { createAccount, createUser, listAccounts, listUsers, rotateUserKey } fro
 import { isSessionOpenVikingEnabled, normalizeSessionId, setOpenVikingEnabled } from "./session-toggle.js";
 import { isRequestAllowed, normalizedAllowedHosts } from "./http-security.js";
 import { checkLatestVersion, readVersionInfo } from "./version.js";
-import { loadUiPreferences, parseUiPreferencesPatch, resolveUiPreferencesPath, saveUiPreferences } from "./ui-preferences.js";
+import {
+  loadUiPreferences,
+  parseUiPreferencesPatch,
+  resolveUiPreferencesPath,
+  saveUiPreferences,
+  type UiPreferences,
+} from "./ui-preferences.js";
 
 export const MANAGER_API_PREFIX = "/plugins/dsh-openviking-manager/api";
 /** Sent when an admin operation is attempted before an OpenViking endpoint is saved. */
@@ -77,9 +83,12 @@ export interface ManagerApiOptions {
    * assertions. An explicit `ovcliPath` / `ovconfPath` still wins over the env
    * resolution, keeping path-injecting tests fully hermetic. */
   env?: RecallScopeEnv;
-  /** This manager's own display preferences file; defaults to
+  /** This manager's own preferences file; defaults to
    * `$DSH_HOME/plugin-data/dsh-openviking-manager/preferences.json`. */
   preferencesPath?: string;
+  /** Called after a preferences save so the host can apply the MCP remember
+   * policy to its synchronous tool guard without restarting the plugin. */
+  onPreferencesSaved?: (preferences: UiPreferences) => void;
   /** Authorities (host names, optionally with a port) this process serves in
    * addition to loopback. The host passes its own bound origin here; a reverse
    * proxy deployment can add its public name through
@@ -473,7 +482,15 @@ export function makeManagerRoutes(options: ManagerApiOptions = {}): WebRoute[] {
           return;
         }
         try {
-          writeJson(res, 200, { ok: true, value: await saveUiPreferences(preferencesPath, patch) });
+          const saved = await saveUiPreferences(preferencesPath, patch);
+          try {
+            options.onPreferencesSaved?.(saved);
+          } catch {
+            // The file is already saved; a host bookkeeping failure must not
+            // turn a successful save into a 500. The next save or restart
+            // re-applies the value.
+          }
+          writeJson(res, 200, { ok: true, value: saved });
         } catch (error) {
           writeJson(res, 500, { ok: false, error: error instanceof Error ? error.message : "Unable to save preferences" });
         }
