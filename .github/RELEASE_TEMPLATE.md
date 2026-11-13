@@ -18,6 +18,10 @@
 - 顺序：面向用户的能力与修复在前，`**内部**` 类的约定 / 门禁 / 重构放最后一条。
 - 不要写：版本号变更、`lib/` 重建、纯格式调整、仅测试内部改名且不改变任何保证的改动。
 
+**致谢（可选）**
+
+- 本版来自外部 issue / PR 的报告时，在「主要变更」与「安装」之间加一节 `## 致谢`（英文段 `## Thanks`）：署名报告者、链接到原始 issue，并写清报告提供了什么信息；没有外部报告就整节省略，不要写内部同事。
+
 **验证**
 
 - 写**当次** `npm run check` 的真实输出：单测数、e2e 数。数字不得沿用上一版。
@@ -53,6 +57,12 @@
 - **修复**：<修掉的现象与影响面>（#<N>）
 - **内部**：<约定 / 门禁 / 结构性改动>
 
+## 致谢
+
+<!-- 可选：本版来自外部报告时才写，见「致谢（可选）」 -->
+
+- 感谢 [@<reporter>](https://github.com/<reporter>) 报告 [#<N>](https://github.com/xbzbing/dsh-openviking-manager/issues/<N>)：<报告提供了什么信息>
+
 ## 安装
 
 <!-- 正式版两条都给：npm + 同版本 Release 附件 -->
@@ -80,6 +90,12 @@ dsh plugin --profile web add https://github.com/xbzbing/dsh-openviking-manager/r
 - **<Title>**: <description>
 - **Fixes**: <the symptom and its blast radius> (#<N>)
 - **Internal**: <conventions / gates / structural changes>
+
+## Thanks
+
+<!-- Optional: only when the release comes from an external report -->
+
+- Thanks to [@<reporter>](https://github.com/<reporter>) for reporting [#<N>](https://github.com/xbzbing/dsh-openviking-manager/issues/<N>): <what the report provided>
 
 ## Install
 
