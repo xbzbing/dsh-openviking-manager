@@ -27,6 +27,35 @@ test("probes health, readiness and authenticated identity with the stored user k
   assert.equal(calls[2].headers.get("X-OpenViking-User"), "alice");
 });
 
+test("returns the server version reported by /health", async () => {
+  const result = await probeOpenViking(connection(), async (url) => {
+    const path = new URL(String(url)).pathname;
+    if (path === "/health") return response(200, { status: "ok", version: "v0.5.5" });
+    if (path === "/ready") return response(200, { status: "ready" });
+    return response(200, { result: { account: "personal", user: "alice" } });
+  });
+
+  assert.deepEqual(result, {
+    reachable: true,
+    ready: true,
+    authenticated: true,
+    keyRejected: false,
+    identity: { account: "personal", user: "alice" },
+    version: "v0.5.5",
+  });
+});
+
+test("omits the version when /health does not report one", async () => {
+  const result = await probeOpenViking(connection(), async (url) => {
+    const path = new URL(String(url)).pathname;
+    if (path === "/health") return response(200, { status: "ok" });
+    if (path === "/ready") return response(200, { status: "ready" });
+    return response(200, { result: { account: "personal", user: "alice" } });
+  });
+
+  assert.equal("version" in result, false);
+});
+
 test("authenticates liveness and readiness when the server protects them, without tenant headers", async () => {
   const calls = [];
   const result = await probeOpenViking(connection(), async (url, init) => {

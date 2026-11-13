@@ -156,6 +156,8 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   /** Where "Verify connection" answers: beside its own button, not on the card's
    * status line, which the reload notices also write to. */
   const [verifyResult, setVerifyResult] = useState("");
+  /** Server version from the same /health call that fed the probe. */
+  const [verifyVersion, setVerifyVersion] = useState("");
   /** The rule dropdown is the platform Menu, which is controlled. */
   const [ruleMenuOpen, setRuleMenuOpen] = useState(false);
   // The status line has two kinds of writer: what the user just did, and the
@@ -655,8 +657,10 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     // as the server's own timeout, and the button renames itself meanwhile.
     // The previous answer is cleared so a stale one never sits beside "Verifying…".
     setVerifyResult("");
+    setVerifyVersion("");
     try {
-      const probe = (await responseJson(await fetchFn(`${apiPrefix}/probe`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ apiKey }) }))).value as unknown as { reachable: boolean; ready: boolean; authenticated: boolean; keyRejected?: boolean; identity?: { account: string; user: string } };
+      const probe = (await responseJson(await fetchFn(`${apiPrefix}/probe`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ apiKey }) }))).value as unknown as { reachable: boolean; ready: boolean; authenticated: boolean; keyRejected?: boolean; identity?: { account: string; user: string }; version?: string };
+      if (typeof probe.version === "string" && probe.version !== "") setVerifyVersion(probe.version);
       if (!probe.reachable) setVerifyResult(t("unreachable"));
       // A rejected key is a credential problem, not a readiness problem: the
       // service answered the probe, so do not make the user wait for /ready.
@@ -702,7 +706,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
         <label>{t("endpoint")}<input required value={config.url} onChange={(event) => setConfig({ ...config, url: event.target.value })} placeholder="http://127.0.0.1:1933" /></label>
         <label>{t("account")}<input value={config.account} onChange={(event) => setConfig({ ...config, account: event.target.value })} /></label>
         <label>{t("user")}<input value={config.user} onChange={(event) => setConfig({ ...config, user: event.target.value })} /></label>
-        <label>{t("newUserKey")} <span className="ovm-optional">({t("optional")})</span><input type="password" value={apiKey} onChange={(event) => { setApiKey(event.target.value); setVerifyResult(""); }} placeholder={config.apiKeySet ? t("existingKey", { key: config.apiKeyMasked }) : t("pasteUserKey")} /></label>
+        <label>{t("newUserKey")} <span className="ovm-optional">({t("optional")})</span><input type="password" value={apiKey} onChange={(event) => { setApiKey(event.target.value); setVerifyResult(""); setVerifyVersion(""); }} placeholder={config.apiKeySet ? t("existingKey", { key: config.apiKeyMasked }) : t("pasteUserKey")} /></label>
         <p className="ovm-hint">{t("keyHint")}</p>
         <div className="ovm-actions">
           <button type="submit" disabled={busy}>{t("save")}</button>
@@ -711,6 +715,7 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
               line it competes with the reload notices above. `aria-live`
               announces it as it lands. */}
           <span className="ovm-verifyResult" aria-live="polite">{verifyResult}</span>
+          {verifyVersion !== "" ? <span className="ovm-verifyVersion">{t("serverVersion", { version: verifyVersion })}</span> : null}
           <a href={studioUrl} target="_blank" rel="noreferrer">{t("openStudio")}</a>
         </div>
       </form>

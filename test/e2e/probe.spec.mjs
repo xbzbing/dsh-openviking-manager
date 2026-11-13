@@ -7,7 +7,7 @@ import { test, expect } from "@playwright/test";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 
-async function startOpenVikingFixture({ delayMs = 0, statusResult = { account: "personal", user: "alice" }, requireAuth = false, acceptedKey = "keep-this-secret" } = {}) {
+async function startOpenVikingFixture({ delayMs = 0, statusResult = { account: "personal", user: "alice" }, requireAuth = false, acceptedKey = "keep-this-secret", healthVersion } = {}) {
   const server = createServer(async (req, res) => {
     const path = new URL(req.url ?? "/", "http://127.0.0.1").pathname;
     // A slow data plane is how the in-flight state becomes observable.
@@ -18,7 +18,7 @@ async function startOpenVikingFixture({ delayMs = 0, statusResult = { account: "
     if (requireAuth && !authorized && (path === "/health" || path === "/ready" || path === "/api/v1/system/status")) {
       return res.writeHead(401, { "content-type": "application/json" }).end(JSON.stringify({ status: "error", error: { code: "AuthenticationError" } }));
     }
-    if (path === "/health") return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ status: "ok" }));
+    if (path === "/health") return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(healthVersion === undefined ? { status: "ok" } : { status: "ok", version: healthVersion }));
     if (path === "/ready") return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ status: "ready" }));
     if (path === "/api/v1/system/status" && authorized && req.headers["x-openviking-account"] === "personal" && req.headers["x-openviking-user"] === "alice") {
       return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ result: statusResult }));
@@ -113,6 +113,20 @@ test("verifies the existing server-side user key without showing it in the brows
     await page.getByRole("textbox", { name: /New user key/ }).fill("another-key");
     await expect(result).toBeEmpty();
     await expect(page.locator("body")).not.toContainText("keep-this-secret");
+  } finally {
+    await manager.close();
+    await openViking.close();
+  }
+});
+
+test("shows the OpenViking server version from the health probe", async ({ page }) => {
+  const openViking = await startOpenVikingFixture({ healthVersion: "v0.5.5" });
+  const manager = await startManagerFixture(openViking.url);
+  try {
+    await page.goto(manager.url);
+    await page.getByRole("button", { name: "Verify connection" }).click();
+    await expect(page.locator(".ovm-verifyResult")).toHaveText("Connected as personal/alice.");
+    await expect(page.locator(".ovm-verifyVersion")).toHaveText("OpenViking v0.5.5");
   } finally {
     await manager.close();
     await openViking.close();

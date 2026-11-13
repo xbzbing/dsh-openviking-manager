@@ -14,6 +14,9 @@ export interface OpenVikingProbeResult {
    * rejected credential must not be reported as an unreachable server. */
   keyRejected: boolean;
   identity: { account: string; user: string } | undefined;
+  /** Reported by `/health` when the server exposes it; omitted on older builds
+   * or when the health payload is not JSON. */
+  version?: string;
 }
 
 export type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
@@ -74,6 +77,23 @@ async function probeRequest(
   }
 }
 
+/** Read the optional `version` from a successful `/health` payload. A missing
+ * or malformed body is not a probe failure; it only omits the badge. */
+async function healthVersion(response: Response): Promise<string | undefined> {
+  try {
+    const body = (await response.json()) as { version?: unknown };
+    return typeof body.version === "string" && body.version.trim() !== "" ? body.version.trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Add the version without making existing callers assert an extra undefined
+ * field, which is what an object literal with `version: undefined` would do. */
+function withVersion(result: OpenVikingProbeResult, version: string | undefined): OpenVikingProbeResult {
+  return version === undefined ? result : { ...result, version };
+}
+
 /** Probe only normal data-plane endpoints with a user key; never accept root keys. */
 export async function probeOpenViking(connection: OpenVikingConnection, fetchFn: FetchLike = fetch): Promise<OpenVikingProbeResult> {
   const unreachable: OpenVikingProbeResult = { reachable: false, ready: false, authenticated: false, keyRejected: false, identity: undefined };
@@ -93,6 +113,7 @@ export async function probeOpenViking(connection: OpenVikingConnection, fetchFn:
     return { reachable: true, ready: false, authenticated: false, keyRejected: false, identity: undefined };
   }
   if (!health.ok && !isAuthChallenge(health)) return unreachable;
+  const version = health.ok ? await healthVersion(health) : undefined;
 
   let readyResponse = await probeRequest(fetchFn, endpoint(connection.url, "/ready"));
   if (readyResponse !== undefined && isAuthChallenge(readyResponse) && authorization !== undefined) {
@@ -102,22 +123,22 @@ export async function probeOpenViking(connection: OpenVikingConnection, fetchFn:
   const ready = readyResponse?.ok === true;
 
   if (authorization === undefined) {
-    return { reachable: true, ready, authenticated: false, keyRejected: false, identity: undefined };
+    return withVersion({ reachable: true, ready, authenticated: false, keyRejected: false, identity: undefined }, version);
   }
 
   const status = await probeRequest(fetchFn, endpoint(connection.url, "/api/v1/system/status"), headers(connection));
   if (status === undefined) {
-    return { reachable: true, ready, authenticated: false, keyRejected: isAuthChallenge(health), identity: undefined };
+    return withVersion({ reachable: true, ready, authenticated: false, keyRejected: isAuthChallenge(health), identity: undefined }, version);
   }
   if (isAuthChallenge(status)) {
-    return { reachable: true, ready, authenticated: false, keyRejected: true, identity: undefined };
+    return withVersion({ reachable: true, ready, authenticated: false, keyRejected: true, identity: undefined }, version);
   }
   if (!status.ok) {
-    return { reachable: true, ready, authenticated: false, keyRejected: isAuthChallenge(health), identity: undefined };
+    return withVersion({ reachable: true, ready, authenticated: false, keyRejected: isAuthChallenge(health), identity: undefined }, version);
   }
   try {
-    return { reachable: true, ready, authenticated: true, keyRejected: false, identity: identityOf(await status.json()) };
+    return withVersion({ reachable: true, ready, authenticated: true, keyRejected: false, identity: identityOf(await status.json()) }, version);
   } catch {
-    return { reachable: true, ready, authenticated: false, keyRejected: false, identity: undefined };
+    return withVersion({ reachable: true, ready, authenticated: false, keyRejected: false, identity: undefined }, version);
   }
 }
