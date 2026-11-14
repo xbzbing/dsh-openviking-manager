@@ -121,7 +121,7 @@ export const en: Record<TranslationKey, string> = {
   rememberLabel: "Allow the agent to call mcp__openviking__remember",
   rememberAllow: "Allow",
   rememberBlock: "Block",
-  rememberHint: "mcp__openviking__remember takes no peer argument: an explicit call writes to the user-level space, not the current project. When several projects share one DSH instance those memories mix, so blocking it is the safe choice if you need strict per-project isolation. Blocking stops only explicit calls; automatic capture is unaffected and still writes to the current project's peer. The trade-off: the agent can no longer proactively save cross-project user preferences.",
+  rememberHint: "mcp__openviking__remember takes no peer argument: an explicit call writes to the user-level space, not the current project. When several projects share one DSH instance those memories mix, so blocking it is the safe choice if you need strict per-project isolation. Blocking stops only explicit calls; automatic capture is unaffected and still writes to the current project's peer.",
   rememberSaved: "MCP remember setting saved.",
   rememberSaveFailed: "Unable to save the MCP remember setting.",
   serverVersion: "OpenViking {version}",
