@@ -142,15 +142,6 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   // workspace-overridden value out of plugin.dsh: those fields are read-only,
   // but a save used to submit every draft and persist the override anyway.
   const [tuningDirty, setTuningDirty] = useState<Partial<Record<keyof RecallTuningDraft, true>>>({});
-  // "" means "the directory the DSH host runs in", which is what the official
-  // plugin resolved at apply. Any other value is a project the user wants to
-  // inspect: peer derivation is per session, so it is exact for any path.
-  const [projectCwd, setProjectCwd] = useState("");
-  // The synchronous value behind projectCwd. A response for a directory the
-  // user has already navigated away from must not overwrite the new project's
-  // view, which is what the first-load pass did when a resolve raced it.
-  const projectCwdRef = useRef("");
-  const [projectDraft, setProjectDraft] = useState("");
   const [peerSource, setPeerSource] = useState<PeerSourceView>();
   const [workspaces, setWorkspaces] = useState<WorkspacesView>();
   /** Whether the composer shows the OpenViking pill; undefined hides the card
@@ -205,31 +196,27 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
   // The isolation section only renders when this endpoint answers, so hosts
   // without the route (older fixtures) keep their previous page shape. After
   // an action, a transient failure instead keeps the current view on screen.
-  const cwdQuery = (cwd: string): string => (cwd === "" ? "" : `?cwd=${encodeURIComponent(cwd)}`);
-  const loadRecallScope = async (hideOnFailure = true, cwd = projectCwd): Promise<RecallScopeView | undefined> => {
+  const loadRecallScope = async (hideOnFailure = true): Promise<RecallScopeView | undefined> => {
     try {
-      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-scope${cwdQuery(cwd)}`))).value as RecallScopeView;
-      if (projectCwdRef.current !== cwd) return undefined;
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-scope`))).value as RecallScopeView;
       setRecallScope(value);
       return value;
     } catch { if (hideOnFailure) setRecallScope(undefined); return undefined; }
   };
   // Same contract as the isolation section: a host without the route keeps its
   // previous page shape, and a failure after an action keeps the current view.
-  const loadRecallTuning = async (hideOnFailure = true, cwd = projectCwd): Promise<RecallTuningView | undefined> => {
+  const loadRecallTuning = async (hideOnFailure = true): Promise<RecallTuningView | undefined> => {
     try {
-      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-tuning${cwdQuery(cwd)}`))).value as RecallTuningView;
-      if (projectCwdRef.current !== cwd) return undefined;
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-tuning`))).value as RecallTuningView;
       setRecallTuning(value);
       return value;
     } catch { if (hideOnFailure) setRecallTuning(undefined); return undefined; }
   };
   // Same contract again: a host without the route keeps its previous page
   // shape, and a failure after an action keeps the current view.
-  const loadPeerId = async (hideOnFailure = true, cwd = projectCwd): Promise<PeerIdView | undefined> => {
+  const loadPeerId = async (hideOnFailure = true): Promise<PeerIdView | undefined> => {
     try {
-      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-peer${cwdQuery(cwd)}`))).value as PeerIdView;
-      if (projectCwdRef.current !== cwd) return undefined;
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-peer`))).value as PeerIdView;
       setPeerId(value);
       return value;
     } catch { if (hideOnFailure) setPeerId(undefined); return undefined; }
@@ -415,9 +402,9 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
    * initialisations would race the restart guard and reload the official
    * plugin twice — and a key some layer already supplied is never touched. */
   const initializeRecallSettings = async () => {
-    const scope = await loadRecallScope(true, projectCwd);
-    const tuning = await loadRecallTuning(true, projectCwd);
-    const source = await loadPeerSource(true, projectCwd);
+    const scope = await loadRecallScope(true);
+    const tuning = await loadRecallTuning(true);
+    const source = await loadPeerSource(true);
     const pinScope = scope?.source === "default";
     const tuningPatch = tuning?.initPatch ?? {};
     const pinTuning = Object.keys(tuningPatch).length > 0;
@@ -596,10 +583,9 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
 
   /** The `peer.source` rule and the sidebar workspaces it applies to: a policy
    * plus a read-only inspection, neither of them per-session state. */
-  const loadPeerSource = async (hideOnFailure = true, cwd = projectCwd): Promise<PeerSourceView | undefined> => {
+  const loadPeerSource = async (hideOnFailure = true): Promise<PeerSourceView | undefined> => {
     try {
-      const value = (await responseJson(await fetchFn(`${apiPrefix}/peer-source${cwdQuery(cwd)}`))).value as PeerSourceView;
-      if (projectCwdRef.current !== cwd) return undefined;
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/peer-source`))).value as PeerSourceView;
       setPeerSource(value);
       return value;
     } catch { if (hideOnFailure) setPeerSource(undefined); return undefined; }
@@ -629,30 +615,10 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
     } finally { setBusy(false); }
   };
 
-  /** Re-resolve every project-scoped view for another directory. The peer
-   * rule is a policy, but its workspace declaration is project-scoped too, so
-   * it follows the same path. */
-  const applyProject = async (event?: React.FormEvent) => {
-    event?.preventDefault();
-    const next = projectDraft.trim();
-    setBusy(true);
-    try {
-      projectCwdRef.current = next;
-      setProjectCwd(next);
-      await Promise.all([
-        loadRecallScope(false, next),
-        loadRecallTuning(false, next),
-        loadPeerId(false, next),
-        loadPeerSource(false, next),
-      ]);
-      reportForeground(t("projectResolved"));
-    } finally { setBusy(false); }
-  };
-
   const fillCurrentRepo = async () => {
     setBusy(true);
     try {
-      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-peer/derive${cwdQuery(projectCwd)}`))).value as { peerId: string; origin?: string };
+      const value = (await responseJson(await fetchFn(`${apiPrefix}/recall-peer/derive`))).value as { peerId: string; origin?: string };
       if (value.peerId === "") reportForeground(t("peerIdNotInRepo"));
       else { setPeerIdDraft(value.peerId); reportForeground(t("peerIdDetected", { peerId: value.peerId })); }
     } catch (error) {
@@ -826,9 +792,6 @@ export function ManagerForm({ apiPrefix = "/plugins/dsh-openviking-manager/api",
         scope={recallScope}
         busy={busy}
         initializing={initializing}
-        draft={projectDraft}
-        onDraft={setProjectDraft}
-        onResolve={applyProject}
         onScopeChange={(isolate) => void setScope(isolate)}
         t={t}
       />

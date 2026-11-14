@@ -18,7 +18,7 @@ import {
   savePeerId,
   snapshotLoadedPeerId,
 } from "./recall-peer.js";
-import { readMemoryProject, type MemoryProject } from "./memory-project.js";
+import { readMemoryProject, type MemoryProject, type ProjectRisk } from "./memory-project.js";
 import {
   normalizePeerSource,
   peerSourceView,
@@ -162,7 +162,10 @@ export interface WorkspaceSummary {
   userLevelSpace: boolean;
   /** Workspace-layer keys this directory declares, e.g. ["peer.id"]. */
   overrides: string[];
-  risks: string[];
+  /** Isolation problems for a session in this directory, with the values the
+   * UI interpolates. Carried here so the workspace list is the one place that
+   * reports them. */
+  risks: ProjectRisk[];
 }
 
 /** Attach the cross-workspace answer to each resolved project. Two distinct
@@ -181,7 +184,7 @@ export function summarizeWorkspaces(projects: MemoryProject[]): WorkspaceSummary
       sharedWith,
       userLevelSpace: project.peer === "",
       overrides: project.declarations.map((item) => item.key),
-      risks: project.risks.map((risk) => risk.code),
+      risks: project.risks,
     };
   });
 }

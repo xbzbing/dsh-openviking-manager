@@ -1,6 +1,13 @@
 import { useState } from "react";
 import { IconChevronDownOutlineRegular, Menu, type MenuItem } from "@deepseek-ai/dsh-client-ui-primitives";
 import type { Translation, TranslationKey } from "./i18n.js";
+import { RISK_KEYS } from "./view-keys.js";
+
+export interface WorkspaceRisk {
+  code: string;
+  severity: "error" | "warning";
+  values?: Record<string, string>;
+}
 
 export interface WorkspaceSummary {
   path: string;
@@ -10,7 +17,8 @@ export interface WorkspaceSummary {
   sharedWith: string[];
   userLevelSpace: boolean;
   overrides: string[];
-  risks: string[];
+  /** Isolation problems for a session in this directory. */
+  risks: WorkspaceRisk[];
 }
 
 export interface WorkspacesView { available: boolean; truncated: boolean; workspaces: WorkspaceSummary[]; }
@@ -131,6 +139,21 @@ export function WorkspaceCard(props: { view: WorkspacesView; t: Translation }) {
                             </p>
                             {workspace.overrides.length > 0
                               ? <p className="ovm-hint">{t("workspaceOverrides", { keys: workspace.overrides.join(", ") })}</p>
+                              : null}
+                            {workspace.risks.length > 0
+                              ? (
+                                <ul className="ovm-workspaceRisks">
+                                  {workspace.risks.map((risk) => (
+                                    <li
+                                      key={risk.code}
+                                      className={risk.severity === "error" ? "ovm-warning" : "ovm-hint"}
+                                      role={risk.severity === "error" ? "alert" : undefined}
+                                    >
+                                      {t(RISK_KEYS[risk.code] ?? "riskUnknown", risk.values ?? {})}
+                                    </li>
+                                  ))}
+                                </ul>
+                              )
                               : null}
                           </li>
                         );
