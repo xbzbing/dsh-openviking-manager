@@ -264,22 +264,22 @@ test("hides the composer pill by default and shows it once the setting turns it 
 });
 
 
-test("blocks explicit MCP remember calls from the configuration page", async ({ page }) => {
+test("blocks MCP remember by default and can allow it from the configuration page", async ({ page }) => {
   const fixture = await startManagerFixture();
   try {
     await page.goto(fixture.url);
     const card = page.getByRole("region", { name: "MCP remember" });
     const allow = card.getByRole("tab", { name: "Allow" });
     const block = card.getByRole("tab", { name: "Block" });
-    await expect(allow).toHaveAttribute("aria-selected", "true");
+    await expect(block).toHaveAttribute("aria-selected", "true");
 
-    await block.click();
+    await allow.click();
     await expect(card.getByRole("status")).toHaveText("MCP remember setting saved.");
-    expect(JSON.parse(await readFile(fixture.preferencesPath, "utf8"))).toEqual({ disableMcpRemember: true });
+    expect(JSON.parse(await readFile(fixture.preferencesPath, "utf8"))).toEqual({ disableMcpRemember: false });
 
     // The stored policy survives a reload.
     await page.reload();
-    await expect(page.getByRole("region", { name: "MCP remember" }).getByRole("tab", { name: "Block" })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("region", { name: "MCP remember" }).getByRole("tab", { name: "Allow" })).toHaveAttribute("aria-selected", "true");
   } finally {
     await fixture.close();
   }

@@ -39,7 +39,7 @@ dsh plugin --profile web add https://github.com/xbzbing/dsh-openviking-manager/r
 - 临时使用 `root_api_key` 调用官方 Admin API：列账号、列用户、创建账号/用户、重新生成用户 Key；
 - 根据当前 endpoint 推导 Studio 地址（`<endpoint>/studio`），允许用户手工改为反向代理地址；
 - 会话级 OpenViking 开关：对话输入框左侧的「OpenViking」胶囊（会话默认开启）。胶囊本身默认隐藏，可在配置页「输入框胶囊」卡片中选择显示；隐藏胶囊不会关闭记忆。关闭某个会话后，本插件会拦截官方插件在该会话的上下文注入、记忆写入/提交，并拒绝其 `mcp__openviking__*` 工具调用，使该会话不再读写 OpenViking；
-- MCP `remember` 开关（**默认允许**）：配置页「MCP remember」卡片可禁止 agent 显式调用 `mcp__openviking__remember`，避免它把内容写进用户级空间、与其他项目混在一起。禁止后该工具会从每个会话的工具列表中移除（不只是拒绝调用），自动捕获照常按会话的项目 peer 写入；设置对所有会话生效，保存在本插件自己的 `preferences.json`；
+- MCP `remember` 开关（**默认禁止**）：配置页「MCP remember」卡片默认禁止 agent 显式调用 `mcp__openviking__remember`，避免它把内容写进用户级空间、与其他项目混在一起。禁止后该工具会从每个会话的工具列表中移除（不只是拒绝调用），自动捕获照常按会话的项目 peer 写入；可在配置页改回允许，设置对所有会话生效，保存在本插件自己的 `preferences.json`；
 - 项目记忆隔离（**默认开启**）：写入 `plugin.dsh.recallPeerScope`，首次打开配置页且没有任何层定义该值时自动写入 `actor` 并重载。`actor` 只召回本项目 peer 的记忆；peer 由官方插件按每个会话所在 workspace 的 git 身份（远端优先、无远端用仓库根）推导，于是**同一项目跨 agent、跨机器、跨 clone/worktree 共享一份记忆，不同项目即使同机同 agent 也互相隔离**。关闭开关写 `plugin.dsh.recallPeerScope: "all"`，回到官方默认的「本项目优先、跨项目降权」；写的是 DSH 作用域，不会改动本机其他 harness 的共享 `plugin` 段；
 - 项目隔离规则：在「Memory isolation rule」卡片选择哪些目录算同一个项目。默认「仓库优先，其次目录」——同一仓库的克隆共享记忆，仓库外的普通目录各自独立；也可一键切回官方 `git` 预设。仓库自己声明了 `peer.source` 时卡片只读，并标明来自工作区层。
 - 项目面板：可填项目目录（默认宿主启动目录）单独解析，显示仓库根、项目 peer 及其推导来源、召回范围的**生效值与来源**；并列出仓库里 `.openviking/config.json`、`config.local.json` 以及 `~/.openviking/workspaces/<slot>.json` 的声明——这些工作区层的优先级**高于** `ovcli.conf`，其中会把隔离改宽的项（`recall.peer_scope: all`、`recall.enabled: false`、`capture.enabled: false`、`peer.id` 钉死、`peer.source` 规则）会以错误/警告列出；目录不在 git 仓库时提示「推导不出 peer，会写入所有非项目目录共用的用户级空间」。本插件只读这些文件，**从不写入**工作区配置；

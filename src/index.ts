@@ -128,7 +128,7 @@ export function apply(ctx: Context): void {
   const host = ctx as unknown as HostContext;
   // The tool guard is synchronous, so the MCP remember policy is loaded once
   // here and kept current by the preferences route after a save. A malformed or
-  // missing file keeps the backward-compatible default: allow explicit writes.
+  // missing file keeps the default: explicit writes stay blocked.
   const preferencesPath = resolveUiPreferencesPath();
   const rememberPolicy = { blocked: loadUiPreferencesSync(preferencesPath).disableMcpRemember };
   const rememberRestriction = new RememberToolRestriction({

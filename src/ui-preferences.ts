@@ -10,14 +10,15 @@ export interface UiPreferences {
   /** Whether the composer shows the per-session OpenViking pill. Off by default:
    * the session toggle keeps working (and defaults to on) while hidden. */
   showInputToggle: boolean;
-  /** Whether the host denies the agent's explicit `mcp__openviking__remember`
-   * calls. Off by default; automatic capture is never affected. */
+  /** Whether the host hides the agent's explicit `mcp__openviking__remember`
+   * tool. On by default: the tool has no peer argument, so an explicit call
+   * writes to the user-level space. Automatic capture is never affected. */
   disableMcpRemember: boolean;
 }
 
 export const DEFAULT_UI_PREFERENCES: UiPreferences = {
   showInputToggle: false,
-  disableMcpRemember: false,
+  disableMcpRemember: true,
 };
 
 export function resolveUiPreferencesPath(env: { [key: string]: string | undefined } = process.env): string {
@@ -57,7 +58,7 @@ export async function loadUiPreferences(path: string): Promise<UiPreferences> {
 }
 
 /** Startup read for the synchronous tool guard. The file is tiny (two booleans);
- * a missing or malformed file keeps the backward-compatible defaults. */
+ * a missing or malformed file keeps the safety default: remember blocked. */
 export function loadUiPreferencesSync(path: string): UiPreferences {
   return normalizePreferences(readObjectSync(path));
 }

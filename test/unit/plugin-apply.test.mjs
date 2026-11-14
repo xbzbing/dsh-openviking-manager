@@ -78,6 +78,67 @@ test("apply gates real Agent.id for pre-step injection and monotonic MCP guard",
   }
 });
 
+test("the default, with no preference file, blocks and hides remember", () => {
+  const id = "apply-remember-default";
+  setOpenVikingEnabled(id, true);
+  const preferencesPath = join(dshHome, "plugin-data", "dsh-openviking-manager", "preferences.json");
+  rmSync(preferencesPath, { force: true });
+  const fixture = createHost();
+  const filters = [];
+  const agent = {
+    id,
+    ctx: {
+      tools: {
+        restrict(filter) {
+          filters.push(filter);
+          return () => {};
+        },
+      },
+    },
+  };
+  try {
+    apply(fixture.host);
+    fixture.handlers.get("agent/created")({ agent });
+    assert.deepEqual(filters, [{ deny: ["mcp__openviking__remember"] }]);
+    assert.match(fixture.guard()({ name: "mcp__openviking__remember", agent: { id } }), /Explicit OpenViking memory writes are disabled/);
+  } finally {
+    fixture.dispose();
+    setOpenVikingEnabled(id, true);
+    rmSync(preferencesPath, { force: true });
+  }
+});
+
+test("an explicit allow preference keeps the tool available", () => {
+  const id = "apply-remember-allowed";
+  setOpenVikingEnabled(id, true);
+  const preferencesPath = join(dshHome, "plugin-data", "dsh-openviking-manager", "preferences.json");
+  mkdirSync(dirname(preferencesPath), { recursive: true });
+  writeFileSync(preferencesPath, JSON.stringify({ disableMcpRemember: false }), "utf8");
+  const fixture = createHost();
+  const filters = [];
+  const agent = {
+    id,
+    ctx: {
+      tools: {
+        restrict(filter) {
+          filters.push(filter);
+          return () => {};
+        },
+      },
+    },
+  };
+  try {
+    apply(fixture.host);
+    fixture.handlers.get("agent/created")({ agent });
+    assert.equal(filters.length, 0);
+    assert.equal(fixture.guard()({ name: "mcp__openviking__remember", agent: { id } }), undefined);
+  } finally {
+    fixture.dispose();
+    setOpenVikingEnabled(id, true);
+    rmSync(preferencesPath, { force: true });
+  }
+});
+
 test("the persisted MCP remember policy reaches the tool guard", () => {
   const id = "apply-remember-policy";
   setOpenVikingEnabled(id, true);

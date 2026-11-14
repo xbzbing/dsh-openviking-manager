@@ -34,12 +34,12 @@ async function put(base, body, headers = {}) {
   return { status: response.status, json: await response.json(), cache: response.headers.get("cache-control") };
 }
 
-test("the composer pill is hidden when no preference is stored", async (t) => {
+test("defaults hide the composer pill and block MCP remember", async (t) => {
   const { base } = await withRoutes(t);
   const response = await fetch(`${base}${PREFERENCES_PATH}`);
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("cache-control"), "no-store");
-  assert.deepEqual(await response.json(), { ok: true, value: { showInputToggle: false, disableMcpRemember: false } });
+  assert.deepEqual(await response.json(), { ok: true, value: { showInputToggle: false, disableMcpRemember: true } });
 });
 
 test("saving the pill preference writes the plugin's own file and leaves ovcli.conf alone", async (t) => {
@@ -50,7 +50,7 @@ test("saving the pill preference writes the plugin's own file and leaves ovcli.c
   const saved = await put(base, { showInputToggle: true });
   assert.equal(saved.status, 200);
   assert.equal(saved.cache, "no-store");
-  assert.deepEqual(saved.json, { ok: true, value: { showInputToggle: true, disableMcpRemember: false } });
+  assert.deepEqual(saved.json, { ok: true, value: { showInputToggle: true, disableMcpRemember: true } });
   assert.deepEqual(JSON.parse(await readFile(preferencesPath, "utf8")), { showInputToggle: true });
   assert.equal(await readFile(ovcliPath, "utf8"), before);
 
@@ -58,23 +58,23 @@ test("saving the pill preference writes the plugin's own file and leaves ovcli.c
   assert.equal(read.value.showInputToggle, true);
 });
 
-test("a partial patch can change only the MCP remember policy", async (t) => {
+test("a partial patch can allow explicit MCP remember again", async (t) => {
   const { base, preferencesPath } = await withRoutes(t);
-  const saved = await put(base, { disableMcpRemember: true });
+  const saved = await put(base, { disableMcpRemember: false });
   assert.equal(saved.status, 200);
-  assert.deepEqual(saved.json, { ok: true, value: { showInputToggle: false, disableMcpRemember: true } });
-  assert.deepEqual(JSON.parse(await readFile(preferencesPath, "utf8")), { disableMcpRemember: true });
+  assert.deepEqual(saved.json, { ok: true, value: { showInputToggle: false, disableMcpRemember: false } });
+  assert.deepEqual(JSON.parse(await readFile(preferencesPath, "utf8")), { disableMcpRemember: false });
 
   const read = await (await fetch(`${base}${PREFERENCES_PATH}`)).json();
-  assert.equal(read.value.disableMcpRemember, true);
+  assert.equal(read.value.disableMcpRemember, false);
   assert.equal(read.value.showInputToggle, false);
 });
 
 test("notifies the host after a save so the tool guard follows at once", async (t) => {
   const saved = [];
   const { base } = await withRoutes(t, { onPreferencesSaved: (preferences) => saved.push(preferences) });
-  await put(base, { disableMcpRemember: true });
-  assert.deepEqual(saved, [{ showInputToggle: false, disableMcpRemember: true }]);
+  await put(base, { disableMcpRemember: false });
+  assert.deepEqual(saved, [{ showInputToggle: false, disableMcpRemember: false }]);
 });
 
 test("a save keeps keys the file already carries", async (t) => {
@@ -103,12 +103,12 @@ test("cross-origin writes are refused", async (t) => {
   assert.equal(status, 403);
 });
 
-test("an unreadable preference file falls back to hidden", async (t) => {
+test("an unreadable preference file falls back to the safe defaults", async (t) => {
   const { base, preferencesPath } = await withRoutes(t);
   await put(base, { showInputToggle: true });
   await writeFile(preferencesPath, "{not json", "utf8");
   const read = await (await fetch(`${base}${PREFERENCES_PATH}`)).json();
-  assert.deepEqual(read, { ok: true, value: { showInputToggle: false, disableMcpRemember: false } });
+  assert.deepEqual(read, { ok: true, value: { showInputToggle: false, disableMcpRemember: true } });
 });
 
 test("the default file lives under the DSH home", () => {
