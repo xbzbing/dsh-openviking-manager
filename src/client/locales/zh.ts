@@ -122,7 +122,7 @@ export const zh = {
   rememberHint: "mcp__openviking__remember 没有 peer 参数：agent 显式调用时，内容会写入用户级空间，而不是当前项目。多个项目共用一台 DSH 时这些记忆会互相混在一起，因此需要严格的项目隔离时可以禁止。禁止只拦截显式调用，会话的自动捕获不受影响，仍按当前项目 peer 写入。",
   rememberSaved: "MCP remember 设置已保存。",
   rememberSaveFailed: "无法保存 MCP remember 设置。",
-  serverVersion: "OpenViking {version}",
+  serverVersion: "服务端 OpenViking 版本：{version}",
   aboutTitle: "关于本插件",
   openRepository: "在 GitHub 打开",
   checkUpdates: "检查新版本",

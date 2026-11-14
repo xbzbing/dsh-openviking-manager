@@ -124,7 +124,7 @@ export const en: Record<TranslationKey, string> = {
   rememberHint: "mcp__openviking__remember takes no peer argument: an explicit call writes to the user-level space, not the current project. When several projects share one DSH instance those memories mix, so blocking it is the safe choice if you need strict per-project isolation. Blocking stops only explicit calls; automatic capture is unaffected and still writes to the current project's peer.",
   rememberSaved: "MCP remember setting saved.",
   rememberSaveFailed: "Unable to save the MCP remember setting.",
-  serverVersion: "OpenViking {version}",
+  serverVersion: "Server OpenViking version: {version}",
   aboutTitle: "About this plugin",
   openRepository: "Open on GitHub",
   checkUpdates: "Check for updates",
