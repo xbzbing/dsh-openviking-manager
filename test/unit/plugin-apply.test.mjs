@@ -97,6 +97,85 @@ test("the persisted MCP remember policy reaches the tool guard", () => {
   }
 });
 
+test("the persisted remember policy hides the tool in every new session's schema", () => {
+  const id = "apply-remember-restriction";
+  setOpenVikingEnabled(id, true);
+  const preferencesPath = join(dshHome, "plugin-data", "dsh-openviking-manager", "preferences.json");
+  mkdirSync(dirname(preferencesPath), { recursive: true });
+  writeFileSync(preferencesPath, JSON.stringify({ disableMcpRemember: true }), "utf8");
+  const fixture = createHost();
+  const filters = [];
+  let lifted = 0;
+  const agent = {
+    id,
+    ctx: {
+      tools: {
+        restrict(filter) {
+          filters.push(filter);
+          return () => {
+            lifted += 1;
+          };
+        },
+      },
+    },
+  };
+  try {
+    apply(fixture.host);
+    fixture.handlers.get("agent/created")({ agent });
+    assert.deepEqual(filters, [{ deny: ["mcp__openviking__remember"] }]);
+
+    fixture.handlers.get("agent/created")({ agent });
+    fixture.handlers.get("tools/change")();
+    assert.equal(filters.length, 1, "a live restriction is not stacked");
+
+    // The agent's scope owns the restriction layer; disposing the agent must
+    // only forget the bookkeeping, never lift the layer a second time.
+    fixture.handlers.get("agent/disposed")({ agent });
+    assert.equal(lifted, 0);
+  } finally {
+    fixture.dispose();
+    setOpenVikingEnabled(id, true);
+    rmSync(preferencesPath, { force: true });
+  }
+});
+
+test("a tool registered after the session still ends up restricted", () => {
+  const id = "apply-remember-late-tool";
+  setOpenVikingEnabled(id, true);
+  const preferencesPath = join(dshHome, "plugin-data", "dsh-openviking-manager", "preferences.json");
+  mkdirSync(dirname(preferencesPath), { recursive: true });
+  writeFileSync(preferencesPath, JSON.stringify({ disableMcpRemember: true }), "utf8");
+  const fixture = createHost();
+  let known = false;
+  const filters = [];
+  const agent = {
+    id,
+    ctx: {
+      tools: {
+        restrict(filter) {
+          if (!known) throw new Error("tools.restrict() names unknown global tool");
+          filters.push(filter);
+          return () => {};
+        },
+      },
+    },
+  };
+  try {
+    apply(fixture.host);
+    fixture.handlers.get("agent/created")({ agent });
+    assert.equal(filters.length, 0);
+
+    // The MCP client finishes listing its tools: the retry path must apply.
+    known = true;
+    fixture.handlers.get("tools/change")();
+    assert.deepEqual(filters, [{ deny: ["mcp__openviking__remember"] }]);
+  } finally {
+    fixture.dispose();
+    setOpenVikingEnabled(id, true);
+    rmSync(preferencesPath, { force: true });
+  }
+});
+
 test("a policy toggle affects the next pre-step rather than an active step", async () => {
   const id = "apply-step-snapshot";
   setOpenVikingEnabled(id, true);

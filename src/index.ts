@@ -11,6 +11,10 @@ import { stripOpenVikingInjectedMessages } from "./ov-prestep.js";
 import { openVikingToolDenialReason } from "./ov-tool-guard.js";
 import { installOpenVikingRuntimeGate } from "./openviking-gate.js";
 import { restartOfficialOpenViking } from "./openviking-restart.js";
+import {
+  RememberToolRestriction,
+  type RememberToolAgent,
+} from "./remember-tool-restriction.js";
 import { loadUiPreferencesSync, resolveUiPreferencesPath } from "./ui-preferences.js";
 
 export const name = "openviking-manager";
@@ -20,7 +24,11 @@ type Decision = {
   kind: "enter" | "reject";
   messages: Array<{ source?: { kind?: string; plugin?: string } }>;
 };
-type AgentLike = { id?: string; session?: { id?: string } };
+type AgentLike = {
+  id?: string;
+  session?: { id?: string };
+  ctx?: { tools?: { restrict?(filter: { deny: readonly string[] }): () => void } };
+};
 type HostContext = {
   effect(setup: () => void | (() => void), label: string): void;
   on(
@@ -32,6 +40,10 @@ type HostContext = {
     event: "session/event",
     listener: (session: { id?: string }, event: { type?: string }) => void,
   ): () => void;
+  on(event: "agent/created", listener: (payload: { agent: AgentLike }) => void): () => void;
+  on(event: "agent/disposed", listener: (payload: { agent: AgentLike }) => void): () => void;
+  on(event: "tools/change", listener: () => void): () => void;
+  logger?: { warn?(message: string, ...args: unknown[]): void };
   webServer: { register(route: WebRoute): () => void; getOrigin(): string };
   /** The reflection layer, used to *read* a service without declaring it a hard
    * dependency. `inject` has no optional form, so a plugin that needs the
@@ -85,6 +97,30 @@ function agentSessionId(agent: AgentLike): string | undefined {
   return agent.id ?? agent.session?.id;
 }
 
+/** The live agent as the remember restriction sees it: one stable id plus the
+ * agent-scoped tool registry. Agents without an id cannot be restricted (the
+ * host always assigns one; this keeps the manager safe on older shapes). */
+function rememberAgentOf(agent: AgentLike | undefined): RememberToolAgent | undefined {
+  if (agent === undefined) return undefined;
+  const id = agentSessionId(agent);
+  return id === undefined ? undefined : { id, ctx: agent.ctx };
+}
+
+/** Live agents from the host registry, read through reflection so the manager
+ * does not gain a hard dependency on `agents` just to hide one tool. */
+function rememberAgentsOf(host: HostContext): RememberToolAgent[] {
+  try {
+    const registry = host.reflect?.get?.("agents", false) as { list?: () => unknown } | undefined;
+    const agents = registry?.list?.();
+    if (!Array.isArray(agents)) return [];
+    return agents
+      .map((agent) => rememberAgentOf(agent as AgentLike))
+      .filter((agent): agent is RememberToolAgent => agent !== undefined);
+  } catch {
+    return [];
+  }
+}
+
 /** Mounts manager routes and a session-scoped OpenViking policy. The runtime
  * gate is installed synchronously; the later pre-step filter only defends
  * against version drift or an already-queued official injection. */
@@ -95,6 +131,15 @@ export function apply(ctx: Context): void {
   // missing file keeps the backward-compatible default: allow explicit writes.
   const preferencesPath = resolveUiPreferencesPath();
   const rememberPolicy = { blocked: loadUiPreferencesSync(preferencesPath).disableMcpRemember };
+  const rememberRestriction = new RememberToolRestriction({
+    isBlocked: () => rememberPolicy.blocked,
+    listAgents: () => rememberAgentsOf(host),
+    onError: (error) => {
+      // Expected while the MCP client has not registered its tools yet; the
+      // next tools/change retries. Keep it diagnosable without failing a step.
+      host.logger?.warn?.("openviking-manager: could not hide mcp__openviking__remember from a session", error);
+    },
+  });
   host.effect(() => {
     // Restarting goes through the public cordis registry: it reloads the
     // official plugin so an ovcli.conf change is re-read without restarting
@@ -106,12 +151,40 @@ export function apply(ctx: Context): void {
       preferencesPath,
       onPreferencesSaved: (preferences) => {
         rememberPolicy.blocked = preferences.disableMcpRemember;
+        // Apply/lift on the current sessions before the response returns, so a
+        // save is visible in the next step's tool list.
+        rememberRestriction.sync();
       },
     }).map((route) => host.webServer.register(route));
     return () => {
       for (const dispose of disposers) dispose();
     };
   }, "openviking-manager: API routes");
+
+  host.effect(() => {
+    const offCreated = host.on("agent/created", ({ agent }) => {
+      const target = rememberAgentOf(agent);
+      if (target !== undefined) rememberRestriction.remember(target);
+    });
+    const offDisposed = host.on("agent/disposed", ({ agent }) => {
+      const id = agentSessionId(agent);
+      if (id !== undefined) rememberRestriction.forget(id);
+    });
+    // A late MCP `tools/list` makes the deny name valid; this is also the retry
+    // path for agents created before the official plugin finished mounting.
+    const offToolsChange = host.on("tools/change", () => rememberRestriction.sync());
+    rememberRestriction.sync();
+    return () => {
+      offCreated();
+      offDisposed();
+      offToolsChange();
+    };
+  }, "openviking-manager: hide the MCP remember tool from live sessions");
+
+  host.effect(
+    () => () => rememberRestriction.dispose(),
+    "openviking-manager: lift remember tool restrictions",
+  );
 
   host.effect(() => {
     const restore = installOpenVikingRuntimeGate(
