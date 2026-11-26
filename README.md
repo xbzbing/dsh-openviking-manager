@@ -43,7 +43,7 @@ dsh plugin --profile web add https://github.com/xbzbing/dsh-openviking-manager/r
 - 项目记忆隔离（**默认开启**）：写入 `plugin.dsh.recallPeerScope`，首次打开配置页且没有任何层定义该值时自动写入 `actor` 并重载。`actor` 只召回本项目 peer 的记忆；peer 由官方插件按每个会话所在 workspace 的 git 身份（远端优先、无远端用仓库根）推导，于是**同一项目跨 agent、跨机器、跨 clone/worktree 共享一份记忆，不同项目即使同机同 agent 也互相隔离**。关闭开关写 `plugin.dsh.recallPeerScope: "all"`，回到官方默认的「本项目优先、跨项目降权」；写的是 DSH 作用域，不会改动本机其他 harness 的共享 `plugin` 段；
 - 项目隔离规则：在「Memory isolation rule」卡片选择哪些目录算同一个项目。默认「仓库优先，其次目录」——同一仓库的克隆共享记忆，仓库外的普通目录各自独立；也可一键切回官方 `git` 预设。仓库自己声明了 `peer.source` 时卡片只读，并标明来自工作区层。
 - 工作区状态：只读列出侧栏每个 workspace「如果会话在这里」解析出的 peer、与哪些目录共享同一命名空间、以及仓库里 `.openviking/config.json`、`config.local.json`、`~/.openviking/workspaces/<slot>.json` 声明了哪些键（优先级**高于** `ovcli.conf`）；会把隔离改宽的项（`recall.peer_scope: all`、`recall.enabled: false`、`capture.enabled: false`、`peer.id` 钉死）以错误/警告列在对应目录下，并说明「推导不出 peer，会写入所有非项目目录共用的用户级空间」的含义。本插件只读这些文件，**从不写入**工作区配置；
-- 召回调优：在同一页调整官方插件的自动召回参数 —— `scoreThreshold`（召回分数阈值，本插件默认 0.5、官方默认 0.35）、`recallLimit`（单次注入条数上限，默认 10）、`recallQueryExpansion`（查询扩写，本插件默认关闭、官方默认 auto）、`recallExcludeUris`（排除的 URI 子树，适合屏蔽 skills、resources 目录索引这类样板内容）、`recallEventsDecayProtection`（事件记忆的衰减保护时长，如 `7d`；留空＝服务端默认不保护）、`timeoutMs`（请求超时，本插件默认 15000 毫秒、官方 dsh 默认 10000）、`recallContextTimeoutMs`（召回搜索超时，官方默认 0＝按请求超时与扩写/改写地板派生）。后端 search/rerank 卡死时调低这两个超时，可让召回快速失败、不再拖住整个回合（会话感知搜索有 15s/45s 地板，只有 `recallContextTimeoutMs` 设正值才压得动）。键名与取值域严格取自官方 config-schema，只写 `plugin.dsh` 并保留其他键与共享 `plugin` 段；分数阈值、查询扩写与请求超时带**产品默认**，首次打开配置页且没有任何层定义该键时自动写入并重载，字段留空即回到该键的默认值（并同时清掉共享段里的同名键，避免残留值继续生效——这是「保留共享段」的唯一例外，只发生在用户显式恢复默认时）；`OPENVIKING_*` 环境变量与工作区层优先级更高，被覆盖的字段只读并显示警告；保存后自动重新加载官方记忆插件；
+- 召回调优：在同一页调整官方插件的自动召回参数 —— `scoreThreshold`（召回分数阈值，本插件默认 0.5、官方默认 0.35）、`recallLimit`（单次注入条数上限，默认 10）、`recallQueryExpansion`（查询扩写，本插件默认关闭、官方默认 auto）、`recallExcludeUris`（排除的 URI 子树，适合屏蔽 skills、resources 目录索引这类样板内容）、`recallEventsDecayProtection`（事件记忆的衰减保护时长，官方 dsh 默认 `30d`；填 `off` 关闭保护；留空＝恢复默认）、`timeoutMs`（请求超时，本插件默认 15000 毫秒、官方 dsh 默认 10000）、`recallContextTimeoutMs`（召回搜索超时，官方默认 0＝按请求超时与扩写/改写地板派生）。后端 search/rerank 卡死时调低这两个超时，可让召回快速失败、不再拖住整个回合（会话感知搜索有 15s/45s 地板，只有 `recallContextTimeoutMs` 设正值才压得动）。键名与取值域严格取自官方 config-schema，只写 `plugin.dsh` 并保留其他键与共享 `plugin` 段；分数阈值、查询扩写与请求超时带**产品默认**，首次打开配置页且没有任何层定义该键时自动写入并重载，字段留空即回到该键的默认值（并同时清掉共享段里的同名键，避免残留值继续生效——这是「保留共享段」的唯一例外，只发生在用户显式恢复默认时）；`OPENVIKING_*` 环境变量与工作区层优先级更高，被覆盖的字段只读并显示警告；保存后自动重新加载官方记忆插件；
 - 项目 peer id（高级，**默认留空**）：写入 `plugin.dsh.peerId`，用来在 git 身份描述不了目录时手工指定 peer。它与隔离开关是两件事——隔离开关决定「召回范围」，peer id 决定「你是谁」：
   - **留空（默认，也是推荐）**：官方插件按每个会话所在 workspace 的 git 身份自动推导 peer，一个仓库一份记忆，跨 agent、跨机器共享，无需逐仓配置；此时 DSH 日志里的 `OpenViking MCP: actor-scoped recall needs an explicit peer id ...` 属正常现象，只影响模型手动调用的 MCP 工具；
   - **填写**：**本机所有项目**共用这一个 peer，会破坏按项目隔离，仅用于没有 git 身份的目录。「填入当前仓库」用官方解析（含工作区层声明的 `peer.id` / `peer.source`）给出建议值。`ext-` 前缀被拒绝——服务端 0.5.2 起用它承载无损外部身份。留空即删除该键并清掉共享段的残留钉死值，恢复自动推导；`OPENVIKING_PEER_ID` 与顶层 `actor_peer_id`/`peer_id` 凭据优先级更高，命中时只读并显示警告；
@@ -68,7 +68,7 @@ dsh plugin --profile web add https://github.com/xbzbing/dsh-openviking-manager/r
 - 关闭只对之后的 agent step 生效：历史消息里已注入的 OpenViking 上下文在被压缩前仍留在该会话中；关闭期间官方插件此前排队的待提交写入仍可能由其全局恢复逻辑补发。本插件不启动、停止或修改 OpenViking 服务端，也不替换官方记忆插件。
 - 隔离开关只写官方声明的 `plugin.dsh.recallPeerScope` 键（`actor` / `all` 都显式写入，避免删键回落到共享段的值），只作用于 DSH，不改动共享 `plugin` 段里其他 harness 的设置，`ovcli.conf` 中的其余键（含凭据）一律保留。保存后的自动重载只经宿主 Cordis 公开机制重载官方插件使其重读配置，不修改官方代码；副作用是对打开的会话做一次提交归档并短暂重建 MCP 工具（卡片文案已提示）。`OPENVIKING_RECALL_PEER_SCOPE` 与工作区层优先级更高，页面会显示覆盖来源。
 - 工作区配置（`.openviking/config.json`、`config.local.json`、`~/.openviking/workspaces/<slot>.json`）**只读不写**：本插件把它们当作高于 `ovcli.conf` 的声明展示，并标出会破坏隔离的项；编辑工作区配置仍是用户/仓库自己的事。生效值由官方解析器（`shared/plugin-config.mjs`）算出，不自行重写合并规则。
-- 召回调优只写官方声明的 `scoreThreshold`、`recallLimit`、`recallQueryExpansion`、`recallExcludeUris`、`recallEventsDecayProtection`、`timeoutMs`、`recallContextTimeoutMs` 七个键到 `plugin.dsh`，取值域按官方 config-schema 校验，越界或格式错误的请求被拒绝且不落盘。产品默认（`scoreThreshold` 0.5、`recallQueryExpansion` off、`timeoutMs` 15000）只在首次打开配置页时写入一个官方键，不修改官方默认；文件、工作区层或环境变量的取值仍然优先。`OPENVIKING_SCORE_THRESHOLD`、`OPENVIKING_RECALL_LIMIT`、`OPENVIKING_RECALL_QUERY_EXPANSION`、`OPENVIKING_RECALL_EXCLUDE_URIS`、`OPENVIKING_RECALL_EVENTS_DECAY_PROTECTION`、`OPENVIKING_TIMEOUT_MS`、`OPENVIKING_RECALL_CONTEXT_TIMEOUT_MS` 优先级更高，被覆盖的字段只读并显示警告。
+- 召回调优只写官方声明的 `scoreThreshold`、`recallLimit`、`recallQueryExpansion`、`recallExcludeUris`、`recallEventsDecayProtection`、`timeoutMs`、`recallContextTimeoutMs` 七个键到 `plugin.dsh`，键名取自官方 config-schema；`recallEventsDecayProtection` 另外按服务端时长语法与官方 loader 的 `off` 哨兵校验，越界或格式错误的请求被拒绝且不落盘。产品默认（`scoreThreshold` 0.5、`recallQueryExpansion` off、`timeoutMs` 15000）只在首次打开配置页时写入一个官方键，不修改官方默认；文件、工作区层或环境变量的取值仍然优先。`OPENVIKING_SCORE_THRESHOLD`、`OPENVIKING_RECALL_LIMIT`、`OPENVIKING_RECALL_QUERY_EXPANSION`、`OPENVIKING_RECALL_EXCLUDE_URIS`、`OPENVIKING_RECALL_EVENTS_DECAY_PROTECTION`、`OPENVIKING_TIMEOUT_MS`、`OPENVIKING_RECALL_CONTEXT_TIMEOUT_MS` 优先级更高，被覆盖的字段只读并显示警告。
 - 项目 peer id 只写 `plugin.dsh.peerId`，保留未知键与顶层凭据；校验拒绝越界长度、非官方字符集与 `ext-` 前缀（服务端 0.5.2 起该前缀承载无损外部身份，官方 sanitize 会把占用者改写成 `x-ext-`）。留空即删除该键并清理共享段的残留钉死值，恢复官方的按会话自动推导；本插件**不编辑**顶层 `actor_peer_id`/`peer_id`。
 - 服务端 v0.5.2 起 `/mcp` 拒绝 root key：若 `ovcli.conf` 里保存的 key 与本机 `ov.conf` 的 `root_api_key` 相同，项目面板会给出错误提示——连接探测仍会通过（探测走数据面），但所有记忆工具都会失败。该比较只在本机进程内完成，key 从不出现在响应里。
 ## 环境要求
@@ -76,7 +76,7 @@ dsh plugin --profile web add https://github.com/xbzbing/dsh-openviking-manager/r
 - Node.js `>= 22`
 - DSH `>= 0.1.6-alpha.2 < 0.3.0-0`
 - 一个可访问的 OpenViking 服务
-- 官方 `@openviking/dsh-memory-plugin` `>= 0.5.29`（不设上限；本仓库已完整测试至 `0.5.34`，并对 `0.5.20` / `0.5.29` / `0.5.34` 逐项核对了本插件所依赖的 runtime 接口、工作区层与配置面）
+- 官方 `@openviking/dsh-memory-plugin` `>= 0.5.29`（不设上限；本仓库已完整测试至 `0.5.44`，并对 `0.5.20` / `0.5.29` / `0.5.34` / `0.5.44` 逐项核对了本插件所依赖的 runtime 接口、工作区层与配置面）
 
 ## 服务端兼容性
 
@@ -94,12 +94,16 @@ dsh plugin --profile web add https://github.com/xbzbing/dsh-openviking-manager/r
 - 只用远端向量库（`http`/`volcengine`/`vikingdb`）或 IP/L2/稀疏融合分数时**不受影响**，无需调整；
 - 升级后若发现弱相关内容变多，可在 0.5–0.75 之间按需微调。
 
-### OpenViking 服务端 v0.5.2 / 官方插件 0.5.29–0.5.34
+### OpenViking 服务端 v0.5.2 / 官方插件 0.5.29–0.5.44
 
-- **项目隔离的依据没有变**：peer 仍由会话所在 workspace 的 git 身份推导（`shared/workspace-peer.mjs` 与 `workspace-identity.mjs` 在 0.5.20→0.5.34 之间无差异），`recallPeerScope: actor` 仍通过 `peer_scope` 传给 `/search/search`。
+- **项目隔离的依据没有变**：peer 仍由会话所在 workspace 的 git 身份推导（`shared/workspace-peer.mjs` 与 `workspace-identity.mjs` 在 0.5.20→0.5.44 之间无差异），`recallPeerScope: actor` 仍通过 `peer_scope` 传给 `/search/search`。
 - **`/mcp` 拒绝 root key**：把 root key 当客户端 key 用的部署，升级后数据面探测正常、记忆工具全部失败；本插件新增了这条诊断。
 - **外部 peer 身份改为无损 `ext-<base64>`**：旧的有损 peer 目录不会自动读取，存在歧义的数据需运维确认归属后迁移；本插件的 peer 校验因此拒绝 `ext-` 前缀，避免手工钉死时落进服务端的外部身份命名空间。
-- **官方键变化**：`recallEventsDecayProtection`（事件衰减保护，0.5.29 起，已加入调优面板）。`captureRedact` 在 0.5.30 已被官方移除（连同客户端抓取脱敏实现），0.5.34 会忽略该键；旧配置里的残留值本插件不会删除，但不要再依赖它。
+- **0.5.41 起事件衰减保护默认 `30d`**：dsh 的 `recallEventsDecayProtection` 官方默认由空（不保护）改为 `30d`，`magpie` 宿主仍为空；`off` 会让官方 loader 省略 `events_time_decay_protection`，回到服务端的不保护默认。调优卡片按 0.5.44 的默认值显示：留空恢复默认、填 `off` 关闭保护。两项都要求官方插件 ≥0.5.41，0.5.29–0.5.40 仍是空默认、没有 `off` 哨兵，请留空。
+- **0.5.41 新增 `ov-memory-doctor`**：官方包新增诊断脚本与同名技能，检查安装、配置与服务端连接；与本插件互不影响，可单独运行 `node ~/.dsh/profiles/web/node_modules/@openviking/dsh-memory-plugin/scripts/ov-memory-doctor.mjs`。
+- **0.5.42 新增会话历史指针**：压缩结束或会话恢复后，官方注入一次 `<openviking-context source="session-history">`，并通过 `tools/execute` 给 `session_history` 调用补 `session`。本插件不解析这段文本；会话关闭时仍由 pre-step 整段移除官方注入，工具调用仍先经本插件的 `tools.guard()` 拦截。`sessionHistoryPointer`、`sealSecrets`、`enrollToolSecrets` 属会话能力，按「只暴露七个调优键」的约束不进入调优面板，手写进 `plugin.dsh` 会被保留。
+- **0.5.44 的新键尚未接线**：`sealSecrets` / `enrollToolSecrets` 在 0.5.44 的 npm 包里只有 schema 声明、没有消费方；`uri-guard` 放行 `{{ov_privacy:…}}` 引用里的 `viking://` 与本插件无关。
+- **官方键变化**：`recallEventsDecayProtection`（事件衰减保护，0.5.29 起，已加入调优面板；0.5.41 起默认值改为 `30d`）。`captureRedact` 在 0.5.30 已被官方移除（连同客户端抓取脱敏实现），0.5.34 会忽略该键；旧配置里的残留值本插件不会删除，但不要再依赖它。
 - **0.5.34 新增客户端召回压缩**：`recallCompress`、`recallCompressTimeoutMs`、`recallCompressModel`、`recallCompressThinking` 等键由官方插件在 DSH 侧调用宿主模型完成压缩；DSH 默认 `off`，不影响现有行为。本插件的调优卡片不暴露这组键，手动写进 `plugin.dsh` 会被保留；开启后压缩调用发生在 `recallMessage` 内，本插件的会话开关仍会在进入压缩前拦截。
 - **默认值变化只影响官方行为**：`captureToolResults` 在 dsh 下默认开启、`resumeArchiveInject` 与 `takeoverEnabled` 默认改为关闭，都不改变本插件写入的键。
 - Watch API 迁移、Working Memory 默认关闭、LangChain 导入迁移、Pi 扩展工具改名均发生在服务端或其他宿主，不影响本插件。
