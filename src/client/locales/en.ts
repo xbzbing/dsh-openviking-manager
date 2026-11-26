@@ -195,7 +195,7 @@ export const en: Record<TranslationKey, string> = {
   riskUnknown: "An unknown workspace risk applies to this directory.",
   projectSharedNote: "The shared plugin section still says {scope} for the other harnesses on this machine; this manager only writes plugin.dsh.",
   decayLabel: "Event decay protection",
-  decayHint: "A duration such as 7d or 12h: event memories keep their score for that long. Empty leaves the server default (no protection).",
+  decayHint: "A duration such as 7d or 12h: event memories keep their score for that long. The official dsh default is 30d on 0.5.41+; use off to disable protection (also 0.5.41+); empty restores the default.",
   tuningWorkspaceWarning: "Overridden by a workspace file: {keys}",
   peerIdHazard: "A peer pin is process-wide: every project on this machine then shares that one peer. Leave it empty to isolate per project.",
   peerIdSharedClearNote: "The shared plugin section still pins {value} for the other harnesses on this machine. Saving a value here overrides it for DSH only; clearing this field also removes that shared pin, because it would otherwise keep every session pinned.",

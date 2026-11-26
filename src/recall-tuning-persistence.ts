@@ -27,8 +27,10 @@ const MAX_EXCLUDE_ENTRIES = 100;
 const MAX_EXCLUDE_ENTRY_CHARS = 512;
 const VIKING_URI_RE = /^viking:\/\/\S+$/;
 /** The server's duration syntax for `events_time_decay_protection`
- * (`90s`, `45m`, `12h`, `7d`, `2w`). The server owns the semantics; this only
- * refuses input that is obviously not a duration. */
+ * (`90s`, `45m`, `12h`, `7d`, `2w`), plus `off`, which the official loader
+ * understands as "omit the field and leave the server's no-protection
+ * default". The server owns the semantics; this only refuses input that is
+ * obviously not one of the two. */
 const DURATION_RE = /^\d+(ms|s|m|h|d|w)$/;
 const MAX_DECAY_CHARS = 32;
 
@@ -116,13 +118,18 @@ export function parseRecallTuningPatch(raw: unknown): RecallTuningPatch {
     const raw = body.recallEventsDecayProtection;
     if (raw === null || raw === "") patch.recallEventsDecayProtection = null;
     else if (typeof raw !== "string") {
-      throw invalid('recallEventsDecayProtection must be a duration string such as "7d", or null');
+      throw invalid('recallEventsDecayProtection must be "off", a duration string such as "7d", or null');
     } else {
       const value = raw.trim();
-      if (value.length > MAX_DECAY_CHARS || !DURATION_RE.test(value)) {
-        throw invalid('recallEventsDecayProtection must be a duration such as "90s", "12h", "7d" or "2w", or null');
+      if (value.toLowerCase() === "off") {
+        // The official loader compares this spelling literally; store the
+        // canonical one so "OFF" typed into the field still works.
+        patch.recallEventsDecayProtection = "off";
+      } else if (value.length > MAX_DECAY_CHARS || !DURATION_RE.test(value)) {
+        throw invalid('recallEventsDecayProtection must be "off", a duration such as "90s", "12h", "7d" or "2w", or null');
+      } else {
+        patch.recallEventsDecayProtection = value;
       }
-      patch.recallEventsDecayProtection = value;
     }
   }
 
@@ -165,7 +172,8 @@ function restoreKnob(draft: SaveDraft, spec: KnobSpec): void {
 
 /** True when a patch value means "restore the official default" for its knob:
  * `null` for every knob, plus an empty list for `recallExcludeUris` and an
- * empty string for the duration knob. */
+ * empty string for the duration knob. `"off"` is a value, not a restore: it
+ * disables decay protection and is written to the file. */
 function isRestore(name: keyof RecallTuningPatch, value: unknown): boolean {
   if (value === null) return true;
   if (name === "recallExcludeUris" && Array.isArray(value) && value.length === 0) return true;

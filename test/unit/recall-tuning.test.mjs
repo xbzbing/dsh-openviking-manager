@@ -72,6 +72,29 @@ test("an untouched config reports the official defaults with nothing configured"
   });
 });
 
+test("event decay protection reports the official 30d default and accepts off", () => {
+  const fresh = effectiveRecallTuning({}, {});
+  assert.deepEqual(fresh.recallEventsDecayProtection, {
+    value: "30d",
+    source: "default",
+    configured: false,
+    envOverride: "",
+    workspaceLayer: "",
+    envVar: "OPENVIKING_RECALL_EVENTS_DECAY_PROTECTION",
+    default: "30d",
+    pinned: false,
+  });
+
+  const off = effectiveRecallTuning({ plugin: { dsh: { recallEventsDecayProtection: "off" } } }, {});
+  assert.equal(off.recallEventsDecayProtection.value, "off");
+  assert.equal(off.recallEventsDecayProtection.configured, true);
+  assert.equal(off.recallEventsDecayProtection.source, "plugin.dsh");
+
+  const env = effectiveRecallTuning({}, { OPENVIKING_RECALL_EVENTS_DECAY_PROTECTION: "12h" });
+  assert.equal(env.recallEventsDecayProtection.value, "12h");
+  assert.equal(env.recallEventsDecayProtection.source, "env");
+});
+
 test("the effective value follows the official layer order, alias included", () => {
   assert.deepEqual(
     effectiveRecallTuning({ plugin: { scoreThreshold: 0.6 } }, {}).scoreThreshold,
@@ -163,6 +186,18 @@ test("saving writes official keys to the DSH section and keeps everything else",
   assert.equal(stored.plugin.dsh.other, 1);
   assert.equal(stored.api_key, "keep-this-secret");
   assert.deepEqual(stored.unknown_tool_key, { keep: true });
+});
+
+test("off is written as a value while an empty duration restores the default", async (t) => {
+  const path = await tempConfig(t, { plugin: { dsh: { recallEventsDecayProtection: "7d" } } });
+
+  await saveRecallTuning(path, { recallEventsDecayProtection: "off" });
+  let stored = JSON.parse(await readFile(path, "utf8"));
+  assert.equal(stored.plugin.dsh.recallEventsDecayProtection, "off");
+
+  await saveRecallTuning(path, { recallEventsDecayProtection: null });
+  stored = JSON.parse(await readFile(path, "utf8"));
+  assert.ok(!("recallEventsDecayProtection" in (stored.plugin.dsh ?? {})));
 });
 
 test("restoring the default removes the key instead of pinning it", async (t) => {
@@ -296,6 +331,8 @@ test("product defaults are offered for the pinned knobs and only they are initia
   assert.equal(fresh.recallLimit.pinned, false);
   assert.deepEqual(fresh.recallExcludeUris.default, []);
   assert.equal(fresh.recallExcludeUris.pinned, false);
+  assert.equal(fresh.recallEventsDecayProtection.default, "30d");
+  assert.equal(fresh.recallEventsDecayProtection.pinned, false);
   assert.equal(fresh.recallContextTimeoutMs.default, 0);
   assert.equal(fresh.recallContextTimeoutMs.pinned, false);
 
@@ -352,6 +389,16 @@ test("the patch parser enforces the official value domain", () => {
   assert.throws(() => parseRecallTuningPatch({ recallExcludeUris: ["https://example.com"] }), /viking:\/\/ URIs/);
   assert.throws(() => parseRecallTuningPatch({ recallExcludeUris: ["viking://two words"] }), /viking:\/\/ URIs/);
   assert.deepEqual(parseRecallTuningPatch({ recallExcludeUris: [] }), { recallExcludeUris: [] });
+
+  // The duration knob takes the server syntax or `off`; null and an empty
+  // string both mean "restore the official default".
+  assert.deepEqual(parseRecallTuningPatch({ recallEventsDecayProtection: "7d" }), { recallEventsDecayProtection: "7d" });
+  assert.deepEqual(parseRecallTuningPatch({ recallEventsDecayProtection: " off " }), { recallEventsDecayProtection: "off" });
+  assert.deepEqual(parseRecallTuningPatch({ recallEventsDecayProtection: "OFF" }), { recallEventsDecayProtection: "off" });
+  assert.deepEqual(parseRecallTuningPatch({ recallEventsDecayProtection: null }), { recallEventsDecayProtection: null });
+  assert.deepEqual(parseRecallTuningPatch({ recallEventsDecayProtection: "" }), { recallEventsDecayProtection: null });
+  assert.throws(() => parseRecallTuningPatch({ recallEventsDecayProtection: "forever" }), /"off", a duration/);
+  assert.throws(() => parseRecallTuningPatch({ recallEventsDecayProtection: 7 }), /"off", a duration string/);
 
   // The two timeout knobs enforce their config-schema integer domains.
   assert.deepEqual(parseRecallTuningPatch({ timeoutMs: 15000 }), { timeoutMs: 15000 });

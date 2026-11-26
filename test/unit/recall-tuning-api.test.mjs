@@ -54,7 +54,7 @@ test("the default view reports the official defaults with nothing pending", asyn
     recallLimit: { value: 10, source: "default", configured: false, envOverride: "", workspaceLayer: "", envVar: "OPENVIKING_RECALL_LIMIT", default: 10, pinned: false },
     recallQueryExpansion: { value: "auto", source: "default", configured: false, envOverride: "", workspaceLayer: "", envVar: "OPENVIKING_RECALL_QUERY_EXPANSION", default: "off", pinned: true },
     recallExcludeUris: { value: [], source: "default", configured: false, envOverride: "", workspaceLayer: "", envVar: "OPENVIKING_RECALL_EXCLUDE_URIS", default: [], pinned: false },
-    recallEventsDecayProtection: { value: "", source: "default", configured: false, envOverride: "", workspaceLayer: "", envVar: "OPENVIKING_RECALL_EVENTS_DECAY_PROTECTION", default: "", pinned: false },
+    recallEventsDecayProtection: { value: "30d", source: "default", configured: false, envOverride: "", workspaceLayer: "", envVar: "OPENVIKING_RECALL_EVENTS_DECAY_PROTECTION", default: "30d", pinned: false },
     timeoutMs: { value: 10000, source: "default", configured: false, envOverride: "", workspaceLayer: "", envVar: "OPENVIKING_TIMEOUT_MS", default: 15000, pinned: true },
     recallContextTimeoutMs: { value: 0, source: "default", configured: false, envOverride: "", workspaceLayer: "", envVar: "OPENVIKING_RECALL_CONTEXT_TIMEOUT_MS", default: 0, pinned: false },
     restartPending: false,
@@ -79,6 +79,7 @@ test("saving the tuning keys writes them, then a restart clears the pending stat
       recallLimit: 6,
       recallQueryExpansion: "off",
       recallExcludeUris: ["viking://user/xubingzhen/skills", "viking://resources"],
+      recallEventsDecayProtection: "off",
       timeoutMs: 15000,
       recallContextTimeoutMs: 2000,
     },
@@ -89,6 +90,9 @@ test("saving the tuning keys writes them, then a restart clears the pending stat
   assert.equal(saved.json.value.recallLimit.value, 6);
   assert.equal(saved.json.value.recallQueryExpansion.value, "off");
   assert.deepEqual(saved.json.value.recallExcludeUris.value, ["viking://user/xubingzhen/skills", "viking://resources"]);
+  // "off" disables decay protection; it is a value, not a restore.
+  assert.equal(saved.json.value.recallEventsDecayProtection.value, "off");
+  assert.equal(saved.json.value.recallEventsDecayProtection.configured, true);
   assert.equal(saved.json.value.timeoutMs.value, 15000);
   assert.equal(saved.json.value.recallContextTimeoutMs.value, 2000);
   assert.equal(saved.json.value.restartPending, true);
@@ -98,6 +102,7 @@ test("saving the tuning keys writes them, then a restart clears the pending stat
   assert.equal(stored.plugin.dsh.recallLimit, 6);
   assert.equal(stored.plugin.dsh.recallQueryExpansion, "off");
   assert.deepEqual(stored.plugin.dsh.recallExcludeUris, ["viking://user/xubingzhen/skills", "viking://resources"]);
+  assert.equal(stored.plugin.dsh.recallEventsDecayProtection, "off");
   assert.equal(stored.plugin.dsh.timeoutMs, 15000);
   assert.equal(stored.plugin.dsh.recallContextTimeoutMs, 2000);
   // The isolation switch and the credentials ride along untouched.
@@ -115,7 +120,7 @@ test("saving the tuning keys writes them, then a restart clears the pending stat
   // view then offers the product defaults again for the next initialisation.
   const cleared = await request(base, TUNING_PATH, {
     method: "PUT",
-    body: { scoreThreshold: null, recallLimit: null, recallQueryExpansion: null, recallExcludeUris: [], timeoutMs: null, recallContextTimeoutMs: null },
+    body: { scoreThreshold: null, recallLimit: null, recallQueryExpansion: null, recallExcludeUris: [], recallEventsDecayProtection: null, timeoutMs: null, recallContextTimeoutMs: null },
   });
   assert.equal(cleared.status, 200);
   assert.equal(cleared.json.value.scoreThreshold.configured, false);
@@ -126,6 +131,7 @@ test("saving the tuning keys writes them, then a restart clears the pending stat
   assert.ok(!("recallLimit" in emptied.plugin));
   assert.ok(!("recallQueryExpansion" in emptied.plugin));
   assert.ok(!("recallExcludeUris" in emptied.plugin));
+  assert.ok(!("recallEventsDecayProtection" in emptied.plugin));
   assert.ok(!("timeoutMs" in emptied.plugin));
   assert.ok(!("recallContextTimeoutMs" in emptied.plugin));
   assert.ok(!("dsh" in emptied.plugin) || !("scoreThreshold" in emptied.plugin.dsh));
@@ -160,6 +166,11 @@ test("an out-of-domain value is rejected and the file stays untouched", async (t
   const badExpansion = await request(base, TUNING_PATH, { method: "PUT", body: { recallQueryExpansion: "sometimes" } });
   assert.equal(badExpansion.status, 400);
   assert.equal(JSON.parse(await readFile(configPath, "utf8")).plugin.recallQueryExpansion, undefined);
+
+  const badDecay = await request(base, TUNING_PATH, { method: "PUT", body: { recallEventsDecayProtection: "forever" } });
+  assert.equal(badDecay.status, 400);
+  assert.match(badDecay.json.error, /"off", a duration/);
+  assert.equal(JSON.parse(await readFile(configPath, "utf8")).plugin.dsh?.recallEventsDecayProtection, undefined);
 
   const badTimeout = await request(base, TUNING_PATH, { method: "PUT", body: { timeoutMs: 500 } });
   assert.equal(badTimeout.status, 400);

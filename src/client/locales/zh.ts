@@ -193,7 +193,7 @@ export const zh = {
   riskUnknown: "该目录存在未识别的 workspace 风险。",
   projectSharedNote: "共享 plugin 段仍写着 {scope}，对本机其他 harness 生效；本插件只写 plugin.dsh。",
   decayLabel: "事件衰减保护",
-  decayHint: "时长，如 7d、12h：事件记忆在该时长内保持分数。留空则用服务端默认（不保护）。",
+  decayHint: "时长，如 7d、12h：事件记忆在该时长内保持分数。官方 dsh 0.5.41+ 默认 30d；填 off 关闭保护（同需 0.5.41+）；留空恢复默认。",
   tuningWorkspaceWarning: "被仓库配置覆盖：{keys}",
   peerIdHazard: "固定 peer id 是进程级的：本机所有项目会共用这一个 peer。想按项目隔离就留空。",
   peerIdSharedClearNote: "共享 plugin 段仍为其他 harness 钉着 {value}。在此保存只会覆盖 DSH 的值；清空本字段还会删除那个共享钉死值，否则它会让所有会话继续被钉死。",

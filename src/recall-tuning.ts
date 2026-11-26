@@ -6,15 +6,15 @@ import { harnessSection, pluginSection } from "./recall-scope.js";
  *
  * The keys, value domains and defaults below are the ones declared in the
  * official `shared/config-schema.mjs` of `@openviking/dsh-memory-plugin`
- * (read from 0.5.34; the seven knobs below are unchanged since 0.5.29); that
- * file stays the single source of truth and this module never invents a knob of
- * its own:
+ * (read from 0.5.44; since 0.5.29 only the `recallEventsDecayProtection`
+ * default has changed); that file stays the single source of truth and this
+ * module never invents a knob of its own:
  *
  *   scoreThreshold              number  0..1          default 0.35  OPENVIKING_SCORE_THRESHOLD   (workspace: recall.score_threshold)
  *   recallLimit                 int     1..50         default 10    OPENVIKING_RECALL_LIMIT      (sendOnlyWhenConfigured; workspace: recall.max_items)
  *   recallQueryExpansion        enum    auto|off      default auto  OPENVIKING_RECALL_QUERY_EXPANSION (sendOnlyWhenConfigured)
  *   recallExcludeUris           list                  default []    OPENVIKING_RECALL_EXCLUDE_URIS
- *   recallEventsDecayProtection string                default ""    OPENVIKING_RECALL_EVENTS_DECAY_PROTECTION ("" = no decay protection)
+ *   recallEventsDecayProtection string                default "30d" OPENVIKING_RECALL_EVENTS_DECAY_PROTECTION ("off" = no decay protection; dsh default since 0.5.41)
  *   timeoutMs                   int     1000..300000 default 10000 OPENVIKING_TIMEOUT_MS (alias requestTimeoutMs; dsh harness default 10000)
  *   recallContextTimeoutMs      int     0..600000     default 0     OPENVIKING_RECALL_CONTEXT_TIMEOUT_MS (0 = derive from the server-stage floors)
  *
@@ -168,15 +168,16 @@ export const EXCLUDE_URIS: KnobSpec = {
 };
 
 /** Event memories keep their score for this long before time decay applies
- * (official 0.5.29+; sent as `events_time_decay_protection`). Empty means the
- * server's own default, which is no protection at all. The accepted spelling
- * is the server's duration syntax (`90s`, `45m`, `12h`, `7d`, `2w`). */
+ * (official 0.5.29+; sent as `events_time_decay_protection`). The dsh harness
+ * default is `30d` since 0.5.41; `off` makes the official loader omit the
+ * field, leaving the server's own default (no protection). A duration uses the
+ * server's syntax (`90s`, `45m`, `12h`, `7d`, `2w`). */
 export const EVENTS_DECAY_PROTECTION: KnobSpec = {
   key: "recallEventsDecayProtection",
   aliases: [],
   envVar: "OPENVIKING_RECALL_EVENTS_DECAY_PROTECTION",
   kind: "string",
-  fallback: "",
+  fallback: "30d",
 };
 
 export const TIMEOUT_MS: KnobSpec = {
